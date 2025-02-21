@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+    <script src="js/script.js"></script>
+    <link rel="Stylesheet" href="style.css">
+</head>
+<body>
+    <div class="sidebar">
+        <h2>Glory Star</h2>
+        <ul>
+            <li><a href="#">Dashboard</a></li>
+            <li><a href="#">Products</a></li>
+            <li><a href="#">Create Order</a></li>
+            <li><a href="#">Products Stock</a></li>
+            <li><a href="#">Invoice</a></li>
+            <li><a href="#">Team</a></li>
+            <li><a href="#">Settings</a></li>
+            <li><a href="#">Logout</a></li>
+        </ul>
+    </div>
+    <div class="main">
+        <div class="header">
+            <h1>Dashboard</h1>
+            <p>Welcome, Admin</p>
+        </div>
+        <div class="dashboard-cards">
+            <div class="card">
+                <h3>Total User</h3>
+                <p>40,689</p>
+            </div>
+            <div class="card">
+                <h3>Total Order</h3>
+                <p>10,293</p>
+            </div>
+            <div class="card">
+                <h3>Total Sales</h3>
+                <p>$89,000</p>
+            </div>
+            <div class="card">
+                <h3>Total Pending</h3>
+                <p>2,040</p>
+            </div>
+        </div>
+        <div class="sales-chart">
+            <h3>Sales Details</h3>
+            <p>[Placeholder for chart]</p>
+        </div>
+        <div class="order-list">
+            <h3>Order List</h3>
+            <table class="order-table">
+                <thead>
+                    <tr>
+                        <th>Customer Name</th>
+                        <th>Location</th>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Price</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Nicole Castellano</td>
+                        <td>6086 Marigiane Landing</td>
+                        <td>12.02.2019</td>
+                        <td>12:53 PM</td>
+                        <td>$34,295</td>
+                        <td class="status-delivered">Delivered</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>
