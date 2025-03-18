@@ -1,34 +1,120 @@
 import React from "react";
-import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
-import Sidebar from "./Sidebar.jsx";
-import Dashboard from "./pages/Dashboard.jsx";
-import Products from "./pages/Products.jsx";
-import CreateOrder from "./pages/CreateOrder.jsx";
-import ProductsStock from "./pages/ProductsStock.jsx";
-import Invoice from "./pages/Invoice.jsx";
-import Team from "./pages/Team.jsx";
-import Settings from "./pages/Settings.jsx";
-import Logout from "./pages/Logout.jsx";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import Products from "./pages/Products";
+import CreateOrder from "./pages/CreateOrder";
+import ProductsStock from "./pages/ProductsStock";
+import Invoice from "./pages/Invoice";
+import Team from "./pages/Team";
+import Settings from "./pages/Settings";
+import Logout from "./pages/Logout";
+import Sidebar from "./Sidebar"; 
+import "./App.css"; // ✅ Add CSS file for layout fixes
+
+const PrivateRoute = ({ children }) => {
+  const isAuthenticated = localStorage.getItem("isAuthenticated");
+  return isAuthenticated ? children : <Navigate to="/" />;
+};
 
 const App = () => {
   return (
     <Router>
-      <div className="app">
-        <Sidebar />
-        <div className="content">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/products" element={<Products />} />
-            <Route path="/create_order" element={<CreateOrder />} />
-            <Route path="/products_stock" element={<ProductsStock />} />
-            <Route path="/invoice" element={<Invoice />} />
-            <Route path="/team" element={<Team />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/logout" element={<Logout />} />
-          </Routes>
-        </div>
-      </div>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route
+          path="/dashboard"
+          element={
+            <PrivateRoute>
+              <div className="layout">  {/* ✅ Fix layout */}
+                <Sidebar />
+                <div className="content">  
+                  <Dashboard />
+                </div>
+              </div>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/products"
+          element={
+            <PrivateRoute>
+              <div className="layout">
+                <Sidebar />
+                <div className="content">
+                  <Products />
+                </div>
+              </div>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/create_order"
+          element={
+            <PrivateRoute>
+              <div className="layout">
+                <Sidebar />
+                <div className="content">
+                  <CreateOrder />
+                </div>
+              </div>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/products_stock"
+          element={
+            <PrivateRoute>
+              <div className="layout">
+                <Sidebar />
+                <div className="content">
+                  <ProductsStock />
+                </div>
+              </div>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/invoice"
+          element={
+            <PrivateRoute>
+              <div className="layout">
+                <Sidebar />
+                <div className="content">
+                  <Invoice />
+                </div>
+              </div>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/team"
+          element={
+            <PrivateRoute>
+              <div className="layout">
+                <Sidebar />
+                <div className="content">
+                  <Team />
+                </div>
+              </div>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <PrivateRoute>
+              <div className="layout">
+                <Sidebar />
+                <div className="content">
+                  <Settings />
+                </div>
+              </div>
+            </PrivateRoute>
+          }
+        />
+        <Route path="/logout" element={<Logout />} />
+      </Routes>
     </Router>
   );
 };
