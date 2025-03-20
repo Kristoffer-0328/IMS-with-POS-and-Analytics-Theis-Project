@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Sidebar from "../Sidebar";
-import "./css/Team.css"; // Ensure this CSS file includes the required styles
+import "./css/Team.css";
 
 const Team = () => {
   return (
