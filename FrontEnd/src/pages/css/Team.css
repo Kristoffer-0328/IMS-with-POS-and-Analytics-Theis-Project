@@ -1,10 +1,107 @@
-.container{
-    background-color: #ffffff;
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+.team-container {
+    display: flex;
+    width: 80vw;
+    min-height: 100vh; 
+}
+
+.team-content {
     flex: 1;
     padding: 20px;
-    margin: auto;
-    width: 50%;
+    background-color: transparent;
+    min-height: 100vh;
+    position: relative;
+}
+
+.team-content h1 {
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 20px;
+}
+
+.team-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: clamp(10px, 2vw, 30px);
+    justify-content: center;
+    align-items: start;
+}
+
+.team-card {
+    background: #ffffff;
+    padding: 20px;
+    text-align: center;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease-in-out;
+}
+
+.team-card:hover {
+    transform: translateY(-5px);
+}
+
+.team-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background-color: #e0e0e0;
+    margin: 0 auto 10px;
+}
+
+.team-card h2 {
+    font-size: 18px;
+    margin: 10px 0 5px;
+}
+
+.team-card p {
+    font-size: 14px;
+    color: #555;
+}
+
+.create-button {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: #0051ff;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 20px;
+    font-size: 16px;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.create-button .icon {
+    font-size: 18px;
+}
+
+.sidebar {
+    width: 250px;
+    background-color: #ffffff;
+    padding: 20px;
+    height: 100vh;
+    box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar ul {
+    list-style-type: none;
+    padding: 0;
+}
+
+.sidebar ul li {
     padding: 10px;
+    margin: 10px 0;
+    background-color: #ffffff;
+    color: #000;
+    text-align: center;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.sidebar ul li:hover {
+    background-color: #0056b3;
+    color: #fff;
 }
