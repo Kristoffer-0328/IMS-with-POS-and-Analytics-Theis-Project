@@ -45,26 +45,23 @@ const Dashboard = () => {
           <p>Loading users...</p>
         )}
       </div> */}
-
-      {/* Stats Cards */}
-      <div className="stats-cards">
-        <div className="card">
-          <h3>Total Order</h3>
-          <p>10293</p>
-          <span className="up">1.3% Up from past week</span>
+      <div class="card-container">
+        <div class="card">
+          <p class="card-title">Total Order</p>
+          <h2 class="card-value">10,293</h2>
+          <p class="card-trend up">+1.3% Up from past week</p>
         </div>
-        <div className="card">
-          <h3>Total Sales</h3>
-          <p>$89,000</p>
-          <span className="down">4.3% Down from yesterday</span>
+        <div class="card">
+          <p class="card-title">Total Sales</p>
+          <h2 class="card-value">$89,000</h2>
+          <p class="card-trend down">-4.3% Down from yesterday</p>
         </div>
-        <div className="card">
-          <h3>Total Pending</h3>
-          <p>2040</p>
-          <span className="up">1.8% Up from yesterday</span>
+        <div class="card">
+          <p class="card-title">Total Pending</p>
+          <h2 class="card-value">2,040</h2>
+          <p class="card-trend up">+1.8% Up from yesterday</p>
         </div>
       </div>
-      
       {/* Sales Chart */}
       <div className="sales-chart">
         <h2>Sales Details</h2>

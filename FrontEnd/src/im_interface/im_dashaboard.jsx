@@ -5,8 +5,7 @@ const Dashboard = () => {
   return (
 
     <div class="main-content">
-        <h1>Welcome to the Admin Dashboard</h1>
-
+        <h1>Inventory Manager Dashboard</h1>
         <div class="card-container">
             <div class="card">
                 <h3>Total Users</h3>
@@ -25,7 +24,6 @@ const Dashboard = () => {
                 <p>$12,000</p>
             </div>
         </div>
-
         <div class="chart-container">
             <h2>Monthly Sales Overview</h2>
             <canvas id="salesChart" width="600" height="300"></canvas>

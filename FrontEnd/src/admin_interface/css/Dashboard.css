@@ -11,53 +11,46 @@
 }
 
 /* Summary Section - Improved Grid */
-.summary-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); /* Dynamic columns */
-    gap: 20px;
-    width: 100%;
-    max-width: 1100px;
-    margin: 0 auto;
-}
-
-.stats-cards {
-    background: #ffffff;
-    padding: 20px;
-    border-radius: 12px;
+.card-container {
     display: flex;
-    align-items: center;
-    gap: 15px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    transition: transform 0.2s ease-in-out;
+    gap: 20px;
+    justify-content: space-between;
+    margin: 20px 0;
+  }
+  
+  .card {
+    flex: 1;
+    background-color: white;
+    padding: 20px;
+    border-radius: 25px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
     text-align: center;
-    width: 50px; /* Fixed width */
-    height: 50px; /* Fixed height */
-}
-
-
-.summary-card:hover {
-    transform: translateY(-5px);
-}
-
-/* Summary Card Icon */
-.summary-icon {
-    font-size: 24px;
-    background-color: #f0f0f0;
-    padding: 10px;
-    border-radius: 50%;
-}
-
-/* Text Content in Cards */
-.summary-content h2 {
-    font-size: 18px;
-    margin: 0;
-}
-
-.summary-content p {
+  }
+  
+  .card-title {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 8px;
+  }
+  
+  .card-value {
+    font-size: 28px;
+    font-weight: bold;
+    margin-bottom: 10px;
+  }
+  
+  .card-trend {
     font-size: 14px;
-    color: #777;
-}
-
+  }
+  
+  .card-trend.up {
+    color: green;
+  }
+  
+  .card-trend.down {
+    color: red;
+  }
+  
 /* Sales Chart - Improved Sizing */
 .sales-details {
     background: #ffffff;
