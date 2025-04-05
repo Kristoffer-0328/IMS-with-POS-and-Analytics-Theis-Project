@@ -1,14 +1,14 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import Products from "./pages/Products";
-import CreateOrder from "./pages/CreateOrder";
-import ProductsStock from "./pages/ProductsStock";
-import Invoice from "./pages/Invoice";
-import Team from "./pages/Team";
-import Settings from "./pages/Settings";
-import Logout from "./pages/Logout";
+import Login from "./Login";
+import Dashboard from "./admin_interface/Dashboard";
+import Products from "./admin_interface/Products";
+import CreateOrder from "./admin_interface/CreateOrder";
+import ProductsStock from "./admin_interface/ProductsStock";
+import Invoice from "./admin_interface/Invoice";
+import Team from "./admin_interface/Team";
+import Settings from "./admin_interface/Settings";
+import Logout from "./admin_interface/Logout";
 import Sidebar from "./Sidebar"; 
 import "./App.css"; // ✅ Add CSS file for layout fixes
 
