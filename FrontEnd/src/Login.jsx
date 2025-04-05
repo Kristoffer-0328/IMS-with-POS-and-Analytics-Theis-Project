@@ -41,7 +41,7 @@ const Login = () => {
           else if(data.Role === "InventoryManager"){
             localStorage.setItem("isAuthenticated", "true");
             alert("User Login");
-            navigate("./dashboard"); 
+            navigate("./im_dashboard"); 
             console.log("User is an InventoryManager");
           }
         } else {

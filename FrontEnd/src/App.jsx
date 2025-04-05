@@ -10,6 +10,8 @@ import Team from "./admin_interface/Team";
 import Settings from "./admin_interface/Settings";
 import Logout from "./admin_interface/Logout";
 import Sidebar from "./Sidebar"; 
+import IMSidebar from "./im_sidebar";
+import IMDashboard from "./im_interface/im_dashaboard"
 import "./App.css"; // ✅ Add CSS file for layout fixes
 
 const PrivateRoute = ({ children }) => {
@@ -22,6 +24,19 @@ const App = () => {
     <Router>
       <Routes>
         <Route path="/" element={<Login />} />
+        <Route 
+        path="/im_dashboard"
+        element={
+          <PrivateRoute>
+            <div className="layout">
+              <IMSidebar/>
+              <div className="content">
+                <IMDashboard/>
+              </div>
+            </div>
+          </PrivateRoute>
+        }
+        />
         <Route
           path="/dashboard"
           element={

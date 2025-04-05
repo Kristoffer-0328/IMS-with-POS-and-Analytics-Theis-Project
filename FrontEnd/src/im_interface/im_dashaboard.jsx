@@ -1,13 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import "./css/Dashboard.css";
-
-
-
+import "./css/im_dashboard.css";
 const Dashboard = () => {
-  
- 
   return (
+
     <div class="main-content">
         <h1>Welcome to the Admin Dashboard</h1>
 
@@ -69,7 +65,6 @@ const Dashboard = () => {
             </table>
         </div>
     </div>
-
   );
 };
 
