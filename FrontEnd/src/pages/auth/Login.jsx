@@ -15,10 +15,10 @@ const Login = () => {
     setError('');
 
     try {
-      const result = login(email, password);
+      const result = await login(email, password);
       if (result.success) {
         // Navigate based on role
-        if (result.user.role === 'Admin') {
+        if (result.user.role === "Admin") {
           navigate('/admin');
         } else if (result.user.role === 'InventoryManager') {
           navigate('/im');
@@ -27,7 +27,8 @@ const Login = () => {
         setError('Invalid credentials');
       }
     } catch (err) {
-      setError('Failed to log in');
+      setError('Failed to log in' + err);
+      
     }
   };
 
