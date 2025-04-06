@@ -1,20 +1,36 @@
-import React from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import Products from "./pages/Products";
-import CreateOrder from "./pages/CreateOrder";
-import ProductsStock from "./pages/ProductsStock";
-import Invoice from "./pages/Invoice";
-import Team from "./pages/Team";
-import Settings from "./pages/Settings";
-import Logout from "./pages/Logout";
-import Sidebar from "./Sidebar"; 
-import "./App.css"; // ✅ Add CSS file for layout fixes
+import React from 'react';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from 'react-router-dom';
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+import Inventory from './pages/Inventory';
+import StockTransfer from './pages/StockTransfer';
+import RequestRestocking from './pages/RestockingRequest';
+import ReportsAndLogs from './pages/ReportsAndLogs';
+import Settings from './pages/Settings';
+import Logout from './pages/Logout';
+import Sidebar from './Sidebar';
 
 const PrivateRoute = ({ children }) => {
-  const isAuthenticated = localStorage.getItem("isAuthenticated");
+  const isAuthenticated = localStorage.getItem('isAuthenticated');
   return isAuthenticated ? children : <Navigate to="/" />;
+};
+
+const Layout = ({ children }) => {
+  return (
+    <div className="flex min-h-screen w-full bg-gray-50">
+      <Sidebar />
+      <main
+        id="content"
+        className="flex-1 transition-all duration-300 ml-[250px]">
+        <div className="p-6">{children}</div>
+      </main>
+    </div>
+  );
 };
 
 const App = () => {
@@ -22,97 +38,80 @@ const App = () => {
     <Router>
       <Routes>
         <Route path="/" element={<Login />} />
+
+        {/* Dashboard */}
         <Route
           path="/dashboard"
           element={
             <PrivateRoute>
-              <div className="layout">  {/* ✅ Fix layout */}
-                <Sidebar />
-                <div className="content">  
-                  <Dashboard />
-                </div>
-              </div>
+              <Layout>
+                <Dashboard />
+              </Layout>
             </PrivateRoute>
           }
         />
+
+        {/* Inventory */}
         <Route
-          path="/products"
+          path="/inventory"
           element={
             <PrivateRoute>
-              <div className="layout">
-                <Sidebar />
-                <div className="content">
-                  <Products />
-                </div>
-              </div>
+              <Layout>
+                <Inventory />
+              </Layout>
             </PrivateRoute>
           }
         />
+
+        {/* Stock Transfer */}
         <Route
-          path="/create_order"
+          path="/stock_transfer"
           element={
             <PrivateRoute>
-              <div className="layout">
-                <Sidebar />
-                <div className="content">
-                  <CreateOrder />
-                </div>
-              </div>
+              <Layout>
+                <StockTransfer />
+              </Layout>
             </PrivateRoute>
           }
         />
+
+        {/* Restocking Request */}
         <Route
-          path="/products_stock"
+          path="/restocking"
           element={
             <PrivateRoute>
-              <div className="layout">
-                <Sidebar />
-                <div className="content">
-                  <ProductsStock />
-                </div>
-              </div>
+              <Layout>
+                <RequestRestocking />
+              </Layout>
             </PrivateRoute>
           }
         />
+
+        {/* Reports and Logs */}
         <Route
-          path="/invoice"
+          path="/reports"
           element={
             <PrivateRoute>
-              <div className="layout">
-                <Sidebar />
-                <div className="content">
-                  <Invoice />
-                </div>
-              </div>
+              <Layout>
+                <ReportsAndLogs />
+              </Layout>
             </PrivateRoute>
           }
         />
-        <Route
-          path="/team"
-          element={
-            <PrivateRoute>
-              <div className="layout">
-                <Sidebar />
-                <div className="content">
-                  <Team />
-                </div>
-              </div>
-            </PrivateRoute>
-          }
-        />
+
+        {/* Settings */}
         <Route
           path="/settings"
           element={
             <PrivateRoute>
-              <div className="layout">
-                <Sidebar />
-                <div className="content">
-                  <Settings />
-                </div>
-              </div>
+              <Layout>
+                <Settings />
+              </Layout>
             </PrivateRoute>
           }
         />
+
+        {/* Logout */}
         <Route path="/logout" element={<Logout />} />
       </Routes>
     </Router>
