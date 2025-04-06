@@ -1,5 +1,4 @@
-import React from "react";
-import "./css/CreateOrder.css";
+import React from 'react';
 const CreateOrder = () => {
   return (
     <div class="container">
@@ -9,4 +8,4 @@ const CreateOrder = () => {
   );
 };
 
-export default CreateOrder; 
+export default CreateOrder;

@@ -1,111 +1,46 @@
-/* Dashboard Container - Grid-Based */
-.dashboard-container {
-    display: grid;
-    grid-template-rows: auto auto auto;
-    gap: 20px;
-    padding: 20px;
-    background-color: transparent;
-    width: 80vw;
-    min-height: 100vh;
-    margin: 0 auto;
+/* Custom scrollbar for webkit browsers */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
 }
 
-/* Summary Section - Improved Grid */
-.card-container {
-    display: flex;
-    gap: 20px;
-    justify-content: space-between;
-    margin: 20px 0;
-  }
-  
-  .card {
-    flex: 1;
-    background-color: white;
-    padding: 20px;
-    border-radius: 25px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-    text-align: center;
-  }
-  
-  .card-title {
-    font-size: 16px;
-    color: #666;
-    margin-bottom: 8px;
-  }
-  
-  .card-value {
-    font-size: 28px;
-    font-weight: bold;
-    margin-bottom: 10px;
-  }
-  
-  .card-trend {
-    font-size: 14px;
-  }
-  
-  .card-trend.up {
-    color: green;
-  }
-  
-  .card-trend.down {
-    color: red;
-  }
-  
-/* Sales Chart - Improved Sizing */
-.sales-details {
-    background: #ffffff;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    width: 100%;
-    max-width: 1100px;
-    margin: 0 auto;
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
 }
 
-/* Order List Table - Grid Adjustment */
-.order-list {
-    background: #ffffff;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    width: 100%;
-    max-width: 1100px;
-    margin: 0 auto;
+::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
 }
 
-/* Table Styling */
-.order-list table {
-    width: 100%;
-    border-collapse: collapse;
+::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
 }
 
-.order-list th, .order-list td {
-    padding: 12px;
-    text-align: left;
-    border-bottom: 1px solid #ddd;
+/* Chart customization */
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+    stroke: #f0f0f0;
 }
 
-.order-list th {
-    background-color: #f1f3f5;
-    font-weight: bold;
+.recharts-tooltip-wrapper {
+    border-radius: 8px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
-/* Order Status Styling */
-.order-status {
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-size: 14px;
-    font-weight: bold;
+/* Table styles */
+table {
+    border-collapse: separate;
+    border-spacing: 0;
 }
 
-.status-delivered {
-    background-color: #d4edda;
-    color: #155724;
+/* Animation for cards */
+.bg-white {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
 }
 
-/* 📱 Responsive Design */
-@media (max-width: 768px) {
-    .summary-container {
-        grid-template-columns: 1fr; /* Stacks summary cards vertically */
-    }
+.bg-white:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
