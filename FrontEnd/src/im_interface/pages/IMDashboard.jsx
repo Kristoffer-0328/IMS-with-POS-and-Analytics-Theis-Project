@@ -72,7 +72,7 @@ const months = [
   'December',
 ];
 
-const Dashboard = () => {
+const IMDashboard = () => {
   const [currentMonth, setCurrentMonth] = useState('October');
 
   return (
@@ -263,4 +263,4 @@ const Dashboard = () => {
   );
 };
 
-export default Dashboard;
+export default IMDashboard;

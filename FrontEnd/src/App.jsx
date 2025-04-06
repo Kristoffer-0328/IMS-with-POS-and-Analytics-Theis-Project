@@ -5,25 +5,35 @@ import {
   Route,
   Navigate,
 } from 'react-router-dom';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Inventory from './pages/Inventory';
-import StockTransfer from './pages/StockTransfer';
-import RequestRestocking from './pages/RestockingRequest';
-import ReportsAndLogs from './pages/ReportsAndLogs';
-import Settings from './pages/Settings';
-import Logout from './pages/Logout';
-import Sidebar from './Sidebar';
+import { useAuth, AuthProvider } from './contexts/AuthContext';
 
-const PrivateRoute = ({ children }) => {
-  const isAuthenticated = localStorage.getItem('isAuthenticated');
-  return isAuthenticated ? children : <Navigate to="/" />;
-};
+// Auth
+import Login from './pages/auth/Login';
 
-const Layout = ({ children }) => {
+// Admin Interface
+import Dashboard from './admin_interface/Dashboard';
+import Products from './admin_interface/Products';
+import ProductsStock from './admin_interface/ProductsStock';
+import CreateOrder from './admin_interface/CreateOrder';
+import Logout from './admin_interface/Logout';
+import AdminSidebar from './admin_interface/AdminSidebar';
+import Invoice from './admin_interface/Invoice';
+import Team from './admin_interface/Team';
+
+// IM Interface
+import IMDashboard from './im_interface/pages/IMDashboard';
+import Inventory from './im_interface/pages/Inventory';
+import StockTransfer from './im_interface/pages/StockTransfer';
+import RestockingRequest from './im_interface/pages/RestockingRequest';
+import ReportsAndLogs from './im_interface/pages/ReportsAndLogs';
+import Settings from './im_interface/pages/Settings';
+import IMSidebar from './im_interface/pages/IMSidebar';
+
+// Admin Layout Component
+const AdminLayout = ({ children }) => {
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
-      <Sidebar />
+      <AdminSidebar />
       <main
         id="content"
         className="flex-1 transition-all duration-300 ml-[250px]">
@@ -33,88 +43,220 @@ const Layout = ({ children }) => {
   );
 };
 
+// IM Layout Component
+const IMLayout = ({ children }) => {
+  return (
+    <div className="flex min-h-screen w-full bg-gray-50">
+      <IMSidebar />
+      <main
+        id="content"
+        className="flex-1 transition-all duration-300 ml-[250px]">
+        <div className="p-6">{children}</div>
+      </main>
+    </div>
+  );
+};
+
+// Update PrivateRoute to use useAuth
+const PrivateRoute = ({ children, allowedRoles }) => {
+  const { currentUser, isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/" />;
+  }
+
+  if (!allowedRoles.includes(currentUser?.role)) {
+    return <Navigate to="/unauthorized" />;
+  }
+
+  return children;
+};
+
+// Create an unauthorized component
+const UnauthorizedAccess = () => {
+  const { currentUser } = useAuth();
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold text-gray-800 mb-4">Access Denied</h1>
+        <p className="text-gray-600 mb-6">
+          You don't have permission to access this page.
+        </p>
+        <a
+          href={currentUser?.role === 'Admin' ? '/admin' : '/im'}
+          className="text-blue-600 hover:text-blue-800">
+          Return to Dashboard
+        </a>
+      </div>
+    </div>
+  );
+};
+
+// Wrap the entire Router with AuthProvider
 const App = () => {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Login />} />
+    <AuthProvider>
+      <Router>
+        <Routes>
+          {/* Auth Routes */}
+          <Route path="/" element={<Login />} />
+          <Route path="/logout" element={<Logout />} />
 
-        {/* Dashboard */}
-        <Route
-          path="/dashboard"
-          element={
-            <PrivateRoute>
-              <Layout>
-                <Dashboard />
-              </Layout>
-            </PrivateRoute>
-          }
-        />
+          {/* Admin Routes */}
+          <Route path="/admin">
+            <Route
+              index
+              element={
+                <PrivateRoute allowedRoles={['Admin']}>
+                  <AdminLayout>
+                    <Dashboard />
+                  </AdminLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="products"
+              element={
+                <PrivateRoute allowedRoles={['Admin']}>
+                  <AdminLayout>
+                    <Products />
+                  </AdminLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="products-stock"
+              element={
+                <PrivateRoute allowedRoles={['Admin']}>
+                  <AdminLayout>
+                    <ProductsStock />
+                  </AdminLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="create-order"
+              element={
+                <PrivateRoute allowedRoles={['Admin']}>
+                  <AdminLayout>
+                    <CreateOrder />
+                  </AdminLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="invoice"
+              element={
+                <PrivateRoute allowedRoles={['Admin']}>
+                  <AdminLayout>
+                    <Invoice />
+                  </AdminLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="team"
+              element={
+                <PrivateRoute allowedRoles={['Admin']}>
+                  <AdminLayout>
+                    <Team />
+                  </AdminLayout>
+                </PrivateRoute>
+              }
+            />
+          </Route>
 
-        {/* Inventory */}
-        <Route
-          path="/inventory"
-          element={
-            <PrivateRoute>
-              <Layout>
-                <Inventory />
-              </Layout>
-            </PrivateRoute>
-          }
-        />
+          {/* Inventory Management Routes */}
+          <Route path="/im">
+            <Route
+              index
+              element={
+                <PrivateRoute allowedRoles={['InventoryManager']}>
+                  <IMLayout>
+                    <IMDashboard />
+                  </IMLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="inventory"
+              element={
+                <PrivateRoute allowedRoles={['InventoryManager']}>
+                  <IMLayout>
+                    <Inventory />
+                  </IMLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="stock-transfer"
+              element={
+                <PrivateRoute allowedRoles={['InventoryManager']}>
+                  <IMLayout>
+                    <StockTransfer />
+                  </IMLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="restocking-request"
+              element={
+                <PrivateRoute allowedRoles={['InventoryManager']}>
+                  <IMLayout>
+                    <RestockingRequest />
+                  </IMLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="invoice"
+              element={
+                <PrivateRoute allowedRoles={['InventoryManager']}>
+                  <IMLayout>
+                    <Invoice />
+                  </IMLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="team"
+              element={
+                <PrivateRoute allowedRoles={['InventoryManager']}>
+                  <IMLayout>
+                    <Team />
+                  </IMLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="reports"
+              element={
+                <PrivateRoute allowedRoles={['InventoryManager']}>
+                  <IMLayout>
+                    <ReportsAndLogs />
+                  </IMLayout>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="settings"
+              element={
+                <PrivateRoute allowedRoles={['InventoryManager']}>
+                  <IMLayout>
+                    <Settings />
+                  </IMLayout>
+                </PrivateRoute>
+              }
+            />
+          </Route>
 
-        {/* Stock Transfer */}
-        <Route
-          path="/stock_transfer"
-          element={
-            <PrivateRoute>
-              <Layout>
-                <StockTransfer />
-              </Layout>
-            </PrivateRoute>
-          }
-        />
-
-        {/* Restocking Request */}
-        <Route
-          path="/restocking"
-          element={
-            <PrivateRoute>
-              <Layout>
-                <RequestRestocking />
-              </Layout>
-            </PrivateRoute>
-          }
-        />
-
-        {/* Reports and Logs */}
-        <Route
-          path="/reports"
-          element={
-            <PrivateRoute>
-              <Layout>
-                <ReportsAndLogs />
-              </Layout>
-            </PrivateRoute>
-          }
-        />
-
-        {/* Settings */}
-        <Route
-          path="/settings"
-          element={
-            <PrivateRoute>
-              <Layout>
-                <Settings />
-              </Layout>
-            </PrivateRoute>
-          }
-        />
-
-        {/* Logout */}
-        <Route path="/logout" element={<Logout />} />
-      </Routes>
-    </Router>
+          {/* Error Routes */}
+          <Route path="/unauthorized" element={<UnauthorizedAccess />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
 };
 

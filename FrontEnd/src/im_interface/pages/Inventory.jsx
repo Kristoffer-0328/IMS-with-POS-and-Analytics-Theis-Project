@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import InventoryHeader from '../components/inventory/InventoryHeader';
-import InventoryChart from '../components/inventory/InventoryChart';
-import InventoryTable from '../components/inventory/InventoryTable';
-import InventoryFilters from '../components/inventory/InventoryFilters';
+import InventoryHeader from '../components/Inventory/InventoryHeader';
+import InventoryChart from '../components/Inventory/InventoryChart';
+import InventoryTable from '../components/Inventory/InventoryTable';
+import InventoryFilters from '../components/Inventory/InventoryFilters';
 
 const Inventory = () => {
   const [currentFilter, setCurrentFilter] = useState('all');

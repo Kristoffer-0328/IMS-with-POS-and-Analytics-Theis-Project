@@ -10,7 +10,6 @@ import {
 } from 'react-icons/fi';
 
 const StockTransfer = () => {
-  // Sample data for the summary cards
   const summaryData = {
     totalStock: {
       value: '2,940 Items',
@@ -34,7 +33,6 @@ const StockTransfer = () => {
     },
   };
 
-  // Sample data for the stock movement log
   const movementLogs = [
     {
       id: 1,
