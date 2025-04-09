@@ -5,8 +5,8 @@ import {
   Route,
   Navigate,
 } from 'react-router-dom';
-import { useAuth, AuthProvider } from './contexts/AuthContext';
-
+import { useAuth, AuthProvider } from './FirebaseBackEndQuerry/FirebaseAuth';
+import { ServicesProvider } from './FirebaseBackEndQuerry/ProductServices';
 // Auth
 import Login from './pages/auth/Login';
 
@@ -28,6 +28,7 @@ import RestockingRequest from './im_interface/pages/RestockingRequest';
 import ReportsAndLogs from './im_interface/pages/ReportsAndLogs';
 import Settings from './im_interface/pages/Settings';
 import IMSidebar from './im_interface/pages/IMSidebar';
+import { IoMailOpen } from 'react-icons/io5';
 
 // Admin Layout Component
 const AdminLayout = ({ children }) => {
@@ -168,6 +169,7 @@ const App = () => {
           </Route>
 
           {/* Inventory Management Routes */}
+          
           <Route path="/im">
             <Route
               index
@@ -184,7 +186,9 @@ const App = () => {
               element={
                 <PrivateRoute allowedRoles={['InventoryManager']}>
                   <IMLayout>
-                    <Inventory />
+                    <ServicesProvider>
+                      <Inventory />
+                    </ServicesProvider>
                   </IMLayout>
                 </PrivateRoute>
               }
