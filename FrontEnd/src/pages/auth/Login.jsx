@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../FirebaseBackEndQuerry/FirebaseAuth';
 import GloryStarLogo from '../../assets/Glory_Star_Logo.png';
 
 const Login = () => {
@@ -27,7 +27,7 @@ const Login = () => {
         setError('Invalid credentials');
       }
     } catch (err) {
-      setError('Failed to log in' + err);
+      setError('Failed to log in');
       
     }
   };

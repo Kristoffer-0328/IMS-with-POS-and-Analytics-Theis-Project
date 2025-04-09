@@ -71,7 +71,7 @@ const months = [
   'November',
   'December',
 ];
-
+const total_stock = 2940;
 const IMDashboard = () => {
   const [currentMonth, setCurrentMonth] = useState('October');
 
@@ -158,12 +158,12 @@ const IMDashboard = () => {
         <div className="flex justify-between items-center mb-2">
           <div>
             <h3 className="text-gray-800 font-semibold">Glory Star Hardware</h3>
-            <p className="text-xl font-bold">2,940</p>
+            <p className="text-xl font-bold">Total stocks: {total_stock}</p>
           </div>
         </div>
 
         {/* Use the enhanced chart component */}
-        <DashboardBarChart data={chartData} />
+        <DashboardBarChart data={chartData} />  
       </div>
 
       {/* Stock Movement Log */}

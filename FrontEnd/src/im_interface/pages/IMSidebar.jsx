@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom'; // Add useNavigate
-import { useAuth } from '../../contexts/AuthContext'; // Add this import
+import { useAuth } from '../../FirebaseBackEndQuerry/FirebaseAuth'; // Add this import
 import {
   FiHome,
   FiPackage,

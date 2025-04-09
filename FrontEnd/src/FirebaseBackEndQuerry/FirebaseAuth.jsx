@@ -1,22 +1,18 @@
 import React, { createContext, useContext, useState } from 'react';
-import { initializeApp } from "firebase/app";
 import {getAuth, signInWithEmailAndPassword} from "firebase/auth"
 import { Firestore, getFirestore ,doc, getDoc} from "firebase/firestore";
+import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
+import app from '../FirebaseConfig';
 
-const firebaseConfig = {
-  apiKey: "AIzaSyCgysE6OQ8AhIsM-RWkk9us6E9wdwL3PhM",
-  authDomain: "glorystarauth.firebaseapp.com",
-  projectId: "glorystarauth",
-  storageBucket: "glorystarauth.firebasestorage.app",
-  messagingSenderId: "74520742179",
-  appId: "1:74520742179:web:5c8435597f8b3d878ce496"
-};
-
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
 const db = getFirestore(app);
+const auth = getAuth(app);
 const AuthContext = createContext(null);
+
+/*const appCheck = initializeAppCheck(app, {
+  provider: new ReCaptchaV3Provider(import.meta.env.VITE_RECAPTCHA_SITE_KEY),
+  isTokenAutoRefreshEnabled: true
+});*/
+//console.log(appCheck);
 
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(() => {
@@ -39,7 +35,7 @@ export const AuthProvider = ({ children }) => {
           name: data.name,
           avatar: data.avatar,
         };
-  
+        console.log(data.role);
         setCurrentUser(userData);
         localStorage.setItem('isAuthenticated', 'true');
         localStorage.setItem('userRole', data.role);
