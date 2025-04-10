@@ -57,10 +57,38 @@ export const ServicesProvider = ({ children }) => {
       return { success: false, error: 'Failed to fetch products' };
     }
   };
+  const fetchRestockRequests = async () => {  
+    try {
+      const querySnapshot = await getDocs(collection(db, "StockRestocks"));
+      const requestArray = [];
+  
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();  
+        requestArray.push({
+          id: docSnap.id,
+          Product: data.Product,
+          currentStock: data.CurrentStock,
+          requested: data.Requested,
+          status: data.Status,
+          actionStatus: data.Action,
+          Month: data.Month,
+          createdAt: data.CreatedAt || null,
+        });
+      });
+  
+      localStorage.setItem("restockRequests", JSON.stringify(requestArray));
+  
+      return { success: true, requests: requestArray };
+    } catch (error) {
+      console.error("Error fetching restock requests: ", error.message);
+      return { success: false, error: "Failed to fetch restock requests" };
+    }
+  };
 
   const value = {
     product,
-    getData
+    getData,
+    fetchRestockRequests
   };
 
   return (

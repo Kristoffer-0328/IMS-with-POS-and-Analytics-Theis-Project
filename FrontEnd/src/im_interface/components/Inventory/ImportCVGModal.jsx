@@ -6,14 +6,6 @@ import { getFirestore, doc,writeBatch } from "firebase/firestore";
 
 const ImportCVGModal = ({ isOpen, onClose }) => {
   const [file, setFile] = useState(null);
-  const [product, setProduct] = useState("");
-  const [category, setCategory] = useState("Tools");
-  const [quantity, setQuantity] = useState(1);
-  const [unitprice, setUnitPrice] = useState(1);
-  const [storageRoom, setStorageRoom] = useState("STR A1");
-  const [expiringDate, setExpiringDate] = useState("");
-  const [importData, setImportData] = useState([]);
-  const [status, setStatus] = useState();
   const db = getFirestore(app);
 
   if (!isOpen) return null;
@@ -37,7 +29,7 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
         header: true,
         skipEmptyLines: true,
         complete: (results) => {
-          // You can now use results.data (an array of objects) however you want
+        
           alert(`Imported: ` + file.name);
           saveMultipleProducts(results.data);
         },
@@ -49,11 +41,12 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
       
     // Reset
     setFile(null);
+
     onClose();
   };
   const saveMultipleProducts = async (products) => {
     try {
-      const batch = writeBatch(db); // Use a batch for performance and atomicity
+      const batch = writeBatch(db); 
   
       products.forEach((item) => {
         const { ProductName, Category, Quantity, UnitPrice, Location, ExpiringDate } = item;
@@ -80,10 +73,9 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
       console.error("Error adding multiple products: ", error.message);
     }
   };
-  
-
   return (
-    <div className="fixed inset-0 z-50 bg-white bg-opacity-50 flex justify-center items-center">
+    <div className="fixed inset-0 z-50 backdrop-blur-md bg-white/30 flex justify-center items-center">
+
       <div className="bg-white p-6 rounded-lg shadow-xl w-[90%] max-w-md relative">
         <button
           onClick={onClose}

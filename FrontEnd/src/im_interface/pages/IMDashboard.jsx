@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react'; 
 import {
   FiTrendingUp,
   FiTrendingDown,
@@ -9,71 +10,74 @@ import {
 } from 'react-icons/fi';
 import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import DashboardBarChart from '../components/Dashboard/DashboardBarChart';
+import { useServices } from '../../FirebaseBackEndQuerry/ProductServices';
 
-const chartData = [
-  { name: 'Hammer', value: 55, color: '#FF4C76' },
-  { name: 'Concrete Nails', value: 120, color: '#FFC554' },
-  { name: 'GI Sheets', value: 190, color: '#4779FF' },
-  { name: 'Bolts & Nuts', value: 220, color: '#4779FF' },
-  { name: 'Steel Rebars', value: 150, color: '#4779FF' },
-  { name: 'Tie Wire', value: 90, color: '#FF4C76' },
-  { name: 'Plywood', value: 300, color: '#4779FF' },
-  { name: 'Concrete', value: 180, color: '#4779FF' },
-  { name: 'Long Span Roofing', value: 220, color: '#4779FF' },
-  { name: 'Sealants', value: 150, color: '#FFC554' },
-  { name: 'Cyclone Wire', value: 120, color: '#FFC554' },
-  { name: 'PVC Lumber', value: 150, color: '#FFC554' },
-  { name: 'Electrical Conduits', value: 170, color: '#FFC554' },
-];
-
-const stockMovements = [
-  {
-    id: 1,
-    product: 'Hammer',
-    from: 'Receiving',
-    to: 'STR A1',
-    quantity: '50 pcs',
-    date: '12.09.24',
-    status: 'completed',
-  },
-  {
-    id: 2,
-    product: 'Nails',
-    from: 'STR A2',
-    to: 'STR B1',
-    quantity: '30 pcs',
-    date: '12.09.24',
-    status: 'pending',
-  },
-  {
-    id: 3,
-    product: 'Antoneth Lucena',
-    from: '6096 Marjolaine Landing',
-    to: '12.09.2019 - 12:53 PM',
-    quantity: '423',
-    date: '12.09.24',
-    status: 'rejected',
-  },
-];
-
-// Array of all months for the dropdown
-const months = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-const total_stock = 2940;
 const IMDashboard = () => {
   const [currentMonth, setCurrentMonth] = useState('October');
+  const { getData } = useServices(); 
+  const [products, setProduct] = useState([]);
+  const [lowStock, setLowstock] = useState([]);
+  
+   useEffect(() => {
+      const fetchData = async () => {
+        const res = await getData();  
+      
+        if (res.success) {
+          
+          setProduct(res.product);
+  
+        } else {
+          console.error('Failed to fetch products:', res.error);
+        }
+      };
+      let items =[];
+      products.forEach(e => {
+        if(e.quantity <= 60) {
+
+          items.push(e.size);
+        }
+      });
+      
+      
+      fetchData();
+      setLowstock(items.size);
+    }, [getData]);
+  
+  
+    const chartData = products.map((p) => {
+      let color = '#4779FF'; 
+      if (p.quantity <= 40) {
+        color = '#FF4D4D'; 
+      } else if (p.quantity <= 60) {
+        color = '#FFC554'; 
+      }
+    
+      return {
+        name: p.name,
+        value: p.quantity,
+        color,
+      };
+    });
+  const stockMovements = [
+   
+  ];
+  
+  // Array of all months for the dropdown
+  const months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  const total_stock = 2940;
 
   return (
     <div className="w-full max-w-[1600px] mx-auto p-6 bg-gray-50">
@@ -87,10 +91,10 @@ const IMDashboard = () => {
           <div className="flex justify-between items-start">
             <div>
               <p className="text-gray-500 text-sm mb-1">Total Stock</p>
-              <h3 className="text-2xl font-bold text-gray-800">2,940 Items</h3>
+              <h3 className="text-2xl font-bold text-gray-800">{products.reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0)} Items</h3>
               <div className="flex items-center text-red-500 text-xs mt-1">
                 <FiTrendingDown className="mr-1" />
-                <span>4.3% Down from yesterday</span>
+                <span>null</span>
               </div>
             </div>
             <div className="bg-green-50 p-3 rounded-lg">
@@ -104,7 +108,7 @@ const IMDashboard = () => {
           <div className="flex justify-between items-start">
             <div>
               <p className="text-gray-500 text-sm mb-1">Low - Stock Items</p>
-              <h3 className="text-2xl font-bold text-gray-800">10 Items</h3>
+              <h3 className="text-2xl font-bold text-gray-800">{lowStock} Items</h3>
               <div className="flex items-center text-red-500 text-xs mt-1">
                 <FiAlertTriangle className="mr-1" />
                 <span className="font-medium">Critical Stock</span>
@@ -121,10 +125,10 @@ const IMDashboard = () => {
           <div className="flex justify-between items-start">
             <div>
               <p className="text-gray-500 text-sm mb-1">Pending Restocks</p>
-              <h3 className="text-2xl font-bold text-gray-800">8 Requests</h3>
+              <h3 className="text-2xl font-bold text-gray-800"> Requests</h3>
               <div className="flex items-center text-green-500 text-xs mt-1">
                 <FiTrendingUp className="mr-1" />
-                <span>+2 From Yesterday</span>
+                {/* <span>+2 From Yesterday</span> */}
               </div>
             </div>
             <div className="bg-blue-50 p-3 rounded-lg">
@@ -139,11 +143,11 @@ const IMDashboard = () => {
             <div>
               <p className="text-gray-500 text-sm mb-1">Total Sales</p>
               <h3 className="text-2xl font-bold text-gray-800">
-                3 Ongoing Transfers
+                 Ongoing Transfers
               </h3>
               <div className="flex items-center text-red-500 text-xs mt-1">
                 <FiTrendingDown className="mr-1" />
-                <span>4.3% Down from yesterday</span>
+                {/* <span>4.3% Down from yesterday</span> */}
               </div>
             </div>
             <div className="bg-purple-50 p-3 rounded-lg">
@@ -158,7 +162,7 @@ const IMDashboard = () => {
         <div className="flex justify-between items-center mb-2">
           <div>
             <h3 className="text-gray-800 font-semibold">Glory Star Hardware</h3>
-            <p className="text-xl font-bold">Total stocks: {total_stock}</p>
+            
           </div>
         </div>
 

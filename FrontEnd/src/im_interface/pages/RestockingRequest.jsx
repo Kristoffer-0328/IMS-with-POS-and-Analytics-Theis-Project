@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState ,useEffect} from 'react';
 import {
   FiTrendingDown,
   FiTrendingUp,
@@ -9,11 +9,41 @@ import {
   FiEye,
   FiPlus,
 } from 'react-icons/fi';
-
+import RestockRequestModal from '../components/Inventory/RequestStockModal';
+import { useServices } from '../../FirebaseBackEndQuerry/ProductServices';
 const RestockingRequest = () => {
   const [currentMonth, setCurrentMonth] = useState('October');
-
-  // Sample data for the summary cards
+  const [products, setProduct] = useState([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const { getData, fetchRestockRequests } = useServices(); 
+  const [request , setRequest] = useState([]);
+  
+   useEffect(() => {
+      const fetchData = async () => {
+        const res = await getData();  
+      
+        if (res.success) {
+          
+          setProduct(res.product);
+  
+        } else {
+          console.error('Failed to fetch products:', res.error);
+        }
+      };
+  
+      fetchData();
+    }, [getData]);
+    useEffect(() => {
+      const getRequests = async () => {
+        const res = await fetchRestockRequests();
+        if (res.success) {
+          setRequest(res.requests); // you handle the state here
+        }
+      };
+    
+      getRequests();
+    }, [fetchRestockRequests]);
+  
   const summaryData = {
     totalStock: {
       value: '2,940 Items',
@@ -68,19 +98,19 @@ const RestockingRequest = () => {
   // Render status badge based on status type
   const renderStatusBadge = (status) => {
     switch (status) {
-      case 'pending':
+      case 'Pending':
         return (
           <span className="px-4 py-1.5 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium">
             Pending
           </span>
         );
-      case 'approved':
+      case 'Approved':
         return (
           <span className="px-4 py-1.5 bg-green-100 text-green-800 rounded-full text-xs font-medium">
             Approved
           </span>
         );
-      case 'ordered':
+      case 'Ordered':
         return (
           <span className="px-4 py-1.5 bg-teal-100 text-teal-800 rounded-full text-xs font-medium">
             Ordered
@@ -94,13 +124,13 @@ const RestockingRequest = () => {
   // Render action button based on action status
   const renderActionButton = (actionStatus) => {
     switch (actionStatus) {
-      case 'pending':
+      case 'Pending':
         return (
           <button className="px-4 py-1.5 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium">
             Pending
           </button>
         );
-      case 'approved':
+      case 'Approved':
         return (
           <button className="px-4 py-1.5 bg-green-100 text-green-800 rounded-full text-xs font-medium">
             Approved
@@ -282,24 +312,37 @@ const RestockingRequest = () => {
                   Requested
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Month
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Requested Date
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Action
                 </th>
+               
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
-              {restockingRequests.map((request) => (
+              {request.map((request) => (
                 <tr key={request.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {request.productName}
+                    {request.Product}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {request.currentStock}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {request.requested}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {request.Month}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {request.createdAt}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {renderStatusBadge(request.status)}
@@ -319,12 +362,16 @@ const RestockingRequest = () => {
             <span>View Details</span>
           </button>
 
-          <button className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2">
+          <button className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
+          onClick={() => setIsModalOpen(true)}>
             <FiPlus size={16} />
             <span>New Request</span>
+            
           </button>
         </div>
       </div>
+      <RestockRequestModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+
     </div>
   );
 };
