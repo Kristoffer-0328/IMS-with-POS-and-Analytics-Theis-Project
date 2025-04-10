@@ -5,21 +5,22 @@ import InventoryTable from '../components/Inventory/InventoryTable';
 import InventoryFilters from '../components/Inventory/InventoryFilters';
 import AddProductModal from '../components/Inventory/AddProductPopUp';
 import { useServices } from '../../FirebaseBackEndQuerry/ProductServices';
-import { FiPlusCircle } from 'react-icons/fi';
-
+import { FiPlusCircle , FiUpload } from 'react-icons/fi';
+import ImportCVGModal from '../components/Inventory/ImportCVGModal';
 const Inventory = () => {
   const [products, setProduct] = useState([]);
   const [currentFilter, setCurrentFilter] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [currentMonth, setCurrentMonth] = useState('October');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportModalOpen, setImportIsModalOpen] = useState(false);
+  const { getData } = useServices(); 
 
-  const { getData } = useServices(); // ✅ use hook at top level
 
-  // 🔄 Fetch products on mount
   useEffect(() => {
     const fetchData = async () => {
-      const res = await getData();
+      const res = await getData();  
+    
       if (res.success) {
         
         setProduct(res.product);
@@ -32,16 +33,25 @@ const Inventory = () => {
     fetchData();
   }, [getData]);
 
-  // Example static fallback chartData (adjust if needed)
-  const chartData = products.map((p) => ({
-    name: p.name,
-    value: p.quantity,
-    color: '#4779FF',
-  }));
+
+  const chartData = products.map((p) => {
+    let color = '#4779FF'; 
+    if (p.quantity <= 40) {
+      color = '#FF4D4D'; 
+    } else if (p.quantity <= 60) {
+      color = '#FFC554'; 
+    }
+  
+    return {
+      name: p.name,
+      value: p.quantity,
+      color,
+    };
+  });
+  
 
   const getFilteredData = () => {
     let filtered = [...products];
-
     if (selectedCategory !== 'all') {
       filtered = filtered.filter((item) => item.category === selectedCategory);
     }
@@ -82,7 +92,7 @@ const Inventory = () => {
           <div>
             <h3 className="text-gray-800 font-semibold">Glory Star Hardware</h3>
             <p className="text-xl font-bold">
-            {products.reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0)}
+            Total Stock: {products.reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0)}
             </p>
           </div>
         </div>
@@ -94,6 +104,12 @@ const Inventory = () => {
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-gray-800 font-semibold">Inventory Table</h3>
           <div className="flex gap-4 relative">
+          <button
+              onClick={() => setImportIsModalOpen(true)}
+              className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2">
+              <FiUpload  size={18} />
+              <span>Import Excel</span>
+            </button>
             <button
               onClick={() => setIsModalOpen(true)}
               className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2">
@@ -112,6 +128,10 @@ const Inventory = () => {
         </div>
         <InventoryTable data={getFilteredData()} />
       </div>
+      <ImportCVGModal
+        isOpen={isImportModalOpen}
+        onClose={() => setImportIsModalOpen(false)}
+      />
       <AddProductModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
   );

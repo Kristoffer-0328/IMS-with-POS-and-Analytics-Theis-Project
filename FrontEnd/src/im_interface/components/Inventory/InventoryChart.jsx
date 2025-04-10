@@ -29,7 +29,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 const InventoryChart = ({ data }) => {
-  const lowStockThreshold = 50;
+  const lowStockThreshold = 60;
 
   return (
     <div className="w-full h-[280px] relative">
