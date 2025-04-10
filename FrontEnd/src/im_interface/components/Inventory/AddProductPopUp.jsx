@@ -66,8 +66,8 @@ const handleSubmit = (e) => {
     onClose(); 
   };
   return (
-    <div className="fixed inset-0 z-50 bg-white bg-opacity-50 flex justify-center items-center">
-      <div className="bg-white p-6 rounded-lg shadow-xl w-[90%] max-w-md relative">
+    <div className="fixed inset-0 z-50 backdrop-blur-md bg-white/30 flex justify-center items-center">
+      <div className="bg-white p-6 rounded-lg shadow-xl w-[100%] max-w-md relative">
         <button
           onClick={onClose}
           className="absolute top-3 right-4 text-xl text-gray-500 hover:text-red-500"

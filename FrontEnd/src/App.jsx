@@ -176,7 +176,9 @@ const App = () => {
               element={
                 <PrivateRoute allowedRoles={['InventoryManager']}>
                   <IMLayout>
+                  <ServicesProvider>
                     <IMDashboard />
+                  </ServicesProvider>
                   </IMLayout>
                 </PrivateRoute>
               }
@@ -198,7 +200,9 @@ const App = () => {
               element={
                 <PrivateRoute allowedRoles={['InventoryManager']}>
                   <IMLayout>
+                  <ServicesProvider>
                     <StockTransfer />
+                    </ServicesProvider>
                   </IMLayout>
                 </PrivateRoute>
               }
@@ -208,7 +212,9 @@ const App = () => {
               element={
                 <PrivateRoute allowedRoles={['InventoryManager']}>
                   <IMLayout>
+                  <ServicesProvider>
                     <RestockingRequest />
+                  </ServicesProvider>
                   </IMLayout>
                 </PrivateRoute>
               }

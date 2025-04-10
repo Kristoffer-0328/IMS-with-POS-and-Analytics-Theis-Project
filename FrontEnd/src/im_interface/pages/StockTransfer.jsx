@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FiTrendingDown,
   FiTrendingUp,
@@ -8,8 +8,29 @@ import {
   FiBell,
   FiPlusCircle,
 } from 'react-icons/fi';
+import { useServices } from '../../FirebaseBackEndQuerry/ProductServices';
+import TransferFormModal from '../components/Inventory/TransferFormModal';
 
 const StockTransfer = () => {
+  const [products, setProduct] = useState([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const { getData,  } = useServices(); 
+ useEffect(() => {
+    const fetchData = async () => {
+      const res = await getData();  
+    
+      if (res.success) {
+        
+        setProduct(res.product);
+
+      } else {
+        console.error('Failed to fetch products:', res.error);
+      }
+    };
+
+    fetchData();
+  }, [getData]);
+
   const summaryData = {
     totalStock: {
       value: '2,940 Items',
@@ -34,33 +55,33 @@ const StockTransfer = () => {
   };
 
   const movementLogs = [
-    {
-      id: 1,
-      productName: 'Hammer',
-      from: 'Receiving',
-      to: 'STR A1',
-      date: '12.05.23',
-      quantity: '50 pcs',
-      status: 'completed',
-    },
-    {
-      id: 2,
-      productName: 'Nails',
-      from: 'STR B2',
-      to: 'STR C1',
-      date: '09.20.23',
-      quantity: '100 pcs',
-      status: 'pending',
-    },
-    {
-      id: 3,
-      productName: 'Paint',
-      from: 'STR B1',
-      to: 'STR A1',
-      date: '12.31.23',
-      quantity: '50 pcs',
-      status: 'completed',
-    },
+    // {
+    //   id: 1,
+    //   productName: 'Hammer',
+    //   from: 'Receiving',
+    //   to: 'STR A1',
+    //   date: '12.05.23',
+    //   quantity: '50 pcs',
+    //   status: 'completed',
+    // },
+    // {
+    //   id: 2,
+    //   productName: 'Nails',
+    //   from: 'STR B2',
+    //   to: 'STR C1',
+    //   date: '09.20.23',
+    //   quantity: '100 pcs',
+    //   status: 'pending',
+    // },
+    // {
+    //   id: 3,
+    //   productName: 'Paint',
+    //   from: 'STR B1',
+    //   to: 'STR A1',
+    //   date: '12.31.23',
+    //   quantity: '50 pcs',
+    //   status: 'completed',
+    // },
   ];
 
   return (
@@ -98,13 +119,13 @@ const StockTransfer = () => {
               <div>
                 <p className="text-gray-500 text-sm mb-1">Total Stock</p>
                 <h3 className="text-2xl font-bold text-gray-800">
-                  {summaryData.totalStock.value}
+                  {/* {summaryData.totalStock.value} */}
                 </h3>
                 <div className="flex items-center text-red-500 text-xs mt-1">
                   <FiTrendingDown className="mr-1" />
                   <span>
-                    {Math.abs(summaryData.totalStock.change)}% Down from{' '}
-                    {summaryData.totalStock.period}
+                    {/* {Math.abs(summaryData.totalStock.change)}% Down from{' '}
+                    {summaryData.totalStock.period} */}
                   </span>
                 </div>
               </div>
@@ -180,19 +201,20 @@ const StockTransfer = () => {
           </div>
         </div>
       </div>
-
       {/* Stock Movement Log */}
       <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-semibold text-gray-800">
             Stock Movement Log
           </h2>
-          <button className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2">
+          <button
+            className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
+            onClick={() => setIsModalOpen(true)}
+          >
             <FiPlusCircle size={18} />
             <span>Transfer Form</span>
           </button>
         </div>
-
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -254,6 +276,7 @@ const StockTransfer = () => {
           </table>
         </div>
       </div>
+      <TransferFormModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
   );
 };

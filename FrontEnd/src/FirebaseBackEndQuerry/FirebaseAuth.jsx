@@ -8,11 +8,11 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 const AuthContext = createContext(null);
 
-/*const appCheck = initializeAppCheck(app, {
-  provider: new ReCaptchaV3Provider(import.meta.env.VITE_RECAPTCHA_SITE_KEY),
-  isTokenAutoRefreshEnabled: true
-});*/
-//console.log(appCheck);
+// const appCheck = initializeAppCheck(app, {
+//   provider: new ReCaptchaV3Provider(import.meta.env.VITE_RECAPTCHA_SITE_KEY),
+//   isTokenAutoRefreshEnabled: true
+// });
+// console.log(appCheck);
 
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(() => {
