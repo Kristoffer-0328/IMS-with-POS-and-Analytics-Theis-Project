@@ -6,6 +6,15 @@ import app from "../FirebaseConfig";
 const db = getFirestore(app);
 const ServicesContext = createContext(null);
 
+function isDateClose(date, thresholdDays = 3) {
+  const currentDate = new Date();
+  const targetDate = new Date(date);
+  const timeDifference = Math.abs(currentDate - targetDate);
+  const daysDifference = timeDifference / (1000 * 3600 * 24);
+  return daysDifference <= thresholdDays;
+}
+
+
 export const ServicesProvider = ({ children }) => {
   const [product, setProduct] = useState(() => {
     const savedProduct = localStorage.getItem('product');
@@ -19,6 +28,12 @@ export const ServicesProvider = ({ children }) => {
   
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
+        let status = data.Quantity < 60 ? "low-stock" : "in-stock";
+        if(isDateClose(data.ExpiringDate )){
+          status = "expiring-soon";
+        }
+        const action = status === "low-stock" ? "restock" : "view";
+        
         productArray.push({
           id: docSnap.id,
           name: data.ProductName,
@@ -27,8 +42,8 @@ export const ServicesProvider = ({ children }) => {
           unitprice: data.UnitPrice,
           totalvalue: data.TotalValue,
           location: data.Location,
-          status: data.Status,
-          action: data.Action,
+          status: status,
+          action: action,
           expiringDate: data.ExpiringDate || null
         });
       });

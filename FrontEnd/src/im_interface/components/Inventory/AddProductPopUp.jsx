@@ -8,9 +8,7 @@ const AddProductModal = ({ isOpen, onClose }) => {
   const [unitprice, setUnitPrice] = useState(1);
   const [storageRoom, setStorageRoom] = useState("STR A1");
   const [expiringDate, setExpiringDate] = useState("");
-  const [totalvalue, setTotalValue] = useState();
   const [status, setStatus] = useState();
-  const [action, setAction] = useState();
   const db = getFirestore(app);
 
   const storageOptions = [];
@@ -38,10 +36,6 @@ const AddProductModal = ({ isOpen, onClose }) => {
       // Reference to the storage room
       const total = quantity * unitprice;
       
-      const stats = quantity < 60 ? "low-stock" : "in-stock";
-      const act = status === "low-stock" ? "re-stock" : "view"
-      setStatus(stats)
-     
       const productRef = doc(db, "Products", product); 
       await setDoc(productRef, {
         ProductName: product,
@@ -50,8 +44,6 @@ const AddProductModal = ({ isOpen, onClose }) => {
         UnitPrice: unitprice,
         TotalValue: total,
         Location: storageRoom,
-        Status: status,
-        Action: act,
         ExpiringDate: expiringDate || null,
       });
       
@@ -68,6 +60,7 @@ const handleSubmit = (e) => {
     setProduct("");
     setCategory("Tools");
     setQuantity(1);
+    setUnitPrice(1);
     setStorageRoom("STR A1");
     setExpiringDate(""); // Optional, so it can be cleared
     onClose(); 
