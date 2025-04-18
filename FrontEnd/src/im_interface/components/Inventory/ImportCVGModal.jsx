@@ -2,14 +2,30 @@ import React, { useState } from "react";
 import { FiUpload } from "react-icons/fi";
 import Papa from 'papaparse';
 import app from "../../../FirebaseConfig";
-import { getFirestore, doc,writeBatch } from "firebase/firestore";
+import { getFirestore, doc, writeBatch, collection } from "firebase/firestore";
+import { useEffect } from "react";
 
 const ImportCVGModal = ({ isOpen, onClose }) => {
   const [file, setFile] = useState(null);
   const db = getFirestore(app);
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+  
+    if (isOpen) {
+      document.addEventListener("keydown", handleKeyDown);
+    }
+  
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
-
+ 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     if (selectedFile) {
@@ -46,33 +62,37 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
   };
   const saveMultipleProducts = async (products) => {
     try {
-      const batch = writeBatch(db); 
+      const batch = writeBatch(db);
   
       products.forEach((item) => {
-        const { ProductName, Category, Quantity, UnitPrice, Location, ExpiringDate } = item;
-        const total = Quantity * UnitPrice;
-        
-  
-        const productRef = doc(db, "Products", ProductName);
-        batch.set(productRef, {
-          ProductName,
-          Category,
-          Quantity,
-          UnitPrice,
-          TotalValue: total,
-          Location,
-          ExpiringDate: ExpiringDate || null,
-        });
+        // Create a cleaned object with optional number conversion
+        const cleanedItem = Object.fromEntries(
+          Object.entries(item).map(([key, value]) => {
+            if (value === undefined || value === null || value === "") return [key, null];
+            const num = parseFloat(value);
+            return [key, isNaN(num) ? value : num];
+          })
+        );
+        if (
+          cleanedItem.Quantity != null &&
+          cleanedItem.UnitPrice != null &&
+          !isNaN(cleanedItem.Quantity) &&
+          !isNaN(cleanedItem.UnitPrice)
+        ) {
+          cleanedItem.TotalValue = cleanedItem.Quantity * cleanedItem.UnitPrice;
+        }
+        console.log(cleanedItem.ProductName);
+        const productRef = doc(collection(db, "Products"), cleanedItem.ProductName);
+        batch.set(productRef, cleanedItem);
       });
   
       await batch.commit();
-      
       console.log("All products added successfully!");
-      console.log(products)
     } catch (error) {
-      console.error("Error adding multiple products: ", error.message);
+      console.error("Error adding products:", error.message);
     }
   };
+  
   return (
     <div className="fixed inset-0 z-50 backdrop-blur-md bg-white/30 flex justify-center items-center">
 
