@@ -51,6 +51,7 @@ export const AuthProvider = ({ children }) => {
   };
   
   
+  
 
   const logout = () => {
     setCurrentUser(null);

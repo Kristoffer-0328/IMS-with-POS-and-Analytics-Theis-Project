@@ -1,12 +1,13 @@
 // ProductServices.jsx
 import React, { createContext, useContext, useState } from 'react';
-import { getFirestore, collection, getDocs } from "firebase/firestore";
-import app from "../FirebaseConfig";
+import { getFirestore, collection, getDocs } from 'firebase/firestore';
+import app from '../FirebaseConfig';
 
 const db = getFirestore(app);
 const ServicesContext = createContext(null);
 
 function isDateClose(date, thresholdDays = 3) {
+  if (!date) return false;
   const currentDate = new Date();
   const targetDate = new Date(date);
   const timeDifference = Math.abs(currentDate - targetDate);
@@ -14,26 +15,27 @@ function isDateClose(date, thresholdDays = 3) {
   return daysDifference <= thresholdDays;
 }
 
-
 export const ServicesProvider = ({ children }) => {
   const [product, setProduct] = useState(() => {
-    const savedProduct = localStorage.getItem('product');
-    return savedProduct ? JSON.parse(savedProduct) : null;
+    const saved = localStorage.getItem('product');
+    return saved ? JSON.parse(saved) : [];
   });
 
   const getData = async () => {
     try {
-      const querySnapshot = await getDocs(collection(db, "Products"));
+      const querySnapshot = await getDocs(collection(db, 'Products'));
       const productArray = [];
-  
+
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        let status = data.Quantity < 60 ? "low-stock" : "in-stock";
-        if(isDateClose(data.ExpiringDate )){
-          status = "expiring-soon";
+
+        let status = data.Quantity < 60 ? 'low-stock' : 'in-stock';
+        if (isDateClose(data.ExpiringDate)) {
+          status = 'expiring-soon';
         }
-        const action = status === "low-stock" ? "restock" : "view";
-        
+
+        const action = status === 'low-stock' ? 'restock' : 'view';
+
         productArray.push({
           id: docSnap.id,
           name: data.ProductName,
@@ -42,28 +44,29 @@ export const ServicesProvider = ({ children }) => {
           unitprice: data.UnitPrice,
           totalvalue: data.TotalValue,
           location: data.Location,
-          status: status,
-          action: action,
-          expiringDate: data.ExpiringDate || null
+          status,
+          action,
+          expiringDate: data.ExpiringDate || null,
         });
       });
-  
+
       setProduct(productArray);
       localStorage.setItem('product', JSON.stringify(productArray));
-  
+
       return { success: true, product: productArray };
     } catch (error) {
-      console.error("Error fetching products: ", error);
+      console.error('Error fetching products:', error);
       return { success: false, error: 'Failed to fetch products' };
     }
   };
-  const fetchRestockRequests = async () => {  
+
+  const fetchRestockRequests = async () => {
     try {
-      const querySnapshot = await getDocs(collection(db, "StockRestocks"));
+      const querySnapshot = await getDocs(collection(db, 'StockRestocks'));
       const requestArray = [];
-  
+
       querySnapshot.forEach((docSnap) => {
-        const data = docSnap.data();  
+        const data = docSnap.data();
         requestArray.push({
           id: docSnap.id,
           Product: data.Product,
@@ -75,20 +78,40 @@ export const ServicesProvider = ({ children }) => {
           createdAt: data.CreatedAt || null,
         });
       });
-  
-      localStorage.setItem("restockRequests", JSON.stringify(requestArray));
-  
+
+      localStorage.setItem('restockRequests', JSON.stringify(requestArray));
+
       return { success: true, requests: requestArray };
     } catch (error) {
-      console.error("Error fetching restock requests: ", error.message);
-      return { success: false, error: "Failed to fetch restock requests" };
+      console.error('Error fetching restock requests:', error.message);
+      return { success: false, error: 'Failed to fetch restock requests' };
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const querySnapshot = await getDocs(collection(db, 'Categories'));
+      const categories = [];
+
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.name) {
+          categories.push(data.name);
+        }
+      });
+
+      return { success: true, categories };
+    } catch (error) {
+      console.error('Error fetching categories:', error.message);
+      return { success: false, error: 'Failed to fetch categories' };
     }
   };
 
   const value = {
     product,
     getData,
-    fetchRestockRequests
+    fetchRestockRequests,
+    fetchCategories,
   };
 
   return (
