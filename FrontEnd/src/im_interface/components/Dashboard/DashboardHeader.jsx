@@ -20,6 +20,7 @@ const DashboardHeader = () => {
             className="pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 w-44"
           />
           <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          
         </div>
 
         {/* Date picker */}

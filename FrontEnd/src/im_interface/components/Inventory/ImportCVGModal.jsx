@@ -2,7 +2,12 @@ import React, { useState, useEffect } from "react";
 import { FiUpload } from "react-icons/fi";
 import Papa from "papaparse";
 import app from "../../../FirebaseConfig";
-import { getFirestore, doc, writeBatch, collection } from "firebase/firestore";
+import {
+  getFirestore,
+  doc,
+  writeBatch,
+  collection,
+} from "firebase/firestore";
 
 const ImportCVGModal = ({ isOpen, onClose }) => {
   const [file, setFile] = useState(null);
@@ -65,7 +70,6 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
           })
         );
 
-        // Add TotalValue if Quantity and UnitPrice are valid
         if (
           cleanedItem.Quantity != null &&
           cleanedItem.UnitPrice != null &&
@@ -76,17 +80,23 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
             cleanedItem.Quantity * cleanedItem.UnitPrice;
         }
 
-        // Save product to Products collection
-        const productRef = doc(collection(db, "Products"), cleanedItem.ProductName);
+        
+        const categoryRef = doc(db, "Products", cleanedItem.Category);
+        batch.set(categoryRef, { name: cleanedItem.Category }, { merge: true });
+        
+        
+        const productRef = doc(
+          collection(db, "Products", cleanedItem.Category, "Items"),
+          cleanedItem.ProductName
+        );
         batch.set(productRef, cleanedItem);
 
-        // Collect unique categories
         if (cleanedItem.Category) {
           categorySet.add(cleanedItem.Category);
         }
       });
 
-      // Add categories as documents under Categories collection
+      
       categorySet.forEach((categoryName) => {
         const categoryRef = doc(collection(db, "Categories"), categoryName);
         batch.set(categoryRef, { name: categoryName });

@@ -1,6 +1,10 @@
 // ProductServices.jsx
 import React, { createContext, useContext, useState } from 'react';
-import { getFirestore, collection, getDocs } from 'firebase/firestore';
+import {
+  getFirestore,
+  collection,
+  getDocs,
+} from 'firebase/firestore';
 import app from '../FirebaseConfig';
 
 const db = getFirestore(app);
@@ -23,42 +27,56 @@ export const ServicesProvider = ({ children }) => {
 
   const getData = async () => {
     try {
-      const querySnapshot = await getDocs(collection(db, 'Products'));
       const productArray = [];
-
-      querySnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-
-        let status = data.Quantity < 60 ? 'low-stock' : 'in-stock';
-        if (isDateClose(data.ExpiringDate)) {
-          status = 'expiring-soon';
-        }
-
-        const action = status === 'low-stock' ? 'restock' : 'view';
-
-        productArray.push({
-          id: docSnap.id,
-          name: data.ProductName,
-          category: data.Category,
-          quantity: data.Quantity,
-          unitprice: data.UnitPrice,
-          totalvalue: data.TotalValue,
-          location: data.Location,
-          status,
-          action,
-          expiringDate: data.ExpiringDate || null,
+  
+      const categoriesSnapshot = await getDocs(collection(db, "Products"));
+  
+   
+      const categoryPromises = categoriesSnapshot.docs.map(async (categoryDoc) => {
+        const category = categoryDoc.id;
+        
+        const itemsSnapshot = await getDocs(collection(db, "Products", category, "Items"));
+  
+        itemsSnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+        
+  
+          let status = data.Quantity < 60 ? "low-stock" : "in-stock";
+          if (isDateClose(data.ExpiringDate)) {
+            status = "expiring-soon";
+          }
+  
+          const action = status === "low-stock" ? "restock" : "view";
+  
+          productArray.push({
+            id: docSnap.id,
+            name: data.ProductName,
+            category,
+            quantity: data.Quantity,
+            unitprice: data.UnitPrice,
+            totalvalue: data.TotalValue,
+            location: data.Location,
+            status,
+            action,
+            expiringDate: data.ExpiringDate || null,
+          });
         });
       });
-
+  
+      // Wait for all categories to finish processing
+      await Promise.all(categoryPromises);
+  
       setProduct(productArray);
-      localStorage.setItem('product', JSON.stringify(productArray));
-
+      localStorage.setItem("product", JSON.stringify(productArray));
+  
       return { success: true, product: productArray };
     } catch (error) {
-      console.error('Error fetching products:', error);
-      return { success: false, error: 'Failed to fetch products' };
+      console.error("Error fetching products:", error);
+      return { success: false, error: "Failed to fetch products" };
     }
   };
+  
+  
 
   const fetchRestockRequests = async () => {
     try {

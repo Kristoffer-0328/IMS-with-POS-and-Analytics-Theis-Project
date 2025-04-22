@@ -16,16 +16,21 @@ const Login = () => {
 
     try {
       const result = await login(email, password);
-      if (result.success) {
-        // Navigate based on role
-        if (result.user.role === "Admin") {
-          navigate('/admin');
-        } else if (result.user.role === 'InventoryManager') {
-          navigate('/im');
+      const randomTime = Math.floor(Math.random() * (7 - 3 + 1)) + 3;
+      navigate('/loading');
+      setTimeout(function () { 
+        if (result.success) {
+        
+          if (result.user.role === "Admin") {
+            navigate('/admin');
+          } else if (result.user.role === 'InventoryManager') {
+            navigate('/im');
+          }
+        } else {
+          setError('Invalid credentials');
         }
-      } else {
-        setError('Invalid credentials');
-      }
+    }, randomTime * 1000); 
+      
     } catch (err) {
       setError('Failed to log in');
       
@@ -107,23 +112,6 @@ const Login = () => {
           </form>
         </div>
       </div>
-
-      {/* CSS for the geometric pattern */}
-      <style jsx>{`
-        .clip-geometric-pattern {
-          clip-path: polygon(
-            0 0,
-            100% 0,
-            100% 100%,
-            85% 100%,
-            70% 85%,
-            55% 100%,
-            40% 85%,
-            25% 100%,
-            0 85%
-          );
-        }
-      `}</style>
     </div>
   );
 };

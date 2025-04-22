@@ -80,9 +80,12 @@ const AddProductModal = ({ isOpen, onClose }) => {
   const handleAddCategory = async () => {
     if (!newCategory.trim()) return;
     try {
-      await addDoc(collection(db, "Categories"), { name: newCategory });
+      const categoryRef = doc(db, "Categories", newCategory);
+      await setDoc(categoryRef, {
+        name: newCategory,
+      });
       setNewCategory("");
-      const querySnapshot = await getDocs(collection(db, "Categories", newCategory));
+      const querySnapshot = await getDocs(collection(db, "Categories"));
       const cats = querySnapshot.docs.map((doc) => ({
         ...doc.data(),
       }));
@@ -108,12 +111,15 @@ const AddProductModal = ({ isOpen, onClose }) => {
   const saveData = async () => {
     try {
       const total = quantity * unitprice;
-      const productRef = doc(db, "Products", product);
+      const productRef = doc(db, "Products", category);
+      const categoryRef = doc(productRef, "Items", product);
+   
       const additionalData = additionalFields.reduce((acc, field) => {
         acc[field.name] = field.value;
         return acc;
       }, {});
-      await setDoc(productRef, {
+
+      await setDoc(categoryRef, {
         ProductName: product,
         Category: category,
         Quantity: quantity,
@@ -123,6 +129,7 @@ const AddProductModal = ({ isOpen, onClose }) => {
         ExpiringDate: expiringDate || null,
         ...additionalData,
       });
+      alert("Product Added Successfully!");
       console.log("Product added successfully!");
     } catch (error) {
       console.error("Error adding product: ", error.message);
@@ -163,7 +170,7 @@ const AddProductModal = ({ isOpen, onClose }) => {
           <div>
             <label className="block text-sm">Category</label>
             <select
-              value={category}
+              value={newCategory}
               onChange={(e) => setCategory(e.target.value)}
               className="w-full border p-2 rounded-lg"
             >

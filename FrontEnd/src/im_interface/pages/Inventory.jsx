@@ -25,6 +25,7 @@ const Inventory = () => {
     
       if (res.success) {
         setProduct(res.product);
+        
       } else {
         console.error('Failed to fetch products:', res.error);
       }
