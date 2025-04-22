@@ -1,32 +1,77 @@
-import React, { createContext, useContext, useState } from 'react';
-import {getAuth, signInWithEmailAndPassword} from "firebase/auth"
-import { Firestore, getFirestore ,doc, getDoc} from "firebase/firestore";
-import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  onAuthStateChanged,
+  signOut
+} from 'firebase/auth';
+import {
+  getFirestore,
+  doc,
+  getDoc
+} from 'firebase/firestore';
 import app from '../FirebaseConfig';
 
 const db = getFirestore(app);
 const auth = getAuth(app);
 const AuthContext = createContext(null);
 
-// const appCheck = initializeAppCheck(app, {
-//   provider: new ReCaptchaV3Provider(import.meta.env.VITE_RECAPTCHA_SITE_KEY),
-//   isTokenAutoRefreshEnabled: true
-// });
-// console.log(appCheck);
-
 export const AuthProvider = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState(() => {
-    const savedUser = localStorage.getItem('user');
-    return savedUser ? JSON.parse(savedUser) : null;
-  });
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loading, setLoading] = useState(true);  // Initially set loading to true
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('onAuthStateChanged triggered'); // Debugging
+
+      setLoading(true);  // Set loading to true while checking user
+
+      try {
+        if (user) {
+          const docRef = doc(db, 'User', user.uid);
+          const docSnap = await getDoc(docRef);
+
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            const userData = {
+              email: data.email,
+              role: data.role,
+              name: data.name,
+              avatar: data.avatar,
+            };
+
+            setCurrentUser(userData);
+            localStorage.setItem('isAuthenticated', 'true');
+            localStorage.setItem('userRole', data.role);
+            localStorage.setItem('user', JSON.stringify(userData));
+          } else {
+            console.error('User data not found in Firestore');
+          }
+        } else {
+          setCurrentUser(null);
+          localStorage.removeItem('isAuthenticated');
+          localStorage.removeItem('userRole');
+          localStorage.removeItem('user');
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      } finally {
+        console.log('Finally block triggered');
+        setLoading(false);  // Always set loading to false after the async operation
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const login = async (email, password) => {
     try {
+      setLoading(true); // Set loading to true on login request
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
-      const docRef = doc(db, "User", user.uid);
+      const docRef = doc(db, 'User', user.uid);
       const docSnap = await getDoc(docRef);
-  
+
       if (docSnap.exists()) {
         const data = docSnap.data();
         const userData = {
@@ -35,38 +80,37 @@ export const AuthProvider = ({ children }) => {
           name: data.name,
           avatar: data.avatar,
         };
-        console.log(data.role);
+
         setCurrentUser(userData);
         localStorage.setItem('isAuthenticated', 'true');
         localStorage.setItem('userRole', data.role);
         localStorage.setItem('user', JSON.stringify(userData));
-  
+        
+        setLoading(false);  
         return { success: true, user: userData };
       } else {
+        setLoading(false);  // Make sure to set loading false in case of failure
         return { success: false, error: 'User not found in database' };
       }
     } catch (error) {
+      setLoading(false);  // Make sure to set loading false in case of error
       return { success: false, error: 'Invalid credentials' };
     }
   };
-  
-  
 
-  const logout = () => {
+  const logout = async () => {
+    await signOut(auth);
     setCurrentUser(null);
-    localStorage.removeItem('isAuthenticated', 'false');
+    localStorage.removeItem('isAuthenticated');
     localStorage.removeItem('userRole');
     localStorage.removeItem('user');
   };
 
-  const value = {
-    currentUser,
-    login,
-    logout,
-    isAuthenticated: !!currentUser,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ currentUser, login, logout, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
 };
 
 export const useAuth = () => {

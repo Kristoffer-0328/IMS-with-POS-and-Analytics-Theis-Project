@@ -1,12 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import app from "../../../FirebaseConfig";
 import { getFirestore, addDoc, collection } from "firebase/firestore";
+import { useServices } from "../../../FirebaseBackEndQuerry/ProductServices";
 
 export const TransferFormModal = ({ isOpen, onClose }) => {
   const db = getFirestore(app);
+  const { getData } = useServices();
 
+  const [products, setProducts] = useState([]);
   const [productName, setProductName] = useState("");
-  const [fromRoom, setFromRoom] = useState("STR A1"); // could be auto-filled
+  const [fromRoom, setFromRoom] = useState("STR A1");
   const [toRoom, setToRoom] = useState("STR B1");
   const [quantity, setQuantity] = useState(1);
 
@@ -18,7 +21,24 @@ export const TransferFormModal = ({ isOpen, onClose }) => {
     }
   }
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const res = await getData();
+        if (res.success) {
+          setProducts(res.product);
+        } else {
+          console.error("Failed to fetch products:", res.error);
+        }
+      } catch (error) {
+        console.error("Error fetching products:", error.message);
+      }
+    };
+
+    if (isOpen) {
+      fetchProducts();
+    }
+  }, [isOpen, getData]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -36,7 +56,6 @@ export const TransferFormModal = ({ isOpen, onClose }) => {
       const docRef = await addDoc(collection(db, "StockTransfers"), newTransfer);
       console.log("Transfer created with ID: ", docRef.id);
 
-      // TODO: You can generate a QR code here based on docRef.id
       alert("Transfer Form Submitted. QR Code will be generated next.");
       onClose();
     } catch (error) {
@@ -44,9 +63,10 @@ export const TransferFormModal = ({ isOpen, onClose }) => {
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-50 backdrop-blur-md bg-white/30 flex justify-center items-center">
-
       <div className="bg-white p-6 rounded-lg shadow-xl w-[90%] max-w-md relative">
         <button
           onClick={onClose}
@@ -60,13 +80,19 @@ export const TransferFormModal = ({ isOpen, onClose }) => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm">Product Name</label>
-            <input
-              type="text"
+            <select
               value={productName}
               onChange={(e) => setProductName(e.target.value)}
               className="w-full border p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
               required
-            />
+            >
+              <option value="">-- Select Product --</option>
+              {products.map((product) => (
+                <option key={product.id} value={product.name}>
+                  {product.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -83,6 +109,7 @@ export const TransferFormModal = ({ isOpen, onClose }) => {
               ))}
             </select>
           </div>
+
           <div>
             <label className="block text-sm">To</label>
             <select
