@@ -8,9 +8,9 @@ import {
   Tooltip,
   ResponsiveContainer,
   Cell,
-  LabelList,
 } from 'recharts';
 
+// Fixed-position custom tooltip above bar
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     return (
@@ -28,10 +28,11 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
+
 const DashboardBarChart = ({ data }) => {
   return (
     <div className="w-full h-[280px] relative">
-      {/* Orange gradient background */}
+      {/* Background Effects */}
       <div className="absolute inset-0 rounded-xl overflow-hidden">
         <div className="absolute inset-0 bg-[#FFEFD7] opacity-50"></div>
         <div className="absolute inset-y-0 left-1/4 w-1/2 bg-gradient-to-br from-amber-100/80 to-orange-50/40 transform rotate-12 translate-y-10 rounded-full blur-3xl"></div>
@@ -45,7 +46,8 @@ const DashboardBarChart = ({ data }) => {
           data={data}
           margin={{ top: 25, right: 20, left: 20, bottom: 30 }}
           barSize={18}
-          className="z-10 relative">
+          className="z-10 relative"
+        >
           <CartesianGrid
             strokeDasharray="3 3"
             vertical={false}
@@ -69,20 +71,16 @@ const DashboardBarChart = ({ data }) => {
           />
           <Tooltip
             content={<CustomTooltip />}
+            position={{ y: 0 }} // disable cursor following
             cursor={{ fill: 'rgba(0, 0, 0, 0.04)' }}
+            wrapperStyle={{ pointerEvents: 'none' }} // make sure it doesn't interfere with hover
           />
           <Bar
             dataKey="value"
             radius={[4, 4, 0, 0]}
             animationDuration={1500}
             animationEasing="ease-in-out"
-            label={{
-              position: 'top',
-              fill: '#666',
-              fontSize: 10,
-              formatter: (value) => (value > 100 ? value : ''),
-              dy: -6,
-            }}>
+          >
             {data.map((entry, index) => (
               <Cell
                 key={`cell-${index}`}

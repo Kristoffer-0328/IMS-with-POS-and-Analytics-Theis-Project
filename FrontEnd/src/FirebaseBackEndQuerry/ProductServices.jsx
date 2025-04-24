@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState } from 'react';
 import {
   getFirestore,
   collection,
+  onSnapshot,
   getDocs,
 } from 'firebase/firestore';
 import app from '../FirebaseConfig';
@@ -25,55 +26,63 @@ export const ServicesProvider = ({ children }) => {
     return saved ? JSON.parse(saved) : [];
   });
 
-  const getData = async () => {
-    try {
-      const productArray = [];
+  const listenToProducts = (onUpdate) => {
+    const categoryListeners = new Map(); // track unsubscribe functions
+    const allProducts = new Map(); // store per-category product arrays
   
-      const categoriesSnapshot = await getDocs(collection(db, "Products"));
-  
-   
-      const categoryPromises = categoriesSnapshot.docs.map(async (categoryDoc) => {
+    const unsubscribeCategories = onSnapshot(collection(db, "Products"), (categoriesSnapshot) => {
+      categoriesSnapshot.forEach((categoryDoc) => {
         const category = categoryDoc.id;
-        
-        const itemsSnapshot = await getDocs(collection(db, "Products", category, "Items"));
   
-        itemsSnapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-        
+        // If already listening to this category, skip
+        if (categoryListeners.has(category)) return;
   
-          let status = data.Quantity < 60 ? "low-stock" : "in-stock";
-          if (isDateClose(data.ExpiringDate)) {
-            status = "expiring-soon";
-          }
+        const unsubscribeItems = onSnapshot(collection(db, "Products", category, "Items"), (itemsSnapshot) => {
+          const products = [];
   
-          const action = status === "low-stock" ? "restock" : "view";
+          itemsSnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
   
-          productArray.push({
-            id: docSnap.id,
-            name: data.ProductName,
-            category,
-            quantity: data.Quantity,
-            unitprice: data.UnitPrice,
-            totalvalue: data.TotalValue,
-            location: data.Location,
-            status,
-            action,
-            expiringDate: data.ExpiringDate || null,
+            let status = data.Quantity < 60 ? "low-stock" : "in-stock";
+            if (isDateClose(data.ExpiringDate)) {
+              status = "expiring-soon";
+            }
+  
+            const action = "view";
+  
+            products.push({
+              id: docSnap.id,
+              name: data.ProductName,
+              category,
+              quantity: data.Quantity,
+              unitprice: data.UnitPrice,
+              totalvalue: data.TotalValue,
+              location: data.Location,
+              status,
+              action,
+              expiringDate: data.ExpiringDate || null,
+            });
           });
+  
+          // Save to the full map
+          allProducts.set(category, products);
+  
+          // Merge all product arrays from all categories
+          const mergedProducts = Array.from(allProducts.values()).flat();
+  
+          localStorage.setItem("product", JSON.stringify(mergedProducts));
+          onUpdate(mergedProducts);
         });
+  
+        // Track the unsubscribe function
+        categoryListeners.set(category, unsubscribeItems);
       });
+    });
   
-      // Wait for all categories to finish processing
-      await Promise.all(categoryPromises);
-  
-      setProduct(productArray);
-      localStorage.setItem("product", JSON.stringify(productArray));
-  
-      return { success: true, product: productArray };
-    } catch (error) {
-      console.error("Error fetching products:", error);
-      return { success: false, error: "Failed to fetch products" };
-    }
+    return () => {
+      unsubscribeCategories();
+      categoryListeners.forEach((unsub) => unsub());
+    };
   };
   
   
@@ -98,7 +107,6 @@ export const ServicesProvider = ({ children }) => {
       });
 
       localStorage.setItem('restockRequests', JSON.stringify(requestArray));
-
       return { success: true, requests: requestArray };
     } catch (error) {
       console.error('Error fetching restock requests:', error.message);
@@ -127,7 +135,7 @@ export const ServicesProvider = ({ children }) => {
 
   const value = {
     product,
-    getData,
+    listenToProducts,
     fetchRestockRequests,
     fetchCategories,
   };

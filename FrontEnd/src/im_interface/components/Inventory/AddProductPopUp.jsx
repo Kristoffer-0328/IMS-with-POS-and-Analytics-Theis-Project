@@ -153,8 +153,17 @@ const AddProductModal = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-50 backdrop-blur-md bg-white/30 flex justify-center items-center">
-      <form onSubmit={handleSubmit} className="bg-white space-y-4 p-10 max-w-lg w-full shadow-lg rounded-2xl">
-        
+      <form onSubmit={handleSubmit} className="relative bg-white space-y-4 p-10 max-w-lg w-full shadow-lg rounded-2xl">
+
+        <div className="absolute top-3 right-4 text-xl text-gray-500 hover:text-red-500">
+          <button
+          onClick={onClose}
+          
+        >
+          ✕
+        </button>
+        </div>
+      
         <div className=" grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm">Product Name</label>
@@ -224,8 +233,8 @@ const AddProductModal = ({ isOpen, onClose }) => {
             <input
               type="number"
               value={quantity}
-              onChange={(e) => setQuantity(Number(e.target.value))}
-              min={0}
+              onChange={(e) => setQuantity(parseInt(e.target.value))}
+              min={1}
               className="w-full border p-2 rounded-lg"
               required
             />
@@ -236,7 +245,7 @@ const AddProductModal = ({ isOpen, onClose }) => {
             <input
               type="number"
               value={unitprice}
-              onChange={(e) => setUnitPrice(Number(e.target.value))}
+              onChange={(e) => setUnitPrice(parseInt(e.target.value))}
               min={0}
               className="w-full border p-2 rounded-lg"
               required

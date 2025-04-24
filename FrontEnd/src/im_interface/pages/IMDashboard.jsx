@@ -14,35 +14,15 @@ import { useServices } from '../../FirebaseBackEndQuerry/ProductServices';
 
 const IMDashboard = () => {
   const [currentMonth, setCurrentMonth] = useState('October');
-  const { getData } = useServices(); 
+  const { listenToProducts } = useServices(); 
   const [products, setProduct] = useState([]);
   const [lowStock, setLowstock] = useState([]);
   
    useEffect(() => {
-      const fetchData = async () => {
-        const res = await getData();  
-      
-        if (res.success) {
-          
-          setProduct(res.product);
-  
-        } else {
-          console.error('Failed to fetch products:', res.error);
-        }
-      };
-      let items =[];
-      products.forEach(e => {
-        if(e.quantity <= 60) {
-
-          items.push(e.size);
-        }
-      });
-      
-      
-      fetchData();
-      setLowstock(items.size);
-    }, [getData]);
-  
+      const unsubscribe = listenToProducts(setProduct);
+      return () => unsubscribe();
+    }, []);
+    
   
     const chartData = products.map((p) => {
       let color = '#4779FF'; 
@@ -77,7 +57,7 @@ const IMDashboard = () => {
     'November',
     'December',
   ];
-  const total_stock = 2940;
+  
 
   return (
     <div className="w-full max-w-[1600px] mx-auto p-6 bg-gray-50">
