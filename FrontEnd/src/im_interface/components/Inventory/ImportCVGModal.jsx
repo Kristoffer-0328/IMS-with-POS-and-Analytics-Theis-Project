@@ -34,7 +34,13 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
     e.preventDefault();
 
     if (!file) {
-      alert("Please select a CSV or Excel file.");
+      alert("Please select a file.");
+      return;
+    }
+
+    // Validate if the file is a CSV
+    if (file.type !== "text/csv") {
+      alert("Please select a valid CSV file.");
       return;
     }
 
@@ -42,7 +48,7 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
-        alert(`Imported: ` + file.name);
+        alert(`Imported: ${file.name}`);
         saveMultipleProducts(results.data);
       },
       error: (err) => {
@@ -53,61 +59,102 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
 
     setFile(null);
     onClose();
-  };
+};
 
-  const saveMultipleProducts = async (products) => {
-    try {
-      const batch = writeBatch(db);
-      const categorySet = new Set();
+const saveMultipleProducts = async (products) => {
+  try {
+    const batch = writeBatch(db);
+    const categorySet = new Set();
 
-      products.forEach((item) => {
-        const cleanedItem = Object.fromEntries(
-          Object.entries(item).map(([key, value]) => {
-            if (value === undefined || value === null || value === "")
-              return [key, null];
-            const num = parseFloat(value);
-            return [key, isNaN(num) ? value : num];
-          })
-        );
+    // To track existing products and variants
+    const productVariants = new Map();
 
-        if (
-          cleanedItem.Quantity != null &&
-          cleanedItem.UnitPrice != null &&
-          !isNaN(cleanedItem.Quantity) &&
-          !isNaN(cleanedItem.UnitPrice)
-        ) {
-          cleanedItem.TotalValue =
-            cleanedItem.Quantity * cleanedItem.UnitPrice;
-        }
+    products.forEach((item) => {
+      // Clean up the item: Set undefined or empty fields to null
+      const cleanedItem = Object.fromEntries(
+        Object.entries(item).map(([key, value]) => {
+          if (value === undefined || value === null || value === "") {
+            return [key, null]; // Replace undefined or empty values with null
+          }
+          const num = parseFloat(value);
+          return [key, isNaN(num) ? value : num];
+        })
+      );
 
-        
-        const categoryRef = doc(db, "Products", cleanedItem.Category);
-        batch.set(categoryRef, { name: cleanedItem.Category }, { merge: true });
-        
-        
-        const productRef = doc(
-          collection(db, "Products", cleanedItem.Category, "Items"),
-          cleanedItem.ProductName
-        );
-        batch.set(productRef, cleanedItem);
+      // Log the cleaned data for inspection
+      console.log("Cleaned Item:", cleanedItem);
 
-        if (cleanedItem.Category) {
-          categorySet.add(cleanedItem.Category);
-        }
-      });
+      // Ensure required fields are not null or undefined
+      if (
+        !cleanedItem.ProductName ||
+        !cleanedItem.Category ||
+        cleanedItem.Quantity == null ||
+        cleanedItem.UnitPrice == null
+      ) {
+        console.error("Skipping product due to missing required fields:", cleanedItem);
+        return; // Skip this product if essential fields are missing
+      }
 
-      
-      categorySet.forEach((categoryName) => {
-        const categoryRef = doc(collection(db, "Categories"), categoryName);
-        batch.set(categoryRef, { name: categoryName });
-      });
+      // Handle product variants (group them by ProductName and Size)
+      const productName = cleanedItem.ProductName;
+      const size = cleanedItem.Size; // Variant size can be used to distinguish
 
-      await batch.commit();
-      console.log("All products and categories added successfully!");
-    } catch (error) {
-      console.error("Error adding products and categories:", error.message);
-    }
-  };
+      // Create a unique product ID combining ProductName and Size
+      const productVariantID = `${productName}${size}`;
+
+      if (!productVariants.has(productVariantID)) {
+        productVariants.set(productVariantID, {
+          ProductName: cleanedItem.ProductName,
+          Category: cleanedItem.Category,
+          Location: cleanedItem.Location ?? null, 
+          variants: [],
+          Quantity: 0,
+        });
+      }
+
+      // Add variant details
+      const product = productVariants.get(productVariantID);
+      const variant = {
+        size: cleanedItem.Size ?? null,
+        length: cleanedItem.LengthPerUnit ?? null,
+        unit: cleanedItem.Unit ?? null,
+        quantity: cleanedItem.Quantity ?? null,
+        unitPrice: cleanedItem.UnitPrice ?? null,
+      };      
+      product.variants.push(variant);
+
+      // Calculate total quantity for the product
+      product.Quantity += cleanedItem.Quantity;
+
+      // Handle category reference
+      const categoryRef = doc(db, "Products", cleanedItem.Category);
+      batch.set(categoryRef, { name: cleanedItem.Category }, { merge: true });
+
+      // Handle the product reference (with variants)
+      const productRef = doc(
+        collection(db, "Products", cleanedItem.Category, "Items"),
+        productVariantID // Unique document ID for each variant
+      );
+      batch.set(productRef, product);
+
+      // Track categories for batch commit
+      categorySet.add(cleanedItem.Category);
+    });
+
+    // Commit categories
+    categorySet.forEach((categoryName) => {
+      const categoryRef = doc(collection(db, "Categories"), categoryName);
+      batch.set(categoryRef, { name: categoryName });
+    });
+
+    // Commit all the changes in batch
+    await batch.commit();
+    console.log("All products and categories added successfully!");
+  } catch (error) {
+    console.error("Error adding products and categories:", error.message);
+  }
+};
+
 
   return (
     <div className="fixed inset-0 z-50 backdrop-blur-md bg-white/30 flex justify-center items-center">

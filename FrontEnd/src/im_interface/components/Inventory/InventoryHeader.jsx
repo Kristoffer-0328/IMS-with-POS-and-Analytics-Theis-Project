@@ -6,15 +6,6 @@ const InventoryHeader = () => {
     <div className="flex justify-between items-center mb-6">
       <h1 className="text-2xl font-bold text-gray-800">Inventory</h1>
       <div className="flex items-center gap-4">
-        <div className="relative hidden md:block">
-          <input
-            type="text"
-            placeholder="Search inventory..."
-            className="pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 w-64"
-          />
-          <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-        </div>
-
         <button className="relative p-2 text-gray-500 hover:text-gray-700">
           <FiBell size={20} />
           <span className="absolute top-0 right-0 w-4 h-4 flex items-center justify-center bg-red-500 text-white text-xs rounded-full">

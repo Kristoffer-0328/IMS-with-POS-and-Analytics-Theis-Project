@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiFilter } from 'react-icons/fi';
-
+import { getDocs, collection ,getFirestore} from 'firebase/firestore'; // Assuming you're using Firebase
+import app from '../../../FirebaseConfig';
+const db = getFirestore(app);
 const InventoryFilters = ({
   currentFilter,
   setCurrentFilter,
@@ -13,14 +15,27 @@ const InventoryFilters = ({
   selectedMonth, // Added for Months filter
   setSelectedMonth, // Added for Months filter
 }) => {
-  const categories = [
-    'all',
-    'Tools',
-    'Building',
-    'Finishing',
-    'Electrical',
-    'Plumbing',
-  ];
+  const [categories, setCategories] = useState([]);
+  const [category, setCategory] = useState("");
+
+  // Fetch Categories from Firestore
+  const fetchCategories = async () => {
+    const querySnapshot = await getDocs(collection(db, "Categories"));
+    const fetchedCategories = querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      name: doc.name,
+      ...doc.data(),
+    }));
+    setCategories(fetchedCategories);
+    if (fetchedCategories.length && !category) {
+      setCategory(fetchedCategories[0].name); // Default to first category
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+    console.log(category)
+  }, []);
 
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June', 'July', 
@@ -29,11 +44,9 @@ const InventoryFilters = ({
 
   return (
     <div className="flex flex-col sm:flex-row gap-3 mt-4 md:mt-0">
-      <div className="flex items-center gap-2"> 
-        <span className="text-gray-600 text-sm whitespace-nowrap">
-          Chart:
-        </span>
-        <div className='relative'>
+      <div className="flex items-center gap-2">
+        <span className="text-gray-600 text-sm whitespace-nowrap">Chart:</span>
+        <div className="relative">
           <select
             className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 min-w-[120px]"
             value={selectedChart}
@@ -51,10 +64,7 @@ const InventoryFilters = ({
 
       {/* Conditional Filter Rendering */}
       <div className="flex items-center gap-2">
-        <span className="text-gray-600 text-sm whitespace-nowrap">
-          Filter By:
-        </span>
-        
+        <span className="text-gray-600 text-sm whitespace-nowrap">Filter By:</span>
         <div className="relative">
           {/* Show current filter for Stock Level */}
           {selectedChart === 'Stock Level' && (
@@ -92,9 +102,7 @@ const InventoryFilters = ({
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-gray-600 text-sm whitespace-nowrap">
-          Category:
-        </span>
+        <span className="text-gray-600 text-sm whitespace-nowrap">Category:</span>
         <div className="relative">
           <select
             className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 min-w-[120px]"
@@ -102,9 +110,9 @@ const InventoryFilters = ({
             onChange={(e) => setSelectedCategory(e.target.value)}
           >
             <option value="all">All Categories</option>
-            {categories.slice(1).map((category) => (
-              <option key={category} value={category}>
-                {category}
+            {categories.map((category) => (
+              <option key={category.id} value={category.name}>
+                {category.name}
               </option>
             ))}
           </select>
@@ -125,9 +133,7 @@ const InventoryFilters = ({
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-gray-600 text-sm whitespace-nowrap">
-          Storage Room:
-        </span>
+        <span className="text-gray-600 text-sm whitespace-nowrap">Storage Room:</span>
         <div className="relative">
           <select
             className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 min-w-[120px]"

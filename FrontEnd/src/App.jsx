@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+
 import {
   BrowserRouter as Router,
   Routes,
@@ -41,14 +42,24 @@ const AdminLayout = ({ children }) => (
   </div>
 );
 
-const IMLayout = ({ children }) => (
-  <div className="flex min-h-screen w-full bg-gray-50">
-    <IMSidebar />
-    <main id="content" className="flex-1 transition-all duration-300 ml-[250px]">
-      <div className="p-6">{children}</div>
-    </main>
-  </div>
-);
+const IMLayout = ({ children }) => {
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <div className="flex min-h-screen w-full bg-gray-50">
+      <IMSidebar collapsed={collapsed} setCollapsed={setCollapsed} />
+      {console.log("Sidebar collapsed:", collapsed)}
+      <main
+        id="content"
+        className={`flex-1 transition-all duration-300
+          ${collapsed ? 'ml-0 sm:ml-[70px]' : 'ml-0 sm:ml-[250px]'}
+        `}
+      >
+        <div className="p-6">{children}</div>
+      </main>
+    </div>
+  );
+};
 
 // Access Control Wrapper
 const ProtectedRoute = ({ allowedRole, layout: Layout, children }) => {

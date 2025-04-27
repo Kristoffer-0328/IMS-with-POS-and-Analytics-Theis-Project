@@ -6,7 +6,7 @@ import InventoryTable from '../components/Inventory/InventoryTable';
 import InventoryFilters from '../components/Inventory/InventoryFilters';
 import AddProductModal from '../components/Inventory/AddProductPopUp';
 import { useServices } from '../../FirebaseBackEndQuerry/ProductServices';
-import { FiPlusCircle, FiUpload } from 'react-icons/fi';
+import { FiPlusCircle, FiUpload, FiSearch } from 'react-icons/fi';
 import ImportCVGModal from '../components/Inventory/ImportCVGModal';
 
 const Inventory = () => {
@@ -17,6 +17,8 @@ const Inventory = () => {
   const [currentMonth, setCurrentMonth] = useState('October');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportModalOpen, setImportIsModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const { listenToProducts } = useServices();
   const [products, setProduct] = useState([]);
 
@@ -24,39 +26,60 @@ const Inventory = () => {
     const unsubscribe = listenToProducts(setProduct);
     return () => unsubscribe();
   }, []);
-  
-const monthlyInventoryData = [
-  { name: 'Jan', value: 1250 },
-  { name: 'Feb', value: 1320 },
-  { name: 'Mar', value: 800 },  // Lower stock in March
-  { name: 'Apr', value: 1400 },
-  { name: 'May', value: 1345 },
-  { name: 'Jun', value: 950 },  // Lower stock in June
-  { name: 'Jul', value: 1420 },
-  { name: 'Aug', value: 1380 },
-  { name: 'Sep', value: 1440 },
-  { name: 'Oct', value: 1555 },
-  { name: 'Nov', value: 720 },  // Lower stock in November
-  { name: 'Dec', value: 1600 },
-];
 
-  
+  // Debounce effect (wait 400ms after user stops typing)
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim().toLowerCase());
+    }, 400);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchQuery]);
+
+  const monthlyInventoryData = [
+    { name: 'Jan', value: 1250 },
+    { name: 'Feb', value: 1320 },
+    { name: 'Mar', value: 800 },
+    { name: 'Apr', value: 1400 },
+    { name: 'May', value: 1345 },
+    { name: 'Jun', value: 950 },
+    { name: 'Jul', value: 1420 },
+    { name: 'Aug', value: 1380 },
+    { name: 'Sep', value: 1440 },
+    { name: 'Oct', value: 1555 },
+    { name: 'Nov', value: 720 },
+    { name: 'Dec', value: 1600 },
+  ];
 
   const getFilteredData = () => {
     let filtered = [...products];
+
+    if (debouncedSearchQuery !== '') {
+      filtered = filtered.filter((item) =>
+        item.name.toLowerCase().includes(debouncedSearchQuery)
+      );
+    }
+
     if (selectedCategory !== 'all') {
       filtered = filtered.filter((item) => item.category === selectedCategory);
     }
+
     if (currentFilter === 'low-stock') {
       filtered = filtered.filter((item) => item.status === 'low-stock');
     } else if (currentFilter === 'expiring-soon') {
       filtered = filtered.filter((item) => item.status === 'expiring-soon');
     }
+
     if (selectedStorageRoom !== 'all') {
       filtered = filtered.filter((item) => item.location === selectedStorageRoom);
     }
+
     return filtered;
   };
+
+  const totalValue = getFilteredData().reduce((sum, p) => sum + (parseFloat(p.totalvalue) || 0), 0);
 
   const chartData = getFilteredData().map((p) => {
     let color = '#4779FF';
@@ -96,12 +119,15 @@ const monthlyInventoryData = [
       </div>
 
       <div className="bg-white rounded-lg shadow-sm p-5 border border-gray-100 mb-6">
-        <div className="flex justify-between items-center flex-wrap gap-2 mb-2">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4 min-w-0">
           <div>
             <h3 className="text-gray-800 font-semibold">Glory Star Hardware</h3>
-            <p className="text-xl font-bold">
-              Total Stock: {products.reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0)}
-            </p>
+            <div className="flex gap-6 text-xl font-bold">
+              <p>Total Stock: {getFilteredData().reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0)}</p>
+              <p className="flex gap-1">
+                Total Value: <span className="text-green-600">₱{totalValue.toLocaleString()}</span>
+              </p>
+            </div>
           </div>
         </div>
 
@@ -113,32 +139,48 @@ const monthlyInventoryData = [
       </div>
 
       <div className="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
-          <h3 className="text-gray-800 font-semibold">Inventory Table</h3>
-          <div className="flex flex-wrap gap-4 items-center w-full sm:w-auto">
-            <button
-              onClick={() => setImportIsModalOpen(true)}
-              className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2 w-full sm:w-auto"
-            >
-              <FiUpload size={18} />
-              <span>Import Excel</span>
-            </button>
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2 w-full sm:w-auto"
-            >
-              <FiPlusCircle size={18} />
-              <span>Add product</span>
-            </button>
-            
-          </div>
-        </div>
+      <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4 min-w-0">
+    <h3 className="text-gray-800 font-semibold">Inventory Table</h3>
 
-        <div className="overflow-x-auto">
-          <InventoryTable className="bg-opacity-50 w-full" data={getFilteredData()} />
-        </div>
+    {/* Search Input and Buttons */}
+    <div className="flex gap-4 items-center w-full sm:w-auto mt-4 sm:mt-0">
+      {/* Search Input */}
+      <div className="relative w-full sm:w-auto">
+        <input
+          type="text"
+          placeholder="Search inventory..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 w-full"
+        />
+        <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
       </div>
 
+      {/* Buttons */}
+      <button
+        onClick={() => setImportIsModalOpen(true)}
+        className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2 w-full sm:w-auto"
+      >
+        <FiUpload size={18} />
+        <span>Import Excel</span>
+      </button>
+      <button
+        onClick={() => setIsModalOpen(true)}
+        className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2 w-full sm:w-auto"
+      >
+        <FiPlusCircle size={18} />
+        <span>Add product</span>
+      </button>
+    </div>
+  </div>
+
+    {/* Table */}
+    <div className="overflow-x-auto">
+      <InventoryTable className="bg-opacity-50 w-full" data={getFilteredData()} />
+    </div>
+      </div>
+
+      {/* Modals */}
       <ImportCVGModal isOpen={isImportModalOpen} onClose={() => setImportIsModalOpen(false)} />
       <AddProductModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>

@@ -29,63 +29,73 @@ export const ServicesProvider = ({ children }) => {
   const listenToProducts = (onUpdate) => {
     const categoryListeners = new Map(); // track unsubscribe functions
     const allProducts = new Map(); // store per-category product arrays
-  
+
     const unsubscribeCategories = onSnapshot(collection(db, "Products"), (categoriesSnapshot) => {
       categoriesSnapshot.forEach((categoryDoc) => {
         const category = categoryDoc.id;
-  
+
         // If already listening to this category, skip
         if (categoryListeners.has(category)) return;
-  
-        const unsubscribeItems = onSnapshot(collection(db, "Products", category, "Items"), (itemsSnapshot) => {
-          const products = [];
-  
-          itemsSnapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-  
-            let status = data.Quantity < 60 ? "low-stock" : "in-stock";
-            if (isDateClose(data.ExpiringDate)) {
-              status = "expiring-soon";
-            }
-  
-            const action = "view";
-  
-            products.push({
-              id: docSnap.id,
-              name: data.ProductName,
-              category,
-              quantity: data.Quantity,
-              unitprice: data.UnitPrice,
-              totalvalue: data.TotalValue,
-              location: data.Location,
-              status,
-              action,
-              expiringDate: data.ExpiringDate || null,
+
+        const unsubscribeItems = onSnapshot(
+          collection(db, "Products", category, "Items"),
+          (itemsSnapshot) => {
+            const products = [];
+
+            itemsSnapshot.forEach((docSnap) => {
+              const data = docSnap.data();
+
+              const variants = data.variants || [];
+
+              variants.forEach((variant, index) => {
+                let status = variant.quantity < 60 ? "low-stock" : "in-stock";
+                if (isDateClose(data.ExpiringDate)) {
+                  status = "expiring-soon";
+                }
+
+                const action = "view";
+
+                products.push({
+                  id: `${docSnap.id}-${index}`,
+                  name: data.ProductName,
+                  category,
+                  size: variant.size || null,
+                  unit: variant.unit || null,
+                  quantity: variant.quantity || 0,
+                  unitprice: variant.unitPrice || 0,
+                  totalvalue:
+                    variant.quantity && variant.unitPrice
+                      ? variant.quantity * variant.unitPrice
+                      : 0,
+                  location: data.Location || null,
+                  status,
+                  action,
+                  expiringDate: data.ExpiringDate || null,
+                });
+              });
             });
-          });
-  
-          // Save to the full map
-          allProducts.set(category, products);
-  
-          // Merge all product arrays from all categories
-          const mergedProducts = Array.from(allProducts.values()).flat();
-  
-          localStorage.setItem("product", JSON.stringify(mergedProducts));
-          onUpdate(mergedProducts);
-        });
-  
+
+            // Save to the full map
+            allProducts.set(category, products);
+
+            // Merge all product arrays from all categories
+            const mergedProducts = Array.from(allProducts.values()).flat();
+
+            localStorage.setItem("product", JSON.stringify(mergedProducts));
+            onUpdate(mergedProducts);
+          }
+        );
+
         // Track the unsubscribe function
         categoryListeners.set(category, unsubscribeItems);
       });
     });
-  
+
     return () => {
       unsubscribeCategories();
       categoryListeners.forEach((unsub) => unsub());
     };
   };
-  
-  
 
   const fetchRestockRequests = async () => {
     try {
