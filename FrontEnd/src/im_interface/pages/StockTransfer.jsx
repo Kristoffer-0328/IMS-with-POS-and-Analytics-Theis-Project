@@ -16,17 +16,7 @@ const StockTransfer = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const { getData } = useServices();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      const res = await getData();
-      if (res.success) {
-        setProduct(res.product);
-      } else {
-        console.error('Failed to fetch products:', res.error);
-      }
-    };
-    fetchData();
-  }, [getData]);
+ 
 
   const summaryData = {
     totalStock: { value: '2,940 Items', change: -4.3, period: 'Yesterday' },

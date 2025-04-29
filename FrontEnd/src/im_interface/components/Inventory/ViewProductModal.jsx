@@ -7,22 +7,22 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   
- useEffect(() => {
-     const handleKeyDown = (event) => {
-       if (event.key === "Escape") {
-         onClose();
-       }
-     };
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
      
     if (isOpen) {
-        
-        document.addEventListener("keydown", handleKeyDown);
-      }
+      document.addEventListener("keydown", handleKeyDown);
+    }
   
-      return () => {
-        document.removeEventListener("keydown", handleKeyDown);
-      };
-    },[isOpen]);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen || !product) return null;
 
   const getProductDetail = (field) => product[field] ?? "N/A";
@@ -44,7 +44,7 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
 
       // Update Firestore
       const db = getFirestore(app);
-      const productRef = doc(db, "Products", getProductDetail('category'), "Items", getProductDetail('name') ); // adjust your collection name
+      const productRef = doc(db, "Products", getProductDetail('category'), "Items", getProductDetail('name')); // adjust your collection name
       await updateDoc(productRef, {
         imageUrl: url,
       });
@@ -81,15 +81,14 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
 
   return (
     <div className="fixed inset-0 z-50 backdrop-blur-md bg-white/30 flex justify-center items-center">
-    <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-2xl relative">
-      {/* Close Button */}
-      <button
-        onClick={onClose}
-        className="absolute top-3 right-3 text-xl text-gray-500 hover:text-red-500"
-      >
-        ✕
-      </button>
-
+      <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-2xl relative">
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 text-xl text-gray-500 hover:text-red-500"
+        >
+          ✕
+        </button>
 
         {/* Hidden File Input */}
         <input
@@ -119,9 +118,8 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
         </div>
 
         {/* Main Info */}
-        
         <div className="bg-blue-50 p-6 rounded-2xl grid grid-cols-2 gap-4 mb-8">
-        <h3 className="text-lg font-semibold mb-4 text-gray-700">Product Details</h3>
+          <h3 className="text-lg font-semibold mb-4 text-gray-700">Product Details</h3>
           <div className="bg-blue-200 p-3 rounded-lg shadow-sm text-sm font-medium">
             Product Name: {getProductDetail('name')}
           </div>

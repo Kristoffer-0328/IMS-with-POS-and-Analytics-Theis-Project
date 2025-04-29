@@ -15,24 +15,13 @@ const RestockingRequest = () => {
   const [currentMonth, setCurrentMonth] = useState('October');
   const [products, setProduct] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { getData, fetchRestockRequests } = useServices(); 
+  const { listenToProducts, fetchRestockRequests } = useServices(); 
   const [request , setRequest] = useState([]);
   
    useEffect(() => {
-      const fetchData = async () => {
-        const res = await getData();  
-      
-        if (res.success) {
-          
-          setProduct(res.product);
-  
-        } else {
-          console.error('Failed to fetch products:', res.error);
-        }
-      };
-  
-      fetchData();
-    }, [getData]);
+       const unsubscribe = listenToProducts(setProduct);
+       return () => unsubscribe();
+     }, []);
     useEffect(() => {
       const getRequests = async () => {
         const res = await fetchRestockRequests();

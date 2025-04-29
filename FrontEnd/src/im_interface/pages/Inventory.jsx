@@ -5,6 +5,7 @@ import InventoryTrendChart from '../components/Inventory/InventoryTrendChart';
 import InventoryTable from '../components/Inventory/InventoryTable';
 import InventoryFilters from '../components/Inventory/InventoryFilters';
 import AddProductModal from '../components/Inventory/AddProductPopUp';
+import ViewProductModal from '../components/Inventory/ViewProductModal';
 import { useServices } from '../../FirebaseBackEndQuerry/ProductServices';
 import { FiPlusCircle, FiUpload, FiSearch } from 'react-icons/fi';
 import ImportCVGModal from '../components/Inventory/ImportCVGModal';
@@ -21,6 +22,16 @@ const Inventory = () => {
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const { listenToProducts } = useServices();
   const [products, setProduct] = useState([]);
+  
+  // New state for the ViewProductModal
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+
+  // Function to handle opening the view product modal
+  const handleViewProduct = (product) => {
+    setSelectedProduct(product);
+    setViewModalOpen(true);
+  };
 
   useEffect(() => {
     const unsubscribe = listenToProducts(setProduct);
@@ -123,7 +134,7 @@ const Inventory = () => {
           <div>
             <h3 className="text-gray-800 font-semibold">Glory Star Hardware</h3>
             <div className="flex gap-6 text-xl font-bold">
-              <p>Total Stock: {getFilteredData().reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0)}</p>
+              <p>Total Stock: {getFilteredData().reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0).toLocaleString()}</p>
               <p className="flex gap-1">
                 Total Value: <span className="text-green-600">₱{totalValue.toLocaleString()}</span>
               </p>
@@ -139,50 +150,58 @@ const Inventory = () => {
       </div>
 
       <div className="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
-      <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4 min-w-0">
-    <h3 className="text-gray-800 font-semibold">Inventory Table</h3>
+        <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+          <h3 className="text-gray-800 font-semibold">Inventory Table</h3>
 
-    {/* Search Input and Buttons */}
-    <div className="flex gap-4 items-center w-full sm:w-auto mt-4 sm:mt-0">
-      {/* Search Input */}
-      <div className="relative w-full sm:w-auto">
-        <input
-          type="text"
-          placeholder="Search inventory..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 w-full"
-        />
-        <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-      </div>
+          {/* Search Input and Buttons */}
+          <div className="flex gap-4 items-center w-full sm:w-auto">
+            {/* Search Input */}
+            <div className="relative w-full sm:w-auto">
+              <input
+                type="text"
+                placeholder="Search inventory..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 w-full"
+              />
+              <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            </div>
 
-      {/* Buttons */}
-      <button
-        onClick={() => setImportIsModalOpen(true)}
-        className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2 w-full sm:w-auto"
-      >
-        <FiUpload size={18} />
-        <span>Import Excel</span>
-      </button>
-      <button
-        onClick={() => setIsModalOpen(true)}
-        className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2 w-full sm:w-auto"
-      >
-        <FiPlusCircle size={18} />
-        <span>Add product</span>
-      </button>
-    </div>
-  </div>
+            {/* Buttons */}
+            <button
+              onClick={() => setImportIsModalOpen(true)}
+              className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2 whitespace-nowrap"
+            >
+              <FiUpload size={18} />
+              <span>Import Excel</span>
+            </button>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2 whitespace-nowrap"
+            >
+              <FiPlusCircle size={18} />
+              <span>Add product</span>
+            </button>
+          </div>
+        </div>
 
-    {/* Table */}
-    <div className="overflow-x-auto">
-      <InventoryTable className="bg-opacity-50 w-full" data={getFilteredData()} />
-    </div>
+        {/* Table Container with fixed width */}
+        <div className="w-full">
+          <InventoryTable 
+            data={getFilteredData()} 
+            onViewProduct={handleViewProduct} 
+          />
+        </div>
       </div>
 
       {/* Modals */}
       <ImportCVGModal isOpen={isImportModalOpen} onClose={() => setImportIsModalOpen(false)} />
       <AddProductModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <ViewProductModal 
+        isOpen={viewModalOpen} 
+        onClose={() => setViewModalOpen(false)} 
+        product={selectedProduct} 
+      />
     </div>
   );
 };

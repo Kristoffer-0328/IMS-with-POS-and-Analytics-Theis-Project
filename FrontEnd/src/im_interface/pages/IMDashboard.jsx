@@ -56,7 +56,7 @@ const IMDashboard = () => {
             <div>
               <p className="text-gray-500 text-xs sm:text-sm mb-1">Total Stock</p>
               <h3 className="text-xl sm:text-2xl font-bold text-gray-800">
-                {products.reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0)} Items
+                {products.reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0).toLocaleString()} Items
               </h3>
               <div className="flex items-center text-red-500 text-xs mt-1">
                 <FiTrendingDown className="mr-1" />
