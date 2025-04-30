@@ -13,7 +13,7 @@ import {
   FiChevronRight,
 } from 'react-icons/fi';
 
-const IMSidebar = ({ collapsed, setCollapsed }) => {
+const Pos_Sidebar = ({ collapsed, setCollapsed }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
@@ -24,12 +24,11 @@ const IMSidebar = ({ collapsed, setCollapsed }) => {
   };
 
   const navItems = [
-    { path: '/im', icon: <FiHome size={20} />, label: 'Dashboard' },
-    { path: '/im/inventory', icon: <FiPackage size={20} />, label: 'Inventory' },
-    { path: '/im/stock-transfer', icon: <FiRefreshCw size={20} />, label: 'Stock Transfer' },
-    { path: '/im/restocking-request', icon: <FiClipboard size={20} />, label: 'Restocking Request' },
-    { path: '/im/reports', icon: <FiFileText size={20} />, label: 'Reports and Logs' },
-    { path: '/im/settings', icon: <FiSettings size={20} />, label: 'Settings' },
+    { path: '/pos', icon: <FiHome size={20} />, label: 'Dashboard' },
+    { path: '/pos/newsale', icon: <FiPackage size={20} />, label: 'New Sale' },
+    { path: '/pos/THistory', icon: <FiRefreshCw size={20} />, label: 'Transaction History' },
+    { path: '/pos/salesreport', icon: <FiClipboard size={20} />, label: 'Sales Report' },
+    { path: '/pos/settings', icon: <FiSettings size={20} />, label: 'Settings' },
   ];
 
   const handleToggle = () => {
@@ -133,4 +132,4 @@ const IMSidebar = ({ collapsed, setCollapsed }) => {
   );
 };
 
-export default IMSidebar;
+export default Pos_Sidebar;

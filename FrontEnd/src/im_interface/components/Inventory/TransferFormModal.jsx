@@ -5,7 +5,7 @@ import { useServices } from "../../../FirebaseBackEndQuerry/ProductServices";
 
 export const TransferFormModal = ({ isOpen, onClose }) => {
   const db = getFirestore(app);
-  const { getData } = useServices();
+  const { listenToProducts } = useServices();
 
   const [products, setProducts] = useState([]);
   const [productName, setProductName] = useState("");
@@ -20,25 +20,19 @@ export const TransferFormModal = ({ isOpen, onClose }) => {
       storageOptions.push(`STR ${row}${i}`);
     }
   }
+  
+  const filteredStorageRoom = () =>{
+    let dataStorageRoom =[...products]
+
+    const productname = dataStorageRoom.filter((item) => item.productName === productName);
+    const productLocation = productname.location;
+    return productLocation;
+  }
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const res = await getData();
-        if (res.success) {
-          setProducts(res.product);
-        } else {
-          console.error("Failed to fetch products:", res.error);
-        }
-      } catch (error) {
-        console.error("Error fetching products:", error.message);
-      }
-    };
-
-    if (isOpen) {
-      fetchProducts();
-    }
-  }, [isOpen, getData]);
+    const unsubscribe = listenToProducts(setProducts);
+    return () => unsubscribe();
+  }, [isOpen]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -79,10 +73,20 @@ export const TransferFormModal = ({ isOpen, onClose }) => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm">Product Name</label>
+          <label className="block text-sm">Product Name</label>
             <select
               value={productName}
-              onChange={(e) => setProductName(e.target.value)}
+              onChange={(e) => {
+                const selectedName = e.target.value;
+                setProductName(selectedName);
+
+                const selectedProduct = products.find(
+                  (product) => product.name === selectedName
+                );
+                if (selectedProduct) {
+                  setFromRoom(selectedProduct.location || ""); // auto-update From field
+                }
+              }}
               className="w-full border p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
               required
             >
@@ -99,6 +103,7 @@ export const TransferFormModal = ({ isOpen, onClose }) => {
             <label className="block text-sm">From</label>
             <select
               value={fromRoom}
+              disabled
               onChange={(e) => setFromRoom(e.target.value)}
               className="w-full border p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
             >
@@ -114,6 +119,7 @@ export const TransferFormModal = ({ isOpen, onClose }) => {
             <label className="block text-sm">To</label>
             <select
               value={toRoom}
+              dos
               onChange={(e) => setToRoom(e.target.value)}
               className="w-full border p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
             >

@@ -15,9 +15,9 @@ const Login = () => {
     setError('');
 
     try {
-      const result = await login(email, password);
-      const randomTime = Math.floor(Math.random() * (7 - 3 + 1)) + 3;
       navigate('/loading');
+      const randomTime = Math.floor(Math.random() * (7 - 3 + 1)) + 3;
+      const result = await login(email, password);
       setTimeout(function () { 
         if (result.success) {
         
@@ -25,6 +25,9 @@ const Login = () => {
             navigate('/admin');
           } else if (result.user.role === 'InventoryManager') {
             navigate('/im');
+          }
+          else if(result.user.role === 'Cashier'){
+            navigate('/pos');
           }
         } else {
           setError('Invalid credentials');
@@ -101,14 +104,6 @@ const Login = () => {
               Sign In
             </button>
 
-            {/* Login credentials helper */}
-            <div className="pt-4 border-t border-gray-200">
-              <p className="text-sm text-gray-600 mb-2">Test Credentials:</p>
-              <div className="space-y-1 text-xs text-gray-500">
-                <p>Admin: admin@glorystar.com / admin123</p>
-                <p>IM: Toffu@gmail.com / Toffu_0928</p>
-              </div>
-            </div>
           </form>
         </div>
       </div>

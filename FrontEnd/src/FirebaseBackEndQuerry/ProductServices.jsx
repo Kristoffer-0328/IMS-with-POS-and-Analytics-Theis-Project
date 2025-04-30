@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState } from 'react';
 import {
   getFirestore,
   collection,
+  onSnapshot,
   getDocs,
 } from 'firebase/firestore';
 import app from '../FirebaseConfig';
@@ -25,58 +26,76 @@ export const ServicesProvider = ({ children }) => {
     return saved ? JSON.parse(saved) : [];
   });
 
-  const getData = async () => {
-    try {
-      const productArray = [];
-  
-      const categoriesSnapshot = await getDocs(collection(db, "Products"));
-  
-   
-      const categoryPromises = categoriesSnapshot.docs.map(async (categoryDoc) => {
+  const listenToProducts = (onUpdate) => {
+    const categoryListeners = new Map(); // track unsubscribe functions
+    const allProducts = new Map(); // store per-category product arrays
+
+    const unsubscribeCategories = onSnapshot(collection(db, "Products"), (categoriesSnapshot) => {
+      categoriesSnapshot.forEach((categoryDoc) => {
         const category = categoryDoc.id;
-        
-        const itemsSnapshot = await getDocs(collection(db, "Products", category, "Items"));
-  
-        itemsSnapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-        
-  
-          let status = data.Quantity < 60 ? "low-stock" : "in-stock";
-          if (isDateClose(data.ExpiringDate)) {
-            status = "expiring-soon";
+
+        // If already listening to this category, skip
+        if (categoryListeners.has(category)) return;
+
+        const unsubscribeItems = onSnapshot(
+          collection(db, "Products", category, "Items"),
+          (itemsSnapshot) => {
+            const products = [];
+
+            itemsSnapshot.forEach((docSnap) => {
+              const data = docSnap.data();
+
+              const variants = data.variants || [];
+
+              variants.forEach((variant, index) => {
+                let status = variant.quantity < 60 ? "low-stock" : "in-stock";
+                if (isDateClose(data.ExpiringDate)) {
+                  status = "expiring-soon";
+                }
+
+                const action = "view";
+
+                products.push({
+                  id: `${docSnap.id}-${index}`,
+                  name: data.ProductName,
+                  category,
+                  size: variant.size || null,
+                  unit: variant.unit || null,
+                  quantity: variant.quantity || 0,
+                  unitprice: variant.unitPrice || 0,
+                  totalvalue: variant.quantity && variant.unitPrice ? variant.quantity * variant.unitPrice : 0,
+                  location: data.Location || null,
+                  status,
+                  action,
+                  expiringDate: data.ExpiringDate || null,
+                  // Add these lines to include image URLs:
+                  image: variant.image || null,  // Get variant-specific image
+                  productImage: data.image || null  // Get product-level image
+                });
+              });
+            });
+
+            // Save to the full map
+            allProducts.set(category, products);
+
+            // Merge all product arrays from all categories
+            const mergedProducts = Array.from(allProducts.values()).flat();
+
+            localStorage.setItem("product", JSON.stringify(mergedProducts));
+            onUpdate(mergedProducts);
           }
-  
-          const action = status === "low-stock" ? "restock" : "view";
-  
-          productArray.push({
-            id: docSnap.id,
-            name: data.ProductName,
-            category,
-            quantity: data.Quantity,
-            unitprice: data.UnitPrice,
-            totalvalue: data.TotalValue,
-            location: data.Location,
-            status,
-            action,
-            expiringDate: data.ExpiringDate || null,
-          });
-        });
+        );
+
+        // Track the unsubscribe function
+        categoryListeners.set(category, unsubscribeItems);
       });
-  
-      // Wait for all categories to finish processing
-      await Promise.all(categoryPromises);
-  
-      setProduct(productArray);
-      localStorage.setItem("product", JSON.stringify(productArray));
-  
-      return { success: true, product: productArray };
-    } catch (error) {
-      console.error("Error fetching products:", error);
-      return { success: false, error: "Failed to fetch products" };
-    }
+    });
+
+    return () => {
+      unsubscribeCategories();
+      categoryListeners.forEach((unsub) => unsub());
+    };
   };
-  
-  
 
   const fetchRestockRequests = async () => {
     try {
@@ -98,7 +117,6 @@ export const ServicesProvider = ({ children }) => {
       });
 
       localStorage.setItem('restockRequests', JSON.stringify(requestArray));
-
       return { success: true, requests: requestArray };
     } catch (error) {
       console.error('Error fetching restock requests:', error.message);
@@ -127,7 +145,7 @@ export const ServicesProvider = ({ children }) => {
 
   const value = {
     product,
-    getData,
+    listenToProducts,
     fetchRestockRequests,
     fetchCategories,
   };

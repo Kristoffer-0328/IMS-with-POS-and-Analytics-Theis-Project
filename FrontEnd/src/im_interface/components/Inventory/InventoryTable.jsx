@@ -1,7 +1,7 @@
-import React from 'react';
 import { FiEdit2, FiAlertTriangle } from 'react-icons/fi';
+import React from 'react';
 
-const InventoryTable = ({ data }) => {
+const InventoryTable = ({ data, onViewProduct }) => {
   const getStatusBadge = (status) => {
     switch (status) {
       case 'in-stock':
@@ -28,17 +28,14 @@ const InventoryTable = ({ data }) => {
     }
   };
 
-  const getActionButton = (action, id) => {
+  const getActionButton = (action, id, item) => {
     switch (action) {
-      case 'restock':
-        return (
-          <button className="px-3 py-1 text-xs font-medium rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">
-            Restock
-          </button>
-        );
       case 'view':
         return (
-          <button className="p-1.5 text-gray-500 hover:text-gray-700">
+          <button
+            onClick={() => onViewProduct(item)}
+            className="p-1.5 text-gray-500 hover:text-gray-700"
+          >
             <FiEdit2 size={16} />
           </button>
         );
@@ -48,32 +45,30 @@ const InventoryTable = ({ data }) => {
   };
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
+    <div className="">
+      <div className="overflow-x-auto w-full">
+      
+      </div>
+      
+      <table className="min-w-full divide-y divide-gray-200 table-fixed">
         <thead className="bg-gray-50">
           <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-1/6 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Product Name
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-1/6 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Category
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-1/6 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Quantity
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-1/6 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Unit Price
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Total Value
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Location
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-1/6 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Status
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="w-1/6 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Action
             </th>
           </tr>
@@ -90,22 +85,20 @@ const InventoryTable = ({ data }) => {
                 <div className="text-sm text-gray-500">{item.category}</div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm text-gray-500">{item.quantity + " pc"}</div>
+                <div className="text-sm text-gray-500">
+                  {item.quantity + ' ' + item.unit}
+                </div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm text-gray-500">{ "₱ "+item.unitprice}</div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm text-gray-500">{"₱ "+item.totalvalue}</div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm text-gray-500">{item.location}</div>
+                <div className="text-sm text-gray-500">
+                  {'₱ ' + item.unitprice}
+                </div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
                 {getStatusBadge(item.status)}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-right">
-                {getActionButton(item.action, item.id)}
+                {getActionButton(item.action, item.id, item)}
               </td>
             </tr>
           ))}
