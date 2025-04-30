@@ -63,14 +63,14 @@ export const ServicesProvider = ({ children }) => {
                   unit: variant.unit || null,
                   quantity: variant.quantity || 0,
                   unitprice: variant.unitPrice || 0,
-                  totalvalue:
-                    variant.quantity && variant.unitPrice
-                      ? variant.quantity * variant.unitPrice
-                      : 0,
+                  totalvalue: variant.quantity && variant.unitPrice ? variant.quantity * variant.unitPrice : 0,
                   location: data.Location || null,
                   status,
                   action,
                   expiringDate: data.ExpiringDate || null,
+                  // Add these lines to include image URLs:
+                  image: variant.image || null,  // Get variant-specific image
+                  productImage: data.image || null  // Get product-level image
                 });
               });
             });

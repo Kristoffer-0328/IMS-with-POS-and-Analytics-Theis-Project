@@ -9,6 +9,8 @@ import ViewProductModal from '../components/Inventory/ViewProductModal';
 import { useServices } from '../../FirebaseBackEndQuerry/ProductServices';
 import { FiPlusCircle, FiUpload, FiSearch } from 'react-icons/fi';
 import ImportCVGModal from '../components/Inventory/ImportCVGModal';
+import ProductChoice from '../components/Inventory/ProductChoices';
+import CategoryModal from '../components/Inventory/CategoryModal';
 
 const Inventory = () => {
   const [currentFilter, setCurrentFilter] = useState('all');
@@ -17,11 +19,13 @@ const Inventory = () => {
   const [selectedChart, setSelectedChart] = useState('Stock Level');
   const [currentMonth, setCurrentMonth] = useState('October');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [open, setopen] = useState(false);
   const [isImportModalOpen, setImportIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const { listenToProducts } = useServices();
   const [products, setProduct] = useState([]);
+  const [categorymodal, setcategorymodal] = useState(false);
   
   // New state for the ViewProductModal
   const [viewModalOpen, setViewModalOpen] = useState(false);
@@ -176,7 +180,7 @@ const Inventory = () => {
               <span>Import Excel</span>
             </button>
             <button
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => setcategorymodal(true)}
               className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2 whitespace-nowrap"
             >
               <FiPlusCircle size={18} />
@@ -196,7 +200,9 @@ const Inventory = () => {
 
       {/* Modals */}
       <ImportCVGModal isOpen={isImportModalOpen} onClose={() => setImportIsModalOpen(false)} />
-      <AddProductModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <CategoryModal CategoryOpen={categorymodal} CategoryClose={() => setcategorymodal(false)} />
+      {/* <ProductChoice open={open} close={() => setopen(false)}/> */}
+      {/* <AddProductModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />  */}
       <ViewProductModal 
         isOpen={viewModalOpen} 
         onClose={() => setViewModalOpen(false)} 

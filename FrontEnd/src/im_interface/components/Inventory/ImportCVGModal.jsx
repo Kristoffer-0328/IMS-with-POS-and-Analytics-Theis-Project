@@ -8,11 +8,17 @@ import {
   writeBatch,
   collection,
 } from "firebase/firestore";
+import ProductFactory from "../Factory/productFactory";
+import { useServices } from "../../../FirebaseBackEndQuerry/ProductServices";
 
 const ImportCVGModal = ({ isOpen, onClose }) => {
   const [file, setFile] = useState(null);
   const db = getFirestore(app);
-
+  const { listenToProducts } = useServices();
+  listenToProducts((updatedProducts) => {
+    // This will activate the listener and ensure the UI updates
+    console.log("Products updated in real-time:", updatedProducts.length);
+  });
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key === "Escape") {
@@ -95,49 +101,41 @@ const saveMultipleProducts = async (products) => {
         return; // Skip this product if essential fields are missing
       }
 
-      // Handle product variants (group them by ProductName and Size)
+    
       const productName = cleanedItem.ProductName;
-      const size = cleanedItem.Size; // Variant size can be used to distinguish
-
-      // Create a unique product ID combining ProductName and Size
+      const size = cleanedItem.Size;
       const productVariantID = `${productName}${size}`;
 
+
       if (!productVariants.has(productVariantID)) {
-        productVariants.set(productVariantID, {
-          ProductName: cleanedItem.ProductName,
+        // Create standardized product using the factory
+        productVariants.set(productVariantID, ProductFactory.createProduct({
+          ...cleanedItem,
+          ProductName: productName,
           Category: cleanedItem.Category,
-          Location: cleanedItem.Location ?? null, 
-          variants: [],
-          Quantity: 0,
-        });
+          Location: cleanedItem.Location,
+          Quantity: 0, // Will be calculated as we add variants
+        }));
       }
 
       // Add variant details
       const product = productVariants.get(productVariantID);
-      const variant = {
-        size: cleanedItem.Size ?? null,
-        length: cleanedItem.LengthPerUnit ?? null,
-        unit: cleanedItem.Unit ?? null,
-        quantity: cleanedItem.Quantity ?? null,
-        unitPrice: cleanedItem.UnitPrice ?? null,
-      };      
+      const variant = ProductFactory.createVariant(cleanedItem);
       product.variants.push(variant);
 
       // Calculate total quantity for the product
       product.Quantity += cleanedItem.Quantity;
 
-      // Handle category reference
       const categoryRef = doc(db, "Products", cleanedItem.Category);
       batch.set(categoryRef, { name: cleanedItem.Category }, { merge: true });
 
-      // Handle the product reference (with variants)
+      // Handle the product reference
       const productRef = doc(
         collection(db, "Products", cleanedItem.Category, "Items"),
-        productVariantID // Unique document ID for each variant
+        productVariantID
       );
       batch.set(productRef, product);
 
-      // Track categories for batch commit
       categorySet.add(cleanedItem.Category);
     });
 
@@ -147,7 +145,6 @@ const saveMultipleProducts = async (products) => {
       batch.set(categoryRef, { name: categoryName });
     });
 
-    // Commit all the changes in batch
     await batch.commit();
     console.log("All products and categories added successfully!");
   } catch (error) {
