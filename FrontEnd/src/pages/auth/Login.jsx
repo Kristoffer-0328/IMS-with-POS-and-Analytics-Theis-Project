@@ -26,6 +26,9 @@ const Login = () => {
           } else if (result.user.role === 'InventoryManager') {
             navigate('/im');
           }
+          else if(result.user.role === 'Cashier'){
+            navigate('/pos');
+          }
         } else {
           setError('Invalid credentials');
         }

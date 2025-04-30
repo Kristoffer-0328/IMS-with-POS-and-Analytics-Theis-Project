@@ -32,6 +32,14 @@ import Settings from './im_interface/pages/Settings';
 import IMSidebar from './im_interface/pages/IMSidebar';
 import LoadingScreen from './im_interface/components/LoadingScreen';
 
+
+// POS cashier Interface
+import Pos_Dashboard from './cashier_pos_interface/pos_pages/pos_Dashboard';
+import Pos_Sidebar from './cashier_pos_interface/pos_pages/pos_Sidebar';
+import Pos_NewSale from './cashier_pos_interface/pos_pages/pos_NewSale';
+import Pos_SalesReport from './cashier_pos_interface/pos_pages/pos_SalesReport';
+import Pos_Settings from './cashier_pos_interface/pos_pages/pos_Settings';
+import Pos_Transaction_History from './cashier_pos_interface/pos_pages/pos_TransactionHistory';
 // Layouts
 const AdminLayout = ({ children }) => (
   <div className="flex min-h-screen w-full bg-gray-50">
@@ -48,6 +56,24 @@ const IMLayout = ({ children }) => {
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
       <IMSidebar collapsed={collapsed} setCollapsed={setCollapsed} />
+      {console.log("Sidebar collapsed:", collapsed)}
+      <main
+        id="content"
+        className={`flex-1 transition-all duration-300
+          ${collapsed ? 'ml-0 sm:ml-[70px]' : 'ml-0 sm:ml-[250px]'}
+        `}
+      >
+        <div className="p-6">{children}</div>
+      </main>
+    </div>
+  );
+};
+const pos_CashierLayout = ({ children }) => {
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <div className="flex min-h-screen w-full bg-gray-50">
+      <Pos_Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
       {console.log("Sidebar collapsed:", collapsed)}
       <main
         id="content"
@@ -201,7 +227,9 @@ const AppRoutes = () => {
         path="/im/team"
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
-            <Team />
+            <ServicesProvider>
+              <Team />
+            </ServicesProvider>
           </ProtectedRoute>
         }
       />
@@ -209,7 +237,10 @@ const AppRoutes = () => {
         path="/im/reports"
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
+            <ServicesProvider>
             <ReportsAndLogs />
+            </ServicesProvider>
+            
           </ProtectedRoute>
         }
       />
@@ -217,11 +248,53 @@ const AppRoutes = () => {
         path="/im/settings"
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
+            <ServicesProvider>
             <Settings />
+            </ServicesProvider>
           </ProtectedRoute>
         }
       />
 
+      <Route
+        path='/pos'
+        element={
+          <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
+            <Pos_Dashboard/>
+          </ProtectedRoute>
+        }
+        />
+         <Route
+        path='/pos/newsale'
+        element={
+          <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
+            <Pos_NewSale/>
+          </ProtectedRoute>
+        }
+        />
+         <Route
+        path='/pos/salesreport'
+        element={
+          <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
+            <Pos_SalesReport/>
+          </ProtectedRoute>
+        }
+        />
+         <Route
+        path='/pos/THistory'
+        element={
+          <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
+            <Pos_Transaction_History/>
+          </ProtectedRoute>
+        }
+        />
+         <Route
+        path='/pos/settings'
+        element={
+          <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
+            <Pos_Settings/>
+          </ProtectedRoute>
+        }
+        />
       {/* Errors */}
       <Route path="/unauthorized" element={<UnauthorizedAccess />} />
       <Route path="*" element={<Navigate to="/" replace />} />
