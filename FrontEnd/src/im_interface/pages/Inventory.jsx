@@ -71,24 +71,47 @@ const Inventory = () => {
   const getFilteredData = () => {
     let filtered = [...products];
 
+    // Map the products to include the correct price field and status
+    filtered = filtered.map(item => {
+        const quantity = item.quantity || 0;
+        const restockLevel = item.restockLevel || 0;
+        let status = 'in-stock';
+
+        // Calculate status based on quantity and restock level
+        if (quantity <= 0) {
+            status = 'out-of-stock';
+        } else if (quantity <= restockLevel) {
+            status = 'low-stock';
+        }
+
+        return {
+            ...item,
+            unitPrice: item.unitPrice || (item.variants && item.variants[0]?.unitPrice) || 0,
+            totalvalue: (quantity) * (item.unitPrice || (item.variants && item.variants[0]?.unitPrice) || 0),
+            status: status // Add calculated status
+        };
+    });
+
+    // Apply filters
     if (debouncedSearchQuery !== '') {
-      filtered = filtered.filter((item) =>
-        item.name.toLowerCase().includes(debouncedSearchQuery)
-      );
+        filtered = filtered.filter((item) =>
+            item.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
+        );
     }
 
     if (selectedCategory !== 'all') {
-      filtered = filtered.filter((item) => item.category === selectedCategory);
+        filtered = filtered.filter((item) => item.category === selectedCategory);
     }
 
+    // Use the calculated status for filtering
     if (currentFilter === 'low-stock') {
-      filtered = filtered.filter((item) => item.status === 'low-stock');
-    } else if (currentFilter === 'expiring-soon') {
-      filtered = filtered.filter((item) => item.status === 'expiring-soon');
+        filtered = filtered.filter((item) => item.status === 'low-stock');
+    } else if (currentFilter === 'out-of-stock') {
+        filtered = filtered.filter((item) => item.status === 'out-of-stock');
     }
 
     if (selectedStorageRoom !== 'all') {
-      filtered = filtered.filter((item) => item.location === selectedStorageRoom);
+        filtered = filtered.filter((item) => item.location === selectedStorageRoom);
     }
 
     return filtered;

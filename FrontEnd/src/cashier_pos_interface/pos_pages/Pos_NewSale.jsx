@@ -1,194 +1,593 @@
-import React, { useState } from 'react';
-import { FiPrinter } from 'react-icons/fi';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
-const products = [
-  { id: 1, name: 'White Cement', price: 49.5, img: '/images/white-cement.jpeg' },
-  { id: 2, name: 'Portland Cement', price: 126.0, img: '/images/portland-cement.png' },
-  { id: 3, name: 'Masonry Cement', price: 115.2, img: '/images/masonry-cement.png' },
-  { id: 4, name: 'Expansive Cement', price: 79.0, img: '/images/expansive-cement.png' },
-  { id: 5, name: 'Quicklime', price: 76.0, img: '/images/quicklime.jpg' },
-  { id: 6, name: 'Plaster of Paris', price: 238.0, img: '/images/plaster-of-paris.png' },
-  { id: 7, name: 'Copper Pipes', price: 0, img: '/images/copper-pipes.jpg', hasVariants: true },
-];
+// Firebase and Services
+import { useServices } from '../../FirebaseBackEndQuerry/ProductServices'; // Adjust path if needed
+import {
+  getFirestore,
+  collection,
+  doc,
+  runTransaction,
+  serverTimestamp,
+  getDoc,
+} from 'firebase/firestore';
+import app from '../../FirebaseConfig'; // Adjust path if needed
 
-// Copper variants
-const copperVariants = {
-  'Type K': [ { label: '¾ in. hard copper', price: 14.77 }, { label: '1 in. soft coil', price: 8.5 } ],
-  'Type L': [ { label: '½ in. straight', price: 3.66 }, { label: '¾ in. straight', price: 5.42 }, { label: '1 in. straight', price: 7.73 } ],
-  'Type M': [ { label: '½ in. straight', price: 2.46 }, { label: '¾ in. straight', price: 3.99 }, { label: '½ in. coil (soft)', price: 2.71 } ],
-  'Copper DWV': [ { label: '1½ in. straight', price: 5.99 } ],
-  'Cupronickel': [ { label: '¼ in. x 25 ft coil', price: 4.34 } ],
+// Import Components from new locations
+import SearchBar from '../pos_component/SearchBar';
+import ProductGrid from '../pos_component/ProductGrid';
+import CustomerInfo from '../pos_component/CustomerInfo';
+import Cart from '../pos_component/Cart';
+import OrderSummary from '../pos_component/OrderSummary';
+import PaymentSection from '../pos_component/PaymentSection';
+
+// Import Modals from new locations
+import BulkOrderChoiceModal from '../pos_component/Modals/BulkOrderChoices';
+import BulkOrderDetailsModal from '../pos_component/Modals/BulkOrderDetailsModal';
+import VariantSelectionModal from '../pos_component/Modals/VariantSelectionModal';
+// Import utilities
+import { printReceiptContent } from '../utils/ReceiptGenerator';
+
+const db = getFirestore(app);
+
+// Helper function to format Date/Time (can be moved to utils)
+const getFormattedDateTime = () => {
+    const now = new Date();
+    const formattedDate = now.toLocaleDateString('en-US', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+    const formattedTime = now.toLocaleTimeString('en-US', {
+        hour: 'numeric', minute: '2-digit', hour12: true
+    });
+    return { formattedDate, formattedTime };
 };
 
 export default function Pos_NewSale() {
+  // --- State Management ---
   const [cart, setCart] = useState([]);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [qty, setQty] = useState(1);
-  const [activeType, setActiveType] = useState(Object.keys(copperVariants)[0]);
-  const [activeSize, setActiveSize] = useState(copperVariants[Object.keys(copperVariants)[0]][0]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [amountPaid, setAmountPaid] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [isProcessing, setIsProcessing] = useState(false); // For transaction state
 
-  const addToCart = (prod) => {
-    setCart(c => {
-      const exists = c.find(x => x.id === prod.id && x.variant === prod.variant);
-      if (exists) return c.map(x => x.id === prod.id && x.variant === prod.variant ? { ...x, qty: x.qty + prod.qty } : x);
-      return [...c, prod];
+  // Product State
+  const { listenToProducts } = useServices();
+  const [products, setProducts] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+
+  // Variant Modal State
+  const [variantModalOpen, setVariantModalOpen] = useState(false);
+  const [selectedProductForModal, setSelectedProductForModal] = useState(null);
+  const [activeVariantIndex, setActiveVariantIndex] = useState(0);
+  const [quantity, setQuantity] = useState(1);
+
+  // Customer State
+  const [showBulkOrderPopup, setShowBulkOrderPopup] = useState(false);
+  const [isBulkOrder, setIsBulkOrder] = useState(null); // null, true, false
+  const [customerDetails, setCustomerDetails] = useState({ name: '', phone: '', address: '' });
+  const [walkInCounter, setWalkInCounter] = useState(0);
+  const [customerIdentifier, setCustomerIdentifier] = useState('Walk-in Customer');
+  const [customerDisplayName, setCustomerDisplayName] = useState('Walk-in Customer');
+
+  // --- Data Fetching and Processing ---
+
+  // Fetch Products
+  useEffect(() => {
+    setLoadingProducts(true);
+    const unsubscribe = listenToProducts((fetchedProducts) => {
+      if (JSON.stringify(products) !== JSON.stringify(fetchedProducts)) {
+        setProducts(fetchedProducts || []);
+      }
+      setLoadingProducts(false);
     });
-  };
 
-  const handleAddProduct = (p) => {
-    if (p.hasVariants) {
-      setQty(1);
-      setActiveType(Object.keys(copperVariants)[0]);
-      setActiveSize(copperVariants[Object.keys(copperVariants)[0]][0]);
-      setModalOpen(true);
-    } else {
-      addToCart({ id: p.id, name: p.name, price: p.price, qty: 1, variant: '' });
+    // Show initial customer choice prompt
+    const timer = setTimeout(() => {
+      if (isBulkOrder === null) {
+        setShowBulkOrderPopup(true);
+      }
+    }, 100);
+
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
+  }, [listenToProducts]); // Only depend on listenToProducts
+
+  // Group Products (Memoized) - Ensure correct placeholder path
+  const groupedProducts = useMemo(() => {
+    const grouped = {};
+
+    products.forEach(product => {
+        if (!product || !product.id || !product.name) {
+            console.warn("Skipping invalid product data:", product);
+            return;
+        }
+    
+        const baseProductName = product.name;
+    
+        if (!grouped[baseProductName]) {
+            grouped[baseProductName] = {
+                id: product.id, // This should be "Building-Plywood" format
+                name: product.name,
+                category: product.category,
+                quantity: product.quantity || 0,
+                variants: [],
+                image: product.image || null,
+                hasVariants: false
+            };
+        }
+    
+        if (product.variants && Array.isArray(product.variants)) {
+            product.variants.forEach((variant, index) => {
+                grouped[baseProductName].variants.push({
+                    variantId: `${product.id}-${index}`, // e.g., "Building-Plywood-0"
+                    baseProductId: product.id, // This should be "Building-Plywood"
+                    category: product.category, // "Building"
+                    size: variant.size || '',
+                    unit: variant.unit || 'pcs',
+                    price: Number(variant.unitPrice) || 0,
+                    quantity: Number(variant.quantity) || 0,
+                    image: variant.image || product.image || null
+                });
+            });
+    
+            grouped[baseProductName].hasVariants = product.variants.length > 0;
+        }
+    });
+
+    return Object.values(grouped);
+}, [products]);
+
+  // Filter Products (Memoized)
+  const filteredProducts = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (query === '') {
+        return groupedProducts;
     }
-  };
+    return groupedProducts.filter(p =>
+        p.name && p.name.toLowerCase().includes(query)
+    );
+  }, [searchQuery, groupedProducts]);
 
-  const handleAddVariant = () => {
-    addToCart({
-      id: 7,
-      name: `Copper Pipes (${activeType} ${activeSize.label})`,
-      price: activeSize.price,
-      qty,
-      variant: `${activeType}|${activeSize.label}`
+
+  // --- Cart Logic ---
+  const addToCart = useCallback((prodToAdd) => {
+    if (!prodToAdd?.variantId || !prodToAdd?.baseProductId) {
+        console.error("Invalid product data:", prodToAdd);
+        return;
+    }
+
+    const quantity = Number(prodToAdd.qty);
+    if (isNaN(quantity) || quantity <= 0) {
+        alert("Please enter a valid quantity");
+        return;
+    }
+
+    setCart(currentCart => {
+        const existingItem = currentCart.find(item => item.variantId === prodToAdd.variantId);
+        
+        if (existingItem) {
+            return currentCart.map(item => 
+                item.variantId === prodToAdd.variantId 
+                    ? { ...item, qty: item.qty + quantity }
+                    : item
+            );
+        }
+
+        return [...currentCart, {
+            ...prodToAdd,
+            qty: quantity,
+            price: Number(prodToAdd.price)
+        }];
     });
-    setModalOpen(false);
-  };
+}, []);
 
-  const handlePrint = () => window.print();
+  const handleRemoveItem = useCallback((indexToRemove) => {
+    setCart(currentCart => currentCart.filter((_, i) => i !== indexToRemove));
+  }, []); // No external dependencies needed for setCart
 
-  const subTotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
+
+  // --- Product Selection Logic ---
+  const handleAddProduct = useCallback((productGroup) => {
+    if (!productGroup || !productGroup.variants || isProcessing || showBulkOrderPopup) {
+        console.warn("Add product blocked:", { productGroup, isProcessing, showBulkOrderPopup });
+        return;
+    }
+
+    if (productGroup.hasVariants && productGroup.variants.length > 0) {
+        setQuantity(1);
+        setSelectedProductForModal(productGroup);
+        setActiveVariantIndex(0);
+        setVariantModalOpen(true);
+    } else if (productGroup.variants.length === 1) {
+        const variant = productGroup.variants[0];
+        if (variant.quantity <= 0) {
+            alert(`${productGroup.name} is out of stock.`);
+            return;
+        }
+
+        // Create display name with size/unit
+        const displayName = variant.size || variant.unit 
+            ? `${productGroup.name} (${variant.size || ''} ${variant.unit || ''})`.trim()
+            : productGroup.name;
+
+        // Log the product data for debugging
+        console.log('Adding single variant product:', {
+            productGroup,
+            variant,
+            baseProductId: variant.baseProductId
+        });
+
+        addToCart({
+            id: variant.variantId,
+            name: displayName,
+            baseName: productGroup.name,
+            price: variant.price,
+            qty: 1,
+            variantId: variant.variantId,
+            category: productGroup.category,
+            baseProductId: variant.baseProductId // Use variant's baseProductId directly
+        });
+    }
+}, [addToCart, isProcessing, showBulkOrderPopup]);
+
+  const handleAddVariant = useCallback(() => {
+    if (!selectedProductForModal?.variants?.[activeVariantIndex]) {
+        console.error("Invalid variant selection");
+        setVariantModalOpen(false);
+        return;
+    }
+
+    const variant = selectedProductForModal.variants[activeVariantIndex];
+    if (variant.quantity < quantity) {
+        alert(`Insufficient stock. Only ${variant.quantity} available.`);
+        return;
+    }
+
+    // Create display name with size/unit
+    const displayName = variant.size || variant.unit 
+        ? `${selectedProductForModal.name} (${variant.size || ''} ${variant.unit || ''})`.trim()
+        : selectedProductForModal.name;
+
+    // Log the variant data for debugging
+    console.log('Adding variant:', {
+        variant,
+        baseProductId: variant.baseProductId,
+        selectedProduct: selectedProductForModal
+    });
+
+    addToCart({
+        id: variant.variantId,
+        name: displayName,
+        baseName: selectedProductForModal.name,
+        price: variant.price,
+        qty: quantity,
+        variantId: variant.variantId,
+        category: selectedProductForModal.category,
+        baseProductId: variant.baseProductId // Use variant's baseProductId directly
+    });
+
+    setVariantModalOpen(false);
+    setSelectedProductForModal(null);
+    setActiveVariantIndex(0);
+    setQuantity(1);
+}, [selectedProductForModal, activeVariantIndex, quantity, addToCart]);
+
+
+  // --- Customer Logic ---
+  const handleBulkOrderChoice = useCallback((isBulk) => {
+    setIsBulkOrder(isBulk);
+    if (!isBulk) { // Walk-in selected
+        const nextCounter = walkInCounter + 1;
+        setWalkInCounter(nextCounter);
+        const newIdentifier = `WalkIn-${String(nextCounter).padStart(3, '0')}`;
+        setCustomerIdentifier(newIdentifier);
+        setCustomerDisplayName('Walk-in Customer');
+        setCustomerDetails({ name: '', phone: '', address: '' }); // Clear just in case
+        setShowBulkOrderPopup(false); // Close choice modal immediately
+    } else { // Bulk order selected
+        setCustomerDisplayName(''); // Clear display name until details entered
+        setCustomerIdentifier('');  // Clear identifier until details entered
+        setCustomerDetails({ name: '', phone: '', address: '' }); // Ensure fields are empty
+        // setShowBulkOrderPopup remains true to allow details modal to render
+    }
+  }, [walkInCounter]); // Dependency
+
+  const handleCustomerDetailsSubmit = useCallback((e) => {
+    e.preventDefault(); // Prevent default form submission
+    if (!customerDetails.name.trim()) { // Check trimmed name
+        alert("Please enter a customer name.");
+        return;
+    }
+    // Generate a unique-ish identifier for the bulk customer
+    const identifier = customerDetails.name.trim().replace(/\s+/g, '-') + '-' + Date.now().toString().slice(-5); // Use more of timestamp
+    setCustomerIdentifier(identifier);
+    setCustomerDisplayName(customerDetails.name.trim()); // Use trimmed name
+    setShowBulkOrderPopup(false); // Close details modal upon successful submission
+  }, [customerDetails]); // Dependency
+
+
+   // --- Sale Reset Logic ---
+   const resetSaleState = useCallback(() => {
+       setCart([]);
+       setAmountPaid('');
+       setPaymentMethod('Cash');
+       setIsBulkOrder(null); // Reset customer type choice
+       setCustomerDetails({ name: '', phone: '', address: '' }); // Clear details
+       // Reset walk-in counter? Decide based on desired behavior. Usually not reset per sale.
+       // setWalkInCounter(0);
+       setCustomerIdentifier('Walk-in Customer'); // Reset to default
+       setCustomerDisplayName('Walk-in Customer'); // Reset to default
+       setSearchQuery(''); // Clear search
+       setQuantity(1); // Reset modal quantity
+       setSelectedProductForModal(null); // Clear modal product
+       setVariantModalOpen(false); // Close variant modal if open
+       setActiveVariantIndex(0);
+       setShowBulkOrderPopup(true); // IMPORTANT: Show initial choice popup for the next sale
+       console.log("Sale state reset.");
+   }, []); // No dependencies needed if it only uses setters
+
+
+  // --- Calculations ---
+  // Calculate totals using useMemo based on cart
+  const { subTotal, tax, total } = useMemo(() => {
+    const subTotalCalc = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    const taxRateCalc = 0.12; // Consider making this a config/prop if it changes
+    const taxCalc = subTotalCalc * taxRateCalc;
+    const totalCalc = subTotalCalc + taxCalc;
+    return { subTotal: subTotalCalc, tax: taxCalc, total: totalCalc };
+  }, [cart]); // Dependency
+
+
+  // --- Transaction Logic ---
+  const handlePrintAndSave = useCallback(async () => {
+    if (cart.length === 0 || isProcessing) {
+        alert("Cannot process: Cart is empty or transaction in progress");
+        return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+        const { formattedDate, formattedTime } = getFormattedDateTime();
+        const receiptNumber = `GS-${Date.now()}`;
+        
+        await runTransaction(db, async (transaction) => {
+            // First, perform all reads and validations
+            const productUpdates = [];
+            
+            for (const item of cart) {
+                const productRef = doc(db, 'Products', item.category, 'Items', item.baseProductId);
+                const productDoc = await transaction.get(productRef);
+                
+                if (!productDoc.exists()) {
+                    throw new Error(`Product not found: ${item.name}`);
+                }
+
+                const productData = productDoc.data();
+                const variantIndex = parseInt(item.variantId.split('-').pop(), 10);
+                
+                if (!productData.variants?.[variantIndex]) {
+                    throw new Error(`Variant not found for ${item.name}`);
+                }
+
+                const currentVariant = productData.variants[variantIndex];
+                const currentQuantity = Number(currentVariant.quantity) || 0;
+                
+                if (currentQuantity < item.qty) {
+                    throw new Error(`Insufficient stock for ${item.name}: available ${currentQuantity}`);
+                }
+
+                // Store update data for later
+                productUpdates.push({
+                    ref: productRef,
+                    data: {
+                        quantity: (Number(productData.quantity) || 0) - item.qty,
+                        variants: productData.variants.map((v, idx) => 
+                            idx === variantIndex 
+                                ? { ...v, quantity: currentQuantity - item.qty }
+                                : v
+                        ),
+                        lastUpdated: serverTimestamp()
+                    }
+                });
+            }
+
+            // Create transaction record
+            const transactionRef = doc(db, 'Transactions', receiptNumber);
+            const transactionData = {
+                id: receiptNumber,
+                timestamp: serverTimestamp(),
+                date: formattedDate,
+                time: formattedTime,
+                items: cart.map(item => ({
+                    name: item.name || '',
+                    category: item.category || '',
+                    baseProductId: item.baseProductId || '',
+                    variantId: item.variantId || '',
+                    price: Number(item.price) || 0,
+                    quantity: Number(item.qty) || 0,
+                    total: (Number(item.price) || 0) * (Number(item.qty) || 0)
+                })),
+                subTotal: Number(subTotal) || 0,
+                tax: Number(tax) || 0,
+                total: Number(total) || 0,
+                amountPaid: Number(amountPaid) || 0,
+                change: (Number(amountPaid) || 0) - (Number(total) || 0),
+                customerName: customerDisplayName || 'Walk-in Customer',
+                customerDetails: isBulkOrder ? {...customerDetails} : null,
+                paymentMethod: paymentMethod || 'Cash',
+                cashierId: "Moni Roy",
+                isBulkOrder: Boolean(isBulkOrder)
+            };
+
+            // Now perform all writes after reads
+            await transaction.set(transactionRef, transactionData);
+            
+            // Update all products
+            for (const update of productUpdates) {
+                transaction.update(update.ref, update.data);
+            }
+        });
+
+        // After successful transaction, print receipt and reset
+        await printReceiptContent({
+            receiptNumber,
+            date: formattedDate,
+            time: formattedTime,
+            items: cart.map(item => ({
+                name: item.name,
+                quantity: item.qty,
+                price: item.price,
+                total: item.price * item.qty
+            })),
+            subTotal,
+            tax,
+            total,
+            amountPaid: Number(amountPaid),
+            change: Number(amountPaid) - total,
+            customerName: customerDisplayName,
+            cashierName: "Moni Roy"
+        });
+
+        resetSaleState();
+        alert("Transaction completed successfully!");
+
+    } catch (error) {
+        console.error("Transaction failed:", error);
+        alert(`Transaction failed: ${error.message}`);
+    } finally {
+        setIsProcessing(false);
+    }
+}, [cart, total, subTotal, tax, amountPaid, paymentMethod, customerDetails, customerDisplayName, isBulkOrder, resetSaleState]);
+
+
+  // --- UI ---
+  const { formattedDate, formattedTime } = getFormattedDateTime();
+  const shouldDisableInteractions = isProcessing || (showBulkOrderPopup && isBulkOrder === null) || (showBulkOrderPopup && isBulkOrder === true);
 
   return (
-    <div className="flex flex-col h-full">
-      <header className="flex items-center justify-between bg-white px-6 py-4 border-b">
-        <h1 className="text-2xl font-semibold">New Sale</h1>
-        <div className="text-sm text-gray-600">12:45 PM | Tuesday, April 30, 2025</div>
-        <div className="text-sm font-medium">Moni Roy <span className="text-gray-500">| Cashier</span></div>
-      </header>
-      <div className="flex flex-1 overflow-hidden">
-        {/* Product Grid */}
-        <div className="flex-1 p-6 overflow-auto">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {products.map(p => (
-              <div key={p.id}
-                className="bg-white rounded-2xl shadow p-4 flex flex-col hover:shadow-lg transition"
-              >
-                <img src={p.img} alt={p.name} className="h-32 object-contain mb-4" />
-                <div className="flex-1">
-                  <h3 className="font-medium">{p.name}</h3>
-                  {!p.hasVariants && (
-                    <p className="mt-1 text-lg font-semibold">₱{p.price.toFixed(2)}</p>
-                  )}
-                </div>
-                <button
-                  onClick={() => handleAddProduct(p)}
-                  className="mt-4 w-full py-2 bg-[#ff7b54] text-white rounded-lg hover:bg-orange-600 transition"
-                >Add Product</button>
-              </div>
-            ))}
+    <div className="flex flex-col w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-6 bg-gray-50 h-full">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-orange-100/80 to-amber-100/30 rounded-xl p-4 sm:p-6 mb-6 shadow-sm">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4"> {/* Aligned items center */}
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">New Sale</h2>
+            <p className="text-gray-600">{formattedTime} | {formattedDate}</p>
+          </div>
+          <div className="text-sm font-medium flex items-center bg-white px-3 py-1 rounded-full shadow-xs"> {/* Added subtle background */}
+            <span className="font-semibold text-gray-800">Moni Roy</span> {/* TODO: Replace with dynamic Cashier Name */}
+            <span className="text-gray-500 ml-2">| Cashier</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex flex-1 gap-6 overflow-hidden">
+
+        {/* Left Side: Product Selection */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <SearchBar
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            disabled={shouldDisableInteractions} // Disable search when modals are active or processing
+          />
+          {/* Product Grid Container */}
+          <div className="flex-1 bg-white rounded-lg shadow-sm p-5 border border-gray-100 overflow-y-auto"> {/* Changed overflow to y-auto */}
+             <ProductGrid
+                products={filteredProducts}
+                onAddProduct={handleAddProduct}
+                loading={loadingProducts}
+                searchQuery={searchQuery}
+                // Disable grid items when modals are active or processing
+                disabled={shouldDisableInteractions}
+            />
           </div>
         </div>
 
-        {/* Invoice Panel */}
-        <aside className="invoice-panel w-80 bg-white border-l p-6 flex flex-col">
-          <div className="mb-4">
-            <p className="text-xs text-gray-500">Invoice From:</p>
-            <p className="font-semibold">Virginia Walker</p>
-            <p className="text-xs text-gray-500 mt-2">Invoice To:</p>
-            <p className="font-semibold">Austin Miller</p>
-            <p className="text-xs text-gray-500 mt-2">Date:</p>
-            <p className="font-semibold">12 Nov 2019</p>
-          </div>
-          <div className="flex-1 overflow-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b">
-                  <th className="py-2">#</th>
-                  <th>Description</th>
-                  <th>Qty</th>
-                  <th>Unit</th>
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cart.length === 0 ? (
-                  <tr><td colSpan="5" className="py-6 text-center text-gray-400">No items in cart</td></tr>
-                ) : (
-                  cart.map((it, i) => (
-                    <tr key={i} className="border-b">
-                      <td className="py-2">{i+1}</td>
-                      <td>{it.name}</td>
-                      <td>{it.qty}</td>
-                      <td>₱{it.price.toFixed(2)}</td>
-                      <td>₱{(it.price*it.qty).toFixed(2)}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-4 border-t pt-4">
-            <div className="flex justify-between">
-              <span>Subtotal:</span><span>₱{subTotal.toFixed(2)}</span>
-            </div>
-          </div>
-          <div className="mt-6 flex justify-between items-center">
-            <button onClick={handlePrint} className="p-3 rounded-full border hover:bg-gray-100">
-              <FiPrinter size={24} className="text-gray-600" />
-            </button>
-            <button className="px-6 py-3 bg-[#ff7b54] text-white rounded-lg hover:bg-orange-600">Send</button>
-          </div>
+        {/* Right Side: Invoice Panel */}
+        <aside className="invoice-panel w-80 md:w-96 bg-white rounded-lg shadow-sm border border-gray-100 p-4 flex flex-col">
+            {/* Customer Info */}
+            <CustomerInfo
+                customerDisplayName={customerDisplayName}
+                isBulkOrder={isBulkOrder}
+                customerDetails={customerDetails}
+                formattedDate={formattedDate}
+            />
+            {/* Cart Items */}
+            <Cart
+                cartItems={cart}
+                onRemoveItem={handleRemoveItem}
+                isProcessing={isProcessing} // Disable remove buttons during processing
+            />
+            {/* Order Summary (Totals) */}
+            <OrderSummary
+                subTotal={subTotal}
+                tax={tax}
+                total={total}
+                // taxRate={0.12} // Pass tax rate if it's dynamic
+            />
+            {/* Payment Section */}
+            <PaymentSection
+                paymentMethod={paymentMethod}
+                setPaymentMethod={setPaymentMethod}
+                amountPaid={amountPaid}
+                setAmountPaid={setAmountPaid}
+                total={total}
+                isProcessing={isProcessing}
+                cartIsEmpty={cart.length === 0}
+                onPrintAndSave={handlePrintAndSave} // Pass the transaction handler
+            />
         </aside>
       </div>
 
-      {/* Copper Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-11/12 max-w-md">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">Copper Pipes</h2>
-              <button onClick={() => setModalOpen(false)} className="text-gray-600 text-2xl">&times;</button>
-            </div>
-            <img src="/images/copper-pipes.jpg" alt="Copper Pipes" className="h-40 w-full object-cover rounded-lg mb-4" />
-            <div className="mb-4">
-              <p className="font-medium mb-2">Type:</p>
-              <div className="flex flex-wrap gap-2">
-                {Object.keys(copperVariants).map(type => (
-                  <button key={type}
-                    onClick={() => { setActiveType(type); setActiveSize(copperVariants[type][0]); }}
-                    className={`px-3 py-1 rounded-lg border ${activeType===type?'bg-[#ff7b54] text-white':'bg-gray-100 text-gray-700'}`}
-                  >{type}</button>
-                ))}
-              </div>
-            </div>
-            <div className="mb-4">
-              <p className="font-medium mb-2">Size:</p>
-              <div className="flex flex-wrap gap-2">
-                {copperVariants[activeType].map(opt => (
-                  <button key={opt.label}
-                    onClick={() => setActiveSize(opt)}
-                    className={`px-3 py-1 rounded-lg border ${activeSize.label===opt.label?'bg-[#ff7b54] text-white':'bg-gray-100 text-gray-700'}`}
-                  >{opt.label}</button>
-                ))}
-              </div>
-            </div>
-            <div className="mb-4 flex items-center justify-between">
-              <p className="text-lg">Price: <span className="font-semibold">${activeSize.price.toFixed(2)}/ft</span></p>
-              <div className="flex items-center border rounded-lg overflow-hidden">
-                <button onClick={()=>qty>1&&setQty(qty-1)} className="px-3 py-1">-</button>
-                <span className="px-4">{qty}</span>
-                <button onClick={()=>setQty(qty+1)} className="px-3 py-1">+</button>
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <button onClick={handleAddVariant} className="px-6 py-2 bg-[#ff7b54] text-white rounded-lg hover:bg-orange-600 transition">Add Product</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      {/* Modals Section - Render conditionally */}
+      <> {/* Use fragment to group modals */}
+          {/* Modal 1: Bulk Order Choice */}
+          {showBulkOrderPopup && isBulkOrder === null && (
+             <BulkOrderChoiceModal
+                onChoice={handleBulkOrderChoice}
+                // Optional: Add an explicit close action if needed, though choice usually closes it
+                // onClose={() => setShowBulkOrderPopup(false)}
+             />
+          )}
+
+          {/* Modal 2: Bulk Order Details */}
+          {showBulkOrderPopup && isBulkOrder === true && (
+             <BulkOrderDetailsModal
+                customerDetails={customerDetails}
+                setCustomerDetails={setCustomerDetails}
+                onSubmit={handleCustomerDetailsSubmit}
+                // If user closes details modal without submitting, reset back to choice state or fully reset
+                onClose={() => {
+                    setShowBulkOrderPopup(false); // Hide modal area
+                    resetSaleState(); // Reset everything to start fresh if they cancel bulk details
+                    // Or alternatively, just revert the choice:
+                    // setIsBulkOrder(null); setShowBulkOrderPopup(true);
+                 }}
+             />
+          )}
+
+          {/* Modal 3: Variant Selection */}
+          {variantModalOpen && selectedProductForModal && (
+             <VariantSelectionModal
+                product={selectedProductForModal}
+                activeVariantIndex={activeVariantIndex}
+                setActiveVariantIndex={setActiveVariantIndex}
+                qty={quantity}
+                setQty={setQuantity}
+                onAddVariant={handleAddVariant}
+                onClose={() => {
+                    // Reset modal-specific state on close
+                    setVariantModalOpen(false);
+                    setSelectedProductForModal(null);
+                    setActiveVariantIndex(0);
+                    setQuantity(1);
+                }}
+             />
+          )}
+      </>
+
+    </div> // End main container div
   );
-}
+} // End Pos_NewSale component

@@ -1,17 +1,18 @@
+
+
 @media print {
-    /* hide everything except invoice */
-    body * {
-      visibility: hidden;
-    }
-    .invoice-panel,
-    .invoice-panel * {
-      visibility: visible;
-    }
-    .invoice-panel {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-    }
+  /* hide everything except invoice */
+  body * {
+    visibility: hidden;
   }
-  
+  .invoice-panel,
+  .invoice-panel * {
+    visibility: visible;
+  }
+  .invoice-panel {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiBell } from 'react-icons/fi';
+import { FiBell, FiPrinter, FiDownload, FiUser } from 'react-icons/fi';
 
 export default function Pos_SalesReport() {
   const [now, setNow] = useState(new Date());
@@ -54,104 +54,127 @@ SOLD ITEMS
 `;
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Top bar */}
-      <header className="flex items-center justify-between bg-white px-6 py-4 border-b">
-        <h1 className="text-2xl font-semibold">Sales Report</h1>
-        <div className="flex items-center space-x-4">
-          <FiBell size={20} className="text-gray-600" />
-          <div className="w-8 h-8 rounded-full bg-gray-200" />
+    <div className="flex flex-col w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-6 bg-gray-50 h-full">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-orange-100/80 to-amber-100/30 rounded-xl p-4 sm:p-6 mb-6">
+        <div className="flex flex-col md:flex-row justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800">Sales Report</h2>
+            <p className="text-gray-600">Daily shift summary and performance metrics</p>
+          </div>
+          <div className="flex items-center space-x-4">
+            <button className="relative p-2 text-gray-600 hover:text-gray-800 transition">
+              <FiBell size={20} />
+              <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
+            </button>
+            <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-500">
+              <FiUser size={18} />
+            </div>
+          </div>
         </div>
-      </header>
+      </div>
 
       {/* Main content */}
-      <div className="flex-1 overflow-auto flex items-center justify-center p-6 bg-gray-50">
-        <div className="relative w-full max-w-3xl bg-white rounded-2xl shadow-lg p-8 space-y-8">
-          {/* Shift Details */}
-          <div className="flex justify-center">
-            <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+      <div className="flex-1 overflow-auto">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 space-y-6">
+          {/* Current Time & Date */}
+          <div className="flex justify-between items-center">
+            <button className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
               Shift Details
             </button>
-          </div>
-
-          {/* Current Time & Date */}
-          <div className="flex justify-end">
-            <div className="bg-blue-100 text-blue-800 text-sm p-4 rounded-lg">
-              <p>Current Time: {formatTime(now)}</p>
+            <div className="bg-blue-50 text-blue-600 text-sm p-4 rounded-lg">
+              <p className="font-medium">Current Time: {formatTime(now)}</p>
               <p>Date: {formatDate(now)}</p>
             </div>
           </div>
 
           {/* Profile + Shift Info */}
-          <div className="grid grid-cols-2 gap-6">
-            <div className="h-40 bg-blue-100 rounded-lg flex items-center justify-center">
-              <span className="text-blue-600 font-medium">Pfp</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-gray-50 rounded-lg p-6 flex items-center gap-4">
+              <div className="w-20 h-20 rounded-full bg-orange-100 flex items-center justify-center text-orange-500">
+                <FiUser size={36} />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">John Kristoffer Miranda</h3>
+                <p className="text-gray-500">#0110123 | Cashier</p>
+              </div>
             </div>
-            <div className="bg-blue-100 rounded-lg p-4 space-y-1 text-sm text-blue-800">
-              <p>
-                <span className="font-semibold">Name:</span> John Kristoffer Miranda
-              </p>
-              <p>
-                <span className="font-semibold">ID:</span> #0110123
-              </p>
-              <p>
-                <span className="font-semibold">Position:</span> Cashier
-              </p>
-              <p>
-                <span className="font-semibold">Shift Start Time:</span> —
-              </p>
-              <p>
-                <span className="font-semibold">Shift End Time:</span> —
-              </p>
+            <div className="bg-blue-50 rounded-lg p-4 space-y-2 text-sm">
+              <h3 className="font-semibold text-blue-800 mb-3">Shift Information</h3>
+              <div className="grid grid-cols-2 gap-y-2">
+                <p className="text-gray-600">Shift Start Time:</p>
+                <p className="font-medium text-gray-800">8:00 AM</p>
+                
+                <p className="text-gray-600">Shift End Time:</p>
+                <p className="font-medium text-gray-800">4:00 PM</p>
+                
+                <p className="text-gray-600">Total Hours:</p>
+                <p className="font-medium text-gray-800">8 hours</p>
+              </div>
             </div>
           </div>
 
           {/* Sales Performance & Payment Summary */}
-          <div className="grid grid-cols-2 gap-6">
-            <div className="bg-blue-100 rounded-lg p-4 space-y-1 text-sm text-blue-800">
-              <h3 className="font-semibold mb-2">Sales Performance</h3>
-              <p>
-                <span className="font-medium">Total Sales Amount:</span> —
-              </p>
-              <p>
-                <span className="font-medium">Total Number Transaction:</span> —
-              </p>
-              <p>
-                <span className="font-medium">Highest Sale:</span> —
-              </p>
-              <p>
-                <span className="font-medium">Average Sale:</span> —
-              </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-green-50 rounded-lg p-6 space-y-3">
+              <h3 className="font-semibold text-green-800 text-lg mb-2">Sales Performance</h3>
+              <div className="grid grid-cols-2 gap-y-3">
+                <p className="text-gray-600">Total Sales Amount:</p>
+                <p className="font-semibold text-green-600">₱12,450.00</p>
+                
+                <p className="text-gray-600">Total Transactions:</p>
+                <p className="font-semibold text-gray-800">32</p>
+                
+                <p className="text-gray-600">Highest Sale:</p>
+                <p className="font-semibold text-gray-800">₱2,340.00</p>
+                
+                <p className="text-gray-600">Average Sale:</p>
+                <p className="font-semibold text-gray-800">₱389.06</p>
+              </div>
             </div>
-            <div className="bg-blue-100 rounded-lg p-4 space-y-1 text-sm text-blue-800">
-              <h3 className="font-semibold mb-2">Payment Summary</h3>
-              <p>
-                <span className="font-medium">Total Cash Received:</span> —
-              </p>
-              <p>
-                <span className="font-medium">Discrepancy:</span> —
-              </p>
+            <div className="bg-amber-50 rounded-lg p-6 space-y-3">
+              <h3 className="font-semibold text-amber-800 text-lg mb-2">Payment Summary</h3>
+              <div className="grid grid-cols-2 gap-y-3">
+                <p className="text-gray-600">Cash Sales:</p>
+                <p className="font-semibold text-gray-800">₱8,670.00</p>
+                
+                <p className="text-gray-600">Card Sales:</p>
+                <p className="font-semibold text-gray-800">₱3,780.00</p>
+                
+                <p className="text-gray-600">Total Cash in Drawer:</p>
+                <p className="font-semibold text-gray-800">₱9,120.00</p>
+                
+                <p className="text-gray-600">Discrepancy:</p>
+                <p className="font-semibold text-red-500">₱450.00</p>
+              </div>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex justify-between">
-            <button className="px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">
-              Close Shift
+          <div className="flex justify-between pt-4 border-t">
+            <button className="px-6 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition flex items-center gap-2">
+              <span>End Shift</span>
             </button>
-            <button
-              className="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition"
-              onClick={() => setShowReceipt(true)}
-            >
-              Print Report
-            </button>
+            <div className="flex gap-3">
+              <button className="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition flex items-center gap-2">
+                <FiDownload size={16} />
+                <span>Download PDF</span>
+              </button>
+              <button
+                className="px-6 py-2.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition flex items-center gap-2"
+                onClick={() => setShowReceipt(true)}
+              >
+                <FiPrinter size={16} />
+                <span>Print Report</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Receipt Overlay */}
       {showReceipt && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 backdrop-blur-md bg-white/30 bg-opacity-50 flex items-center justify-center z-50">
           <div
             className="relative bg-white p-6 rounded-xl max-w-xl w-full overflow-auto"
             style={{ maxHeight: '90vh' }}
@@ -164,18 +187,23 @@ SOLD ITEMS
               &times;
             </button>
 
+            <h3 className="text-lg font-semibold mb-4 text-gray-800">Sales Receipt</h3>
+
             {/* Receipt text */}
-            <pre className="font-mono text-sm leading-snug whitespace-pre-wrap">
-              {receiptText}
-            </pre>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <pre className="font-mono text-sm leading-snug whitespace-pre-wrap">
+                {receiptText}
+              </pre>
+            </div>
 
             {/* Print button */}
             <div className="flex justify-end mt-4">
               <button
                 onClick={() => window.print()}
-                className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
               >
-                Print
+                <FiPrinter size={16} />
+                <span>Print</span>
               </button>
             </div>
           </div>

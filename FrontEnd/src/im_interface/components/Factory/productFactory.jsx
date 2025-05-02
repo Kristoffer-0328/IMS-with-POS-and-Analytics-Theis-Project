@@ -1,61 +1,91 @@
 export const ProductFactory = {
-    /**
-     * Creates a standardized product object
-     * @param {Object} data - Raw product data from any source
-     * @returns {Object} - Standardized product object
-     */
-    createProduct(data) {
-      // Extract custom fields (fields not in our standard schema)
-      const { 
-        ProductName, Category, Quantity, UnitPrice, Unit, 
-        LengthPerUnit, RestockLevel, Location, Date, image,
-        ...customFields 
-      } = data;
-  
-      return {
-        ProductName: ProductName || data.name || "",
-        Category: Category || data.category || "",
-        Quantity: Number(Quantity || data.quantity || 0),
-        UnitPrice: Number(UnitPrice || data.unitPrice || 0),
-        Unit: Unit || data.unit || "pcs",
-        Location: Location || data.location || null,
-        RestockLevel: Number(RestockLevel || data.restockLevel || 0),
-        Date: Date || data.date || null,
-        image: image || null,
-        variants: [], // Initialize empty variants array
-        // Include any additional fields as custom fields
-        ...customFields
-      };
+    generateProductId(productName, category) {
+        // Remove spaces and special characters, keep alphanumeric only
+        const cleanName = productName.split('(')[0].trim().replace(/[^a-zA-Z0-9]/g, '_');
+        const cleanCategory = category.replace(/[^a-zA-Z0-9]/g, '_');
+        return `${cleanCategory}-${cleanName}`;
     },
-  
-    /**
-     * Creates a standardized variant object
-     * @param {Object} data - Raw variant data from any source
-     * @returns {Object} - Standardized variant object
-     */
-    createVariant(data) {
-      // Extract custom fields (fields not in our standard schema)
-      const {
-        Size, value, Quantity, quantity, UnitPrice, unitPrice,
-        Unit, unit, RestockLevel, restockLevel, Location, location,
-        Date, date, LengthPerUnit, length, image,
-        ...customFields
-      } = data;
-  
-      return {
-        value: value || Size || "", // Standardize on 'value' field name
-        quantity: Number(quantity || Quantity || 0),
-        unitPrice: Number(unitPrice || UnitPrice || 0),
-        unit: unit || Unit || "pcs",
-        restockLevel: Number(restockLevel || RestockLevel || 0),
-        location: location || Location || null,
-        date: date || Date || null,
-        length: length || LengthPerUnit || null, // Keep length field from CSV
-        image: image || null,
-        // Include any additional custom fields
-        ...customFields
-      };
+
+    generateVariantId(productId, size, index) {
+        // Handle size with units and parentheses
+        const cleanSize = size 
+            ? size.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_')
+            : `variant_${index}`;
+        return `${productId}-${cleanSize}`;
+    },
+
+    createProduct(data) {
+        // Extract base product name without size/unit information
+        const baseName = data.ProductName.split('(')[0].trim();
+        const productId = this.generateProductId(baseName, data.Category);
+        
+        return {
+            id: productId,
+            name: data.ProductName,
+            baseProductName: baseName, // Add base name for consistent lookup
+            category: data.Category,
+            quantity: Number(data.Quantity || 0),
+            unitPrice: Number(data.UnitPrice || 0),
+            location: data.Location || null,
+            variants: [],
+            image: null,
+            lastUpdated: new Date().toISOString(),
+            measurements: {
+                lengthPerUnit: data.LengthPerUnit || null,
+                defaultUnit: data.Unit || "pcs"
+            }
+        };
+    },
+
+    createVariant(data, productId, index) {
+        // Extract size from product name if not explicitly provided
+        let size = data.Size;
+        if (!size && data.ProductName.includes('(')) {
+            const sizeMatch = data.ProductName.match(/\((.*?)\)/);
+            size = sizeMatch ? sizeMatch[1] : '';
+        }
+
+        const variantId = this.generateVariantId(productId, size, index);
+        
+        return {
+            id: variantId,
+            baseProductId: productId,
+            size: size || "",
+            quantity: Number(data.Quantity || 0),
+            unitPrice: Number(data.UnitPrice || 0),
+            unit: data.Unit || "pcs",
+            location: data.Location || null,
+            lengthPerUnit: data.LengthPerUnit || null,
+            expiringDate: data.ExpiringDate || null,
+            totalValue: Number(data.TotalValue || 0)
+        };
+    },
+
+    processCSVData(csvData) {
+        const groupedProducts = {};
+
+        csvData.forEach(row => {
+            // Use base product name for grouping
+            const baseName = row.ProductName.split('(')[0].trim();
+            const productKey = this.generateProductId(baseName, row.Category);
+
+            if (!groupedProducts[productKey]) {
+                groupedProducts[productKey] = this.createProduct(row);
+            }
+
+            const variant = this.createVariant(row, productKey, 
+                groupedProducts[productKey].variants.length);
+            groupedProducts[productKey].variants.push(variant);
+
+            // Update total quantity and price if no variants
+            if (groupedProducts[productKey].variants.length === 1) {
+                groupedProducts[productKey].unitPrice = Number(row.UnitPrice || 0);
+            }
+            groupedProducts[productKey].quantity += Number(row.Quantity || 0);
+        });
+
+        return Object.values(groupedProducts);
     }
-  };
-  
-  export default ProductFactory;
+};
+
+export default ProductFactory;

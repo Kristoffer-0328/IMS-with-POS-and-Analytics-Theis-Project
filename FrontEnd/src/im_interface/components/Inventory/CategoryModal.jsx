@@ -11,7 +11,7 @@ import {
   updateDoc,
   arrayUnion,
 } from 'firebase/firestore';
-import ProductFactory from '../Factory/productFactory';
+import { ProductFactory } from '../Factory/productFactory';
 import { useServices } from '../../../FirebaseBackEndQuerry/ProductServices';
 
 const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
@@ -44,12 +44,19 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
     };
 
     const fetchCategories = async () => {
-      const querySnapshot = await getDocs(collection(db, "Categories"));
-      const fetchedCategories = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setCategories(fetchedCategories);
+      try {
+        // Get categories directly from Products collection
+        const productsRef = collection(db, "Products");
+        const querySnapshot = await getDocs(productsRef);
+        const fetchedCategories = querySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          name: doc.id, // Use the document ID as the category name
+          ...doc.data()
+        }));
+        setCategories(fetchedCategories);
+      } catch (error) {
+        console.error("Error fetching categories:", error);
+      }
     };
 
     if (CategoryOpen) {
@@ -64,15 +71,31 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
 
   const handleAddCategory = async () => {
     if (!newCategoryName.trim()) return;
-    await addDoc(collection(db, 'Categories'), { name: newCategoryName.trim() });
-    setNewCategoryName('');
-    setShowAddCategory(false);
-    const querySnapshot = await getDocs(collection(db, "Categories"));
-    const updatedCategories = querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-    setCategories(updatedCategories);
+
+    try {
+      // Create new category document in Products collection
+      const categoryRef = doc(db, 'Products', newCategoryName.trim());
+      await setDoc(categoryRef, { 
+        name: newCategoryName.trim(),
+        createdAt: new Date().toISOString()
+      });
+
+      // Refresh categories list
+      const productsRef = collection(db, "Products");
+      const querySnapshot = await getDocs(productsRef);
+      const updatedCategories = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        name: doc.id,
+        ...doc.data()
+      }));
+      
+      setCategories(updatedCategories);
+      setNewCategoryName('');
+      setShowAddCategory(false);
+    } catch (error) {
+      console.error("Error adding category:", error);
+      alert("Failed to add category: " + error.message);
+    }
   };
 
   const handleCategoryClick = (category) => {
@@ -80,11 +103,23 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
     setShowAddProductModal(true);
   };
 
-  
-
+  const validateProduct = () => {
+    const errors = [];
+    if (!productName.trim()) errors.push("Product name is required");
+    if (!quantity) errors.push("Quantity is required");
+    if (!unitPrice) errors.push("Unit price is required");
+    if (!selectedCategory) errors.push("Category is required");
+    
+    if (errors.length > 0) {
+        alert(`Please fix the following errors:\n${errors.join('\n')}`);
+        return false;
+    }
+    return true;
+  };
 
   const NewVariantForm = () => {
-    const [variantProduct, setVariantProduct] = useState('');
+    const [existingProducts, setExistingProducts] = useState([]);
+    const [selectedProduct, setSelectedProduct] = useState(null);
     const [variantValue, setVariantValue] = useState('');
     const [quantity, setQuantity] = useState('');
     const [unitPrice, setUnitPrice] = useState('');
@@ -93,243 +128,226 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
     const [date, setDate] = useState('');
     const [variantImage, setVariantImage] = useState(null);
     const [unit, setUnit] = useState('pcs');
-
-  
     const [additionalVariantFields, setAdditionalVariantFields] = useState([]);
     const [newVariantFieldName, setNewVariantFieldName] = useState('');
-  
-    const handleAddField = () => {
-      if (
-        newVariantFieldName.trim() &&
-        !additionalVariantFields.find((f) => f.name === newVariantFieldName)
-      ) {
-        setAdditionalVariantFields([
-          ...additionalVariantFields,
-          { name: newVariantFieldName, value: '' },
-        ]);
-        setNewVariantFieldName('');
-      }
-    };
-  
-    const handleImageUpload = (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        const imageUrl = URL.createObjectURL(file);
-        setVariantImage(imageUrl);
-      }
-    };
-  
-    const removeImage = () => {
-      setVariantImage(null);
-      document.getElementById('variantImage').value = '';
-    };
-  
-    const handleAddVariant = async () => {
-      if (!variantProduct.trim() || !selectedCategory) return;
-      
-      try {
-        // Create customFields object
-        const customFieldsObject = {};
-        additionalVariantFields.forEach((field) => {
-          customFieldsObject[field.name] = field.value;
-        });
-        
-        // Create standardized variant using factory
-        const variantData = ProductFactory.createVariant({
-          value: variantValue,
-          quantity: Number(quantity) || 0,
-          unitPrice: Number(unitPrice) || 0,
-          unit: unit,
-          restockLevel: Number(restockLevel) || 0,
-          location: storageLocation,
-          date: date,
-          image: variantImage,
-          ...customFieldsObject
-        });
-        
-        const productPath = doc(
-          db,
-          'Products',
-          selectedCategory.name,
-          'Items',
-          variantProduct.trim()
-        );
-        
-        // First check if the product exists
-        const productDoc = await getDoc(productPath);
-        
-        if (!productDoc.exists()) {
-          // Product doesn't exist, create it first with the variant
-          const newProductData = ProductFactory.createProduct({
-            ProductName: variantProduct.trim(),
-            Category: selectedCategory.name,
-            Quantity: Number(quantity) || 0,
-            UnitPrice: Number(unitPrice) || 0,
-            Unit: unit,
-            RestockLevel: Number(restockLevel) || 0,
-            Location: storageLocation,
-            Date: date,
-            variants: [variantData]
-          });
-          
-          await setDoc(productPath, newProductData);
-        } else {
-          // Product exists, add the variant and update total quantity
-          const productData = productDoc.data();
-          const currentQuantity = productData.Quantity || 0;
-          const variantQuantity = Number(quantity) || 0;
-          
-          // Transaction to update both variants array and total quantity
-          await updateDoc(productPath, {
-            variants: arrayUnion(variantData),
-            Quantity: currentQuantity + variantQuantity
-          });
-        }
-        
-        alert('Variant added successfully.');
-        CategoryClose();
-      } catch (error) {
-        console.error("Error adding variant:", error);
-        alert('Failed to add variant. Please try again.');
-      }
-    };
-    return (
-      <div className="space-y-4 mt-4">
-        <h2 className="text-sm font-semibold text-gray-500 mb-2">Add Variant</h2>
-        <p className="font-bold text-sm mb-4">Category: <span className="font-bold text-blue-600">{selectedCategory?.name}</span></p>
-        {/* Image Upload */}
-        <div className="w-full border border-dashed border-gray-400 p-4 rounded relative">
-          {variantImage ? (
-            <div className="relative">
-              <img src={variantImage} alt="Preview" className="w-full h-48 object-contain rounded" />
-              <button
-                onClick={removeImage}
-                className="absolute top-2 right-2 bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-800"
-              >
-                Remove
-              </button>
-            </div>
-          ) : (
-            <label
-              htmlFor="variantImage"
-              className="w-full h-24 flex items-center justify-center cursor-pointer text-gray-500"
-            >
-              Upload Variant Image
-            </label>
-          )}
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleImageUpload}
-            className="hidden"
-            id="variantImage"
-          />
-        </div>
-  
-        <input
-          type="text"
-          value={variantProduct}
-          onChange={(e) => setVariantProduct(e.target.value)}
-          placeholder="Product Name"
-          className="w-full p-2 border rounded"
-        />
-        <input
-          type="text"
-          value={variantValue}
-          onChange={(e) => setVariantValue(e.target.value)}
-          placeholder="Variant Value (e.g. Color: Red)"
-          className="w-full p-2 border rounded"
-        />
-        <input
-          type="number"
-          value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
-          placeholder="Quantity"
-          className="w-full p-2 border rounded"
-        />
-        <input
-          type="text"
-          value={unit}
-          onChange={(e) => setUnit(e.target.value)}
-          placeholder="Unit (e.g. pcs, kg)"
-          className="w-full p-2 border rounded"
-        />
 
-        <input
-          type="number"
-          value={unitPrice}
-          onChange={(e) => setUnitPrice(e.target.value)}
-          placeholder="Unit Price"
-          className="w-full p-2 border rounded"
-        />
-        <input
-          type="number"
-          value={restockLevel}
-          onChange={(e) => setRestockLevel(e.target.value)}
-          placeholder="Restock Level"
-          className="w-full p-2 border rounded"
-        />
-        <select
-          value={storageLocation}
-          onChange={(e) => setStorageLocation(e.target.value)}
-          className="w-full p-2 border rounded"
-        >
-          {storageOptions.map((loc, index) => (
-            <option key={index} value={loc}>
-              {loc}
-            </option>
-          ))}
-        </select>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="w-full p-2 border rounded"
-        />
-  
-        {/* Custom Fields */}
-        <div className="">
-          {additionalVariantFields.map((field, idx) => (
-            <input
-              key={idx}
-              type="text"
-              value={field.value}
-              onChange={(e) => {
-                const updatedFields = [...additionalVariantFields];
-                updatedFields[idx].value = e.target.value;
-                setAdditionalVariantFields(updatedFields);
-              }}
-              placeholder={field.name}
-              className="w-full p-2 border rounded"
-            />
-          ))}
-          <div className="flex space-x-2">
-            <input
-              type="text"
-              value={newVariantFieldName}
-              onChange={(e) => setNewVariantFieldName(e.target.value)}
-              placeholder="New Field Name"
-              className="flex-1 p-2 border rounded"
-            />
-            <button
-              onClick={handleAddField}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              Add
-            </button>
-          </div>
+    useEffect(() => {
+        const fetchProducts = async () => {
+            if (!selectedCategory?.name) {
+                console.log('No category selected');
+                return;
+            }
+
+            try {
+                console.log('Fetching products for category:', selectedCategory.name);
+                const productsRef = collection(db, 'Products', selectedCategory.name, 'Items');
+                const snapshot = await getDocs(productsRef);
+                
+                if (snapshot.empty) {
+                    console.log('No products found in category:', selectedCategory.name);
+                    setExistingProducts([]);
+                    return;
+                }
+
+                const products = snapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return {
+                        id: doc.id,
+                        name: data.name, // Using the name field from ProductFactory
+                        baseProductName: data.baseProductName,
+                        category: data.category,
+                        quantity: data.quantity,
+                        unitPrice: data.unitPrice,
+                        location: data.location,
+                        measurements: data.measurements || {},
+                        variants: data.variants || [],
+                        lastUpdated: data.lastUpdated
+                    };
+                });
+
+                console.log('Processed products:', products);
+                setExistingProducts(products);
+            } catch (error) {
+                console.error("Error fetching products:", error);
+                alert("Error loading products: " + error.message);
+            }
+        };
+
+        fetchProducts();
+    }, [selectedCategory]);
+
+    const handleProductSelect = (productId) => {
+        const product = existingProducts.find(p => p.id === productId);
+        console.log('Selected product:', product);
+
+        if (product) {
+            setSelectedProduct(product);
+            // Use the correct property names from ProductFactory
+            setUnit(product.measurements?.defaultUnit || 'pcs');
+            setRestockLevel(product.quantity || '');
+            setStorageLocation(product.location || 'STR A1');
+            setUnitPrice(product.unitPrice || 
+                (product.variants && product.variants[0]?.unitPrice) || '');
+        }
+    };
+
+    return (
+        <div className="space-y-4 mt-4">
+            <h2 className="text-sm font-semibold text-gray-500 mb-2">Add Variant</h2>
+            <p className="font-bold text-sm mb-4">
+                Category: <span className="font-bold text-blue-600">{selectedCategory?.name}</span>
+            </p>
+
+            <div className="w-full">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Select Product
+                </label>
+                <select
+                    className="w-full p-2 border rounded bg-white"
+                    onChange={(e) => handleProductSelect(e.target.value)}
+                    value={selectedProduct?.id || ''}
+                >
+                    <option value="">-- Select a Product --</option>
+                    {existingProducts.length > 0 ? (
+                        existingProducts.map(product => (
+                            <option key={product.id} value={product.id}>
+                                {product.name || product.baseProductName}
+                            </option>
+                        ))
+                    ) : (
+                        <option disabled>No products available</option>
+                    )}
+                </select>
+                <div className="text-sm text-gray-500 mt-1">
+                    {existingProducts.length} products available
+                </div>
+            </div>
+
+            {selectedProduct && (
+                <>
+                    <div className="w-full border border-dashed border-gray-400 p-4 rounded relative">
+                        {variantImage ? (
+                            <div className="relative">
+                                <img src={variantImage} alt="Preview" className="w-full h-48 object-contain rounded" />
+                                <button onClick={() => setVariantImage(null)} className="absolute top-2 right-2 bg-red-500 text-white px-2 py-1 rounded text-xs">
+                                    Remove
+                                </button>
+                            </div>
+                        ) : (
+                            <label htmlFor="variantImage" className="w-full h-24 flex items-center justify-center cursor-pointer text-gray-500">
+                                Upload Variant Image
+                            </label>
+                        )}
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                                const file = e.target.files[0];
+                                if (file) {
+                                    const imageUrl = URL.createObjectURL(file);
+                                    setVariantImage(imageUrl);
+                                }
+                            }}
+                            className="hidden"
+                            id="variantImage"
+                        />
+                    </div>
+
+                    <input
+                        type="text"
+                        value={variantValue}
+                        onChange={(e) => setVariantValue(e.target.value)}
+                        placeholder="Variant Type (e.g., Size, Color)"
+                        className="w-full p-2 border rounded"
+                    />
+
+                    <input
+                        type="number"
+                        value={quantity}
+                        onChange={(e) => setQuantity(e.target.value)}
+                        placeholder="Quantity"
+                        className="w-full p-2 border rounded"
+                    />
+
+                    <input
+                        type="text"
+                        value={unit}
+                        onChange={(e) => setUnit(e.target.value)}
+                        placeholder="Unit (e.g. pcs, kg)"
+                        className="w-full p-2 border rounded"
+                    />
+
+                    <input
+                        type="number"
+                        value={unitPrice}
+                        onChange={(e) => setUnitPrice(e.target.value)}
+                        placeholder="Unit Price"
+                        className="w-full p-2 border rounded"
+                    />
+
+                    <div className="space-y-2">
+                        <div className="flex items-center space-x-2">
+                            <input
+                                type="text"
+                                value={newVariantFieldName}
+                                onChange={(e) => setNewVariantFieldName(e.target.value)}
+                                placeholder="New Field Name"
+                                className="flex-1 p-2 border rounded"
+                            />
+                            <button
+                                onClick={() => {
+                                    if (newVariantFieldName.trim()) {
+                                        setAdditionalVariantFields([
+                                            ...additionalVariantFields,
+                                            { name: newVariantFieldName.trim(), value: '' }
+                                        ]);
+                                        setNewVariantFieldName('');
+                                    }
+                                }}
+                                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                            >
+                                Add Field
+                            </button>
+                        </div>
+
+                        {additionalVariantFields.map((field, idx) => (
+                            <div key={idx} className="flex items-center space-x-2">
+                                <input
+                                    type="text"
+                                    value={field.value}
+                                    onChange={(e) => {
+                                        const updated = [...additionalVariantFields];
+                                        updated[idx].value = e.target.value;
+                                        setAdditionalVariantFields(updated);
+                                    }}
+                                    placeholder={field.name}
+                                    className="flex-1 p-2 border rounded"
+                                />
+                                <button
+                                    onClick={() => {
+                                        setAdditionalVariantFields(
+                                            additionalVariantFields.filter((_, i) => i !== idx)
+                                        );
+                                    }}
+                                    className="px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+
+                    <button
+                        onClick={handleAddVariant}
+                        className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                        Add Variant
+                    </button>
+                </>
+            )}
         </div>
-  
-        <button
-          onClick={handleAddVariant}
-          className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          Add Variant
-        </button>
-      </div>
     );
   };
-  
 
   const NewProductForm = () => {
     const [productName, setProductName] = useState('');
@@ -363,56 +381,58 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
     
     const removeImage = () => {
       setProductImage(null);
-      // Reset file input manually
       document.getElementById("productImage").value = "";
     };
     
 
     const handleAddProduct = async () => {
-      if (!productName.trim() || !quantity || !unitPrice || !restockLevel) return;
+      if (!productName.trim() || !selectedCategory) {
+        alert('Please fill in required fields');
+        return;
+      }
+  
       try {
-        // Create customFields object
-        const customFieldsObject = {};
-        additionalFields.forEach(field => {
-          customFieldsObject[field.name] = field.value;
-        });
-    
-        // Create initial variant
-        const initialVariant = ProductFactory.createVariant({
-          value: "", // Default empty value for first variant
-          quantity: quantity,
-          unitPrice: unitPrice,
-          unit: unit,
-          restockLevel: restockLevel,
-          location: storage,
-          date: dateStocked,
-          ...customFieldsObject
-        });
-    
-        // Create standardized product using factory
         const productData = ProductFactory.createProduct({
           ProductName: productName.trim(),
           Category: selectedCategory.name,
-          Quantity: quantity,
-          UnitPrice: unitPrice,
-          Unit: unit,
-          RestockLevel: restockLevel,
+          Quantity: Number(quantity) || 0,
+          UnitPrice: Number(unitPrice) || 0,
+          Unit: unit || 'pcs',
+          RestockLevel: Number(restockLevel) || 0,
           Location: storage,
-          Date: dateStocked,
-          image: productImage,
-          ...customFieldsObject
+          Date: dateStocked
         });
-        
-        // Add the initial variant to the variants array
+  
+        const initialVariant = {
+          size: '',
+          unit: unit || 'pcs',
+          quantity: Number(quantity) || 0,
+          unitPrice: Number(unitPrice) || 0,
+          location: storage,
+          lengthPerUnit: null,
+          expiringDate: dateStocked || null
+        };
+  
         productData.variants = [initialVariant];
-    
-        const productRef = doc(db, 'Products', selectedCategory.name, 'Items', productName.trim());
+  
+        const productRef = doc(
+          db, 
+          'Products', 
+          selectedCategory.name, 
+          'Items', 
+          productData.id
+        );
+  
         await setDoc(productRef, productData);
-    
-        alert('Product added successfully');
+  
+        const categoryRef = doc(db, 'Products', selectedCategory.name);
+        await setDoc(categoryRef, { name: selectedCategory.name }, { merge: true });
+  
+        alert('Product added successfully!');
         CategoryClose();
       } catch (error) {
         console.error("Error adding product:", error);
+        alert(`Failed to add product: ${error.message}`);
       }
     };
 
@@ -542,8 +562,12 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
           ))}
 
           <button
-            onClick={handleAddProduct}
-            className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-800 "
+            onClick={async () => {
+                if (validateProduct()) {
+                    await handleAddProduct();
+                }
+            }}
+            className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-800"
           >
             Add Product
           </button>

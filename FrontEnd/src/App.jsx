@@ -34,12 +34,12 @@ import LoadingScreen from './im_interface/components/LoadingScreen';
 
 
 // POS cashier Interface
-import Pos_Dashboard from './cashier_pos_interface/pos_pages/pos_Dashboard';
+
 import Pos_Sidebar from './cashier_pos_interface/pos_pages/pos_Sidebar';
-import Pos_NewSale from './cashier_pos_interface/pos_pages/pos_NewSale';
-import Pos_SalesReport from './cashier_pos_interface/pos_pages/pos_SalesReport';
+import Pos_NewSale from './cashier_pos_interface/pos_pages/Pos_NewSale';
+import Pos_SalesReport from './cashier_pos_interface/pos_pages/Pos_SalesReport';
 import Pos_Settings from './cashier_pos_interface/pos_pages/pos_Settings';
-import Pos_Transaction_History from './cashier_pos_interface/pos_pages/pos_TransactionHistory';
+import Pos_Transaction_History from './cashier_pos_interface/pos_pages/Pos_TransactionHistory';
 // Layouts
 const AdminLayout = ({ children }) => (
   <div className="flex min-h-screen w-full bg-gray-50">
@@ -255,19 +255,14 @@ const AppRoutes = () => {
         }
       />
 
-      <Route
-        path='/pos'
-        element={
-          <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
-            <Pos_Dashboard/>
-          </ProtectedRoute>
-        }
-        />
          <Route
         path='/pos/newsale'
         element={
           <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
-            <Pos_NewSale/>
+            <ServicesProvider>
+               <Pos_NewSale/>
+            </ServicesProvider>
+           
           </ProtectedRoute>
         }
         />
@@ -275,7 +270,10 @@ const AppRoutes = () => {
         path='/pos/salesreport'
         element={
           <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
-            <Pos_SalesReport/>
+            <ServicesProvider>
+               <Pos_SalesReport/>
+            </ServicesProvider>
+           
           </ProtectedRoute>
         }
         />
@@ -283,7 +281,10 @@ const AppRoutes = () => {
         path='/pos/THistory'
         element={
           <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
-            <Pos_Transaction_History/>
+            <ServicesProvider>
+              <Pos_Transaction_History/>
+            </ServicesProvider>
+            
           </ProtectedRoute>
         }
         />
@@ -291,7 +292,10 @@ const AppRoutes = () => {
         path='/pos/settings'
         element={
           <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
-            <Pos_Settings/>
+            <ServicesProvider>
+              <Pos_Settings/>
+            </ServicesProvider>
+            
           </ProtectedRoute>
         }
         />
