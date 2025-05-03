@@ -26,11 +26,9 @@ function ProductItem({ product, onAddProduct, disabled }) {
   }
 
   // Calculate stock and price display
-  const totalStock = product.variants?.length > 0
-    ? product.variants.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0)
-    : Number(product.quantity) || 0;
+  const totalStock = Number(product.quantity) || 0;
   const isOutOfStock = totalStock <= 0;
-
+  
   const prices = product.variants.map(v => v.price).filter(price => typeof price === 'number' && price > 0);
   const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
   const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;

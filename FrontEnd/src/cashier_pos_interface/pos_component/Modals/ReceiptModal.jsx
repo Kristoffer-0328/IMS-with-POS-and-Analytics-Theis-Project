@@ -4,6 +4,29 @@ import { FiX } from 'react-icons/fi';
 const ReceiptModal = ({ transaction, onClose }) => {
   if (!transaction) return null;
 
+  // Format the timestamp when the modal opens
+  const formatDateTime = (timestamp) => {
+    if (!timestamp || !timestamp.toDate) {
+      return { dateString: 'N/A', timeString: 'N/A' };
+    }
+
+    const date = timestamp.toDate();
+    return {
+      dateString: date.toLocaleDateString('en-US', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      }).replace(/,/g, '').toUpperCase(),
+      timeString: date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      })
+    };
+  };
+
+  const { dateString, timeString } = formatDateTime(transaction.timestamp);
+
   return (
     <div className="fixed inset-0 backdrop-blur-md bg-black/30 bg-opacity-40 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-[0_0_40px_-15px_rgba(0,0,0,0.3)] animate-modalFadeIn">
@@ -24,7 +47,8 @@ const ReceiptModal = ({ transaction, onClose }) => {
           <div className="text-center border-b pb-4">
             <h3 className="text-lg font-bold">Glory Sales</h3>
             <p className="text-sm text-gray-600">Receipt #{transaction.id}</p>
-            <p className="text-sm text-gray-600">{transaction.date} {transaction.time}</p>
+            <p className="text-sm text-gray-600">Date: {dateString}</p>
+            <p className="text-sm text-gray-600">Time: {timeString}</p>
           </div>
 
           {/* Customer Info */}
@@ -34,8 +58,8 @@ const ReceiptModal = ({ transaction, onClose }) => {
             </p>
             {transaction.customerDetails && (
               <div className="text-sm">
-                <p><span className="font-semibold">Phone:</span> {transaction.customerDetails.phone}</p>
-                <p><span className="font-semibold">Address:</span> {transaction.customerDetails.address}</p>
+                <p><span className="font-semibold">Phone:</span> {transaction.customerDetails.phone || 'N/A'}</p>
+                <p><span className="font-semibold">Address:</span> {transaction.customerDetails.address || 'N/A'}</p>
               </div>
             )}
             <p className="text-sm">
@@ -59,8 +83,8 @@ const ReceiptModal = ({ transaction, onClose }) => {
                   <tr key={index}>
                     <td className="py-2">{item.name}</td>
                     <td className="py-2 text-center">{item.quantity}</td>
-                    <td className="py-2 text-right">₱{item.price.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
-                    <td className="py-2 text-right">₱{(item.price * item.quantity).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
+                    <td className="py-2 text-right">₱{item.price.toFixed(2)}</td>
+                    <td className="py-2 text-right">₱{(item.price * item.quantity).toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -71,23 +95,23 @@ const ReceiptModal = ({ transaction, onClose }) => {
           <div className="space-y-2 border-t pt-4">
             <div className="flex justify-between">
               <span>Subtotal:</span>
-              <span>₱{transaction.subTotal.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+              <span>₱{transaction.subTotal.toFixed(2)}</span>
             </div>
             <div className="flex justify-between">
               <span>Tax (12%):</span>
-              <span>₱{transaction.tax.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+              <span>₱{transaction.tax.toFixed(2)}</span>
             </div>
             <div className="flex justify-between font-bold">
               <span>Total:</span>
-              <span>₱{transaction.total.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+              <span>₱{transaction.total.toFixed(2)}</span>
             </div>
             <div className="flex justify-between">
               <span>Amount Paid:</span>
-              <span>₱{transaction.amountPaid.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+              <span>₱{transaction.amountPaid.toFixed(2)}</span>
             </div>
             <div className="flex justify-between">
               <span>Change:</span>
-              <span>₱{transaction.change.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+              <span>₱{transaction.change.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span>Payment Method:</span>

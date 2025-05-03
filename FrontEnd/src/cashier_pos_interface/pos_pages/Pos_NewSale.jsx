@@ -32,17 +32,28 @@ const db = getFirestore(app);
 // Helper function to format Date/Time (can be moved to utils)
 const getFormattedDateTime = () => {
     const now = new Date();
+    
     const formattedDate = now.toLocaleDateString('en-US', {
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-    });
-    const formattedTime = now.toLocaleTimeString('en-US', {
-        hour: 'numeric', minute: '2-digit', hour12: true
-    });
-    return { formattedDate, formattedTime };
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+    }).replace(/,/g, '').toUpperCase();
+
+    // Format time parts separately for better control
+    const hours = now.getHours().toString().padStart(2, '0');
+    const minutes = now.getMinutes().toString().padStart(2, '0');
+    const seconds = now.getSeconds().toString().padStart(2, '0');
+
+    return {
+        formattedDate,
+        formattedTime: { hours, minutes, seconds }
+    };
 };
 
 export default function Pos_NewSale() {
   // --- State Management ---
+
+  const [currentDateTime, setCurrentDateTime] = useState(() => getFormattedDateTime());
   const [cart, setCart] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [amountPaid, setAmountPaid] = useState('');
@@ -67,6 +78,19 @@ export default function Pos_NewSale() {
   const [walkInCounter, setWalkInCounter] = useState(0);
   const [customerIdentifier, setCustomerIdentifier] = useState('Walk-in Customer');
   const [customerDisplayName, setCustomerDisplayName] = useState('Walk-in Customer');
+
+  // Add clock update effect
+  useEffect(() => {
+    const updateClock = () => {
+        const time = getFormattedDateTime();
+        console.log("Current time data:", time); // Debug log
+        setCurrentDateTime(time);
+    };
+    
+    updateClock();
+    const timer = setInterval(updateClock, 1000);
+    return () => clearInterval(timer);
+}, []);
 
   // --- Data Fetching and Processing ---
 
@@ -463,20 +487,33 @@ export default function Pos_NewSale() {
 
 
   // --- UI ---
-  const { formattedDate, formattedTime } = getFormattedDateTime();
   const shouldDisableInteractions = isProcessing || (showBulkOrderPopup && isBulkOrder === null) || (showBulkOrderPopup && isBulkOrder === true);
 
   return (
     <div className="flex flex-col w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-6 bg-gray-50 h-full">
       {/* Header */}
       <div className="bg-gradient-to-r from-orange-100/80 to-amber-100/30 rounded-xl p-4 sm:p-6 mb-6 shadow-sm">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4"> {/* Aligned items center */}
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
           <div>
             <h2 className="text-2xl font-bold text-gray-800">New Sale</h2>
-            <p className="text-gray-600">{formattedTime} | {formattedDate}</p>
+            <div className="clock-display">
+              <span className="clock-time">
+                {currentDateTime.formattedTime?.hours || '00'}
+              </span>
+              <span className="clock-separator">:</span>
+              <span className="clock-time">
+                {currentDateTime.formattedTime?.minutes || '00'}
+              </span>
+              <span className="clock-separator">:</span>
+              <span className="clock-time">
+                {currentDateTime.formattedTime?.seconds || '00'}
+              </span>
+              <span className="clock-divider">|</span>
+              <span>{currentDateTime.formattedDate}</span>
+            </div>
           </div>
-          <div className="text-sm font-medium flex items-center bg-white px-3 py-1 rounded-full shadow-xs"> {/* Added subtle background */}
-            <span className="font-semibold text-gray-800">Moni Roy</span> {/* TODO: Replace with dynamic Cashier Name */}
+          <div className="text-sm font-medium flex items-center bg-white px-3 py-1 rounded-full shadow-xs">
+            <span className="font-semibold text-gray-800">Moni Roy</span>
             <span className="text-gray-500 ml-2">| Cashier</span>
           </div>
         </div>
@@ -493,13 +530,12 @@ export default function Pos_NewSale() {
             disabled={shouldDisableInteractions} // Disable search when modals are active or processing
           />
           {/* Product Grid Container */}
-          <div className="flex-1 bg-white rounded-lg shadow-sm p-5 border border-gray-100 overflow-y-auto"> {/* Changed overflow to y-auto */}
+          <div className="flex-1 bg-white rounded-lg shadow-sm p-5 border border-gray-100 overflow-y-auto">
              <ProductGrid
                 products={filteredProducts}
                 onAddProduct={handleAddProduct}
                 loading={loadingProducts}
                 searchQuery={searchQuery}
-                // Disable grid items when modals are active or processing
                 disabled={shouldDisableInteractions}
             />
           </div>
@@ -512,20 +548,19 @@ export default function Pos_NewSale() {
                 customerDisplayName={customerDisplayName}
                 isBulkOrder={isBulkOrder}
                 customerDetails={customerDetails}
-                formattedDate={formattedDate}
+                formattedDate={currentDateTime.formattedDate}
             />
             {/* Cart Items */}
             <Cart
                 cartItems={cart}
                 onRemoveItem={handleRemoveItem}
-                isProcessing={isProcessing} // Disable remove buttons during processing
+                isProcessing={isProcessing}
             />
             {/* Order Summary (Totals) */}
             <OrderSummary
                 subTotal={subTotal}
                 tax={tax}
                 total={total}
-                // taxRate={0.12} // Pass tax rate if it's dynamic
             />
             {/* Payment Section */}
             <PaymentSection
@@ -536,19 +571,17 @@ export default function Pos_NewSale() {
                 total={total}
                 isProcessing={isProcessing}
                 cartIsEmpty={cart.length === 0}
-                onPrintAndSave={handlePrintAndSave} // Pass the transaction handler
+                onPrintAndSave={handlePrintAndSave}
             />
         </aside>
       </div>
 
       {/* Modals Section - Render conditionally */}
-      <> {/* Use fragment to group modals */}
+      <>
           {/* Modal 1: Bulk Order Choice */}
           {showBulkOrderPopup && isBulkOrder === null && (
              <BulkOrderChoiceModal
                 onChoice={handleBulkOrderChoice}
-                // Optional: Add an explicit close action if needed, though choice usually closes it
-                // onClose={() => setShowBulkOrderPopup(false)}
              />
           )}
 
@@ -558,12 +591,9 @@ export default function Pos_NewSale() {
                 customerDetails={customerDetails}
                 setCustomerDetails={setCustomerDetails}
                 onSubmit={handleCustomerDetailsSubmit}
-                // If user closes details modal without submitting, reset back to choice state or fully reset
                 onClose={() => {
-                    setShowBulkOrderPopup(false); // Hide modal area
-                    resetSaleState(); // Reset everything to start fresh if they cancel bulk details
-                    // Or alternatively, just revert the choice:
-                    // setIsBulkOrder(null); setShowBulkOrderPopup(true);
+                    setShowBulkOrderPopup(false);
+                    resetSaleState();
                  }}
              />
           )}
@@ -578,7 +608,6 @@ export default function Pos_NewSale() {
                 setQty={setQuantity}
                 onAddVariant={handleAddVariant}
                 onClose={() => {
-                    // Reset modal-specific state on close
                     setVariantModalOpen(false);
                     setSelectedProductForModal(null);
                     setActiveVariantIndex(0);
@@ -588,6 +617,6 @@ export default function Pos_NewSale() {
           )}
       </>
 
-    </div> // End main container div
+    </div>
   );
 } // End Pos_NewSale component

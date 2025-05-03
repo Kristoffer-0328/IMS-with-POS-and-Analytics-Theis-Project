@@ -5,6 +5,43 @@ import app from '../../FirebaseConfig';
 import ReceiptModal from '../pos_component/Modals/ReceiptModal';
 
 const db = getFirestore(app);
+
+// Helper function to format date and time
+const getFormattedDateTime = (timestamp) => {
+    if (!timestamp || !timestamp.toDate) {
+        return {
+            dateString: 'N/A',
+            timeString: 'N/A'
+        };
+    }
+    
+    const date = timestamp.toDate();
+    
+    const dateString = date.toLocaleDateString('en-US', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+    }).replace(/,/g, '').toUpperCase();
+
+    const timeString = date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    });
+
+    return {
+        dateString,
+        timeString,
+        // Add formatted individual components for ReceiptModal
+        time: {
+            hours: date.getHours().toString().padStart(2, '0'),
+            minutes: date.getMinutes().toString().padStart(2, '0'),
+            seconds: date.getSeconds().toString().padStart(2, '0')
+        }
+    };
+};
+
 // Transaction Summary Component with real data
 const TransactionSummary = ({ transactions }) => {
   const calculateSummary = () => {
@@ -70,7 +107,6 @@ export default function Pos_Transaction_History() {
         const transactionsRef = collection(db, 'Transactions');
         let q = query(transactionsRef, orderBy('timestamp', 'desc'));
 
-        // Apply filters if needed
         if (currentFilter !== 'all') {
           q = query(q, where('paymentMethod', '==', currentFilter));
         }
@@ -78,8 +114,7 @@ export default function Pos_Transaction_History() {
         const querySnapshot = await getDocs(q);
         const fetchedTransactions = querySnapshot.docs.map(doc => ({
           id: doc.id,
-          ...doc.data(),
-          datetime: new Date(doc.data().timestamp?.toDate()).toLocaleString(),
+          ...doc.data()
         }));
 
         setTransactions(fetchedTransactions);
@@ -171,30 +206,41 @@ export default function Pos_Transaction_History() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {filteredTransactions.map((transaction) => (
-                  <tr key={transaction.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">{transaction.id}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{transaction.datetime}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{transaction.customerName}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                      ₱{transaction.total.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{transaction.paymentMethod}</td>
-                    <td className="px-6 py-4">
-                      <span className="inline-block px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">
-                        Completed
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      <button 
-                        onClick={() => handleViewDetails(transaction)}
-                        className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
-                      >
-                        View Details
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {filteredTransactions.map((transaction) => {
+                  const { dateString, timeString } = getFormattedDateTime(transaction.timestamp);
+                  return (
+                    <tr key={transaction.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                        {transaction.id}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        {`${dateString} ${timeString}`}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        {transaction.customerName}
+                      </td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                        ₱{transaction.total.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        {transaction.paymentMethod}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="inline-block px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">
+                          Completed
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm">
+                        <button 
+                          onClick={() => handleViewDetails(transaction)}
+                          className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+                        >
+                          View Details
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

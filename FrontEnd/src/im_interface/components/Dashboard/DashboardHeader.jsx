@@ -12,7 +12,17 @@ const DashboardHeader = () => {
       </div>
 
       <div className="flex items-center gap-4 self-end sm:self-auto">
-        
+        {/* Search bar */}
+        <div className="relative hidden md:block">
+          <input
+            type="text"
+            placeholder="Search..."
+            className="pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 w-44"
+          />
+          <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          
+        </div>
+
         {/* Date picker */}
         <button className="flex items-center gap-2 text-gray-600 bg-white px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50">
           <FiCalendar className="text-gray-500" />
