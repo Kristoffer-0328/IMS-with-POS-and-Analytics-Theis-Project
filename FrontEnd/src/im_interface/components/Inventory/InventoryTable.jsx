@@ -1,4 +1,4 @@
-import { FiEdit2, FiAlertTriangle } from 'react-icons/fi';
+import { FiAlertTriangle } from 'react-icons/fi';
 import React from 'react';
 
 const InventoryTable = ({ data, onViewProduct }) => {
@@ -13,31 +13,15 @@ const InventoryTable = ({ data, onViewProduct }) => {
       case 'low-stock':
         return (
           <span className="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 flex items-center gap-1">
-            <FiAlertTriangle size={12} />
+            <FiAlertTriangle className="inline" size={12} />
             Low Stock
           </span>
         );
-      case 'expiring-soon':
+      case 'out-of-stock':
         return (
-          <span className="px-3 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">
-            Expiring Soon
+          <span className="px-3 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-800">
+            Out of Stock
           </span>
-        );
-      default:
-        return null;
-    }
-  };
-
-  const getActionButton = (action, id, item) => {
-    switch (action) {
-      case 'view':
-        return (
-          <button
-            onClick={() => onViewProduct(item)}
-            className="p-1.5 text-gray-500 hover:text-gray-700"
-          >
-            <FiEdit2 size={16} />
-          </button>
         );
       default:
         return null;
@@ -45,60 +29,59 @@ const InventoryTable = ({ data, onViewProduct }) => {
   };
 
   return (
-    <div className="">
-      <div className="overflow-x-auto w-full">
-      
-      </div>
-      
-      <table className="min-w-full divide-y divide-gray-200 table-fixed">
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200">
         <thead className="bg-gray-50">
           <tr>
-            <th className="w-1/6 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Product Name
             </th>
-            <th className="w-1/6 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Category
             </th>
-            <th className="w-1/6 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Quantity
             </th>
-            <th className="w-1/6 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Unit Price
             </th>
-            <th className="w-1/6 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Status
             </th>
-            <th className="w-1/6 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
               Action
             </th>
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-100">
+        <tbody className="bg-white divide-y divide-gray-200">
           {data.map((item) => (
             <tr key={item.id} className="hover:bg-gray-50">
               <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm font-medium text-gray-900">
-                  {item.name}
-                </div>
+                <div className="text-sm font-medium text-gray-900">{item.name}</div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
                 <div className="text-sm text-gray-500">{item.category}</div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
                 <div className="text-sm text-gray-500">
-                  {item.quantity + ' ' + item.unit}
+                  {item.quantity} {item.unit || 'pcs'}
                 </div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm text-gray-500">
-                  {'₱ ' + item.unitprice}
+                <div className="text-sm text-gray-900">
+                  ₱ {item.unitPrice ? item.unitPrice.toLocaleString() : '0'}
                 </div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
                 {getStatusBadge(item.status)}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-right">
-                {getActionButton(item.action, item.id, item)}
+                <button
+                  onClick={() => onViewProduct(item)}
+                  className="text-blue-600 hover:text-blue-900 text-sm font-medium"
+                >
+                  View Details
+                </button>
               </td>
             </tr>
           ))}

@@ -1,5 +1,46 @@
 @import "tailwindcss";
 
-@theme {
-    --color-Orange: #ff7b54;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom variables using Tailwind's theme */
+:root {
+  --color-Orange: #ff7b54;
+}
+
+/* Clock styles */
+.clock-display {
+  @apply font-mono text-lg tracking-wider text-gray-600 flex items-center gap-1;
+}
+
+.clock-time {
+  @apply inline-block font-bold text-gray-800 min-w-[2ch] text-center;
+}
+
+.clock-separator {
+  @apply inline-flex justify-center w-4 font-bold text-gray-600;
+  animation: blink 1s step-start infinite;
+}
+
+.clock-divider {
+  @apply mx-2 text-gray-400;
+}
+
+/* Custom animations */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@layer components {
+  .clock-time {
+    @apply inline-block font-bold text-gray-800 min-w-[2ch] text-center;
+  }
+}
+
+@layer utilities {
+  .animate-blink {
+    animation: blink 1s step-start infinite;
+  }
 }

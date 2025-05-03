@@ -1,154 +1,102 @@
 // ProductServices.jsx
-import React, { createContext, useContext, useState } from 'react';
-import {
-  getFirestore,
-  collection,
-  onSnapshot,
-  getDocs,
-} from 'firebase/firestore';
+import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import { getFirestore, collection, onSnapshot, query } from 'firebase/firestore';
 import app from '../FirebaseConfig';
+import { ProductFactory } from '../im_interface/components/Factory/productFactory';
 
 const db = getFirestore(app);
 const ServicesContext = createContext(null);
 
-function isDateClose(date, thresholdDays = 3) {
-  if (!date) return false;
-  const currentDate = new Date();
-  const targetDate = new Date(date);
-  const timeDifference = Math.abs(currentDate - targetDate);
-  const daysDifference = timeDifference / (1000 * 3600 * 24);
-  return daysDifference <= thresholdDays;
-}
-
 export const ServicesProvider = ({ children }) => {
-  const [product, setProduct] = useState(() => {
-    const saved = localStorage.getItem('product');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [products, setProducts] = useState([]);
 
-  const listenToProducts = (onUpdate) => {
-    const categoryListeners = new Map(); // track unsubscribe functions
-    const allProducts = new Map(); // store per-category product arrays
+  const listenToProducts = useCallback((onUpdate) => {
+    const categoryListeners = new Map();
+    const allProducts = new Map();
+    let isFirstLoad = true;
 
-    const unsubscribeCategories = onSnapshot(collection(db, "Products"), (categoriesSnapshot) => {
-      categoriesSnapshot.forEach((categoryDoc) => {
-        const category = categoryDoc.id;
+    const unsubscribeCategories = onSnapshot(
+      collection(db, "Products"),
+      (categoriesSnapshot) => {
+        console.log("Categories update received");
 
-        // If already listening to this category, skip
-        if (categoryListeners.has(category)) return;
-
-        const unsubscribeItems = onSnapshot(
-          collection(db, "Products", category, "Items"),
-          (itemsSnapshot) => {
-            const products = [];
-
-            itemsSnapshot.forEach((docSnap) => {
-              const data = docSnap.data();
-
-              const variants = data.variants || [];
-
-              variants.forEach((variant, index) => {
-                let status = variant.quantity < 60 ? "low-stock" : "in-stock";
-                if (isDateClose(data.ExpiringDate)) {
-                  status = "expiring-soon";
-                }
-
-                const action = "view";
-
-                products.push({
-                  id: `${docSnap.id}-${index}`,
-                  name: data.ProductName,
-                  category,
-                  size: variant.size || null,
-                  unit: variant.unit || null,
-                  quantity: variant.quantity || 0,
-                  unitprice: variant.unitPrice || 0,
-                  totalvalue: variant.quantity && variant.unitPrice ? variant.quantity * variant.unitPrice : 0,
-                  location: data.Location || null,
-                  status,
-                  action,
-                  expiringDate: data.ExpiringDate || null,
-                  // Add these lines to include image URLs:
-                  image: variant.image || null,  // Get variant-specific image
-                  productImage: data.image || null  // Get product-level image
-                });
-              });
-            });
-
-            // Save to the full map
-            allProducts.set(category, products);
-
-            // Merge all product arrays from all categories
-            const mergedProducts = Array.from(allProducts.values()).flat();
-
-            localStorage.setItem("product", JSON.stringify(mergedProducts));
-            onUpdate(mergedProducts);
+        // Handle removed categories
+        const currentCategories = new Set(categoriesSnapshot.docs.map(doc => doc.id));
+        [...categoryListeners.keys()].forEach(category => {
+          if (!currentCategories.has(category)) {
+            const unsubscribe = categoryListeners.get(category);
+            if (unsubscribe) unsubscribe();
+            categoryListeners.delete(category);
+            allProducts.delete(category);
           }
-        );
-
-        // Track the unsubscribe function
-        categoryListeners.set(category, unsubscribeItems);
-      });
-    });
-
-    return () => {
-      unsubscribeCategories();
-      categoryListeners.forEach((unsub) => unsub());
-    };
-  };
-
-  const fetchRestockRequests = async () => {
-    try {
-      const querySnapshot = await getDocs(collection(db, 'StockRestocks'));
-      const requestArray = [];
-
-      querySnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        requestArray.push({
-          id: docSnap.id,
-          Product: data.Product,
-          currentStock: data.CurrentStock,
-          requested: data.Requested,
-          status: data.Status,
-          actionStatus: data.Action,
-          Month: data.Month,
-          createdAt: data.CreatedAt || null,
         });
-      });
 
-      localStorage.setItem('restockRequests', JSON.stringify(requestArray));
-      return { success: true, requests: requestArray };
-    } catch (error) {
-      console.error('Error fetching restock requests:', error.message);
-      return { success: false, error: 'Failed to fetch restock requests' };
-    }
-  };
+        // Set up listeners for each category's Items subcollection
+        categoriesSnapshot.forEach((categoryDoc) => {
+          const category = categoryDoc.id;
 
-  const fetchCategories = async () => {
-    try {
-      const querySnapshot = await getDocs(collection(db, 'Categories'));
-      const categories = [];
+          // Skip if already listening to this category
+          if (categoryListeners.has(category)) return;
 
-      querySnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        if (data.name) {
-          categories.push(data.name);
-        }
-      });
+          console.log(`Setting up listener for category: ${category}`);
 
-      return { success: true, categories };
-    } catch (error) {
-      console.error('Error fetching categories:', error.message);
-      return { success: false, error: 'Failed to fetch categories' };
-    }
-  };
+          const itemsQuery = query(collection(db, "Products", category, "Items"));
+          
+          const unsubscribeItems = onSnapshot(
+            itemsQuery,
+            (itemsSnapshot) => {
+              if (!isFirstLoad && !itemsSnapshot.docChanges().length) {
+                return; // Skip if no actual changes and not first load
+              }
 
-  const value = {
-    product,
+              const categoryProducts = itemsSnapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                  id: doc.id,
+                  baseProductId: doc.id.split('-')[0],
+                  category,
+                  ...data,
+                  variants: Array.isArray(data.variants) ? data.variants.map((variant, index) => ({
+                    ...variant,
+                    id: `${doc.id}-${index}`,
+                    baseProductId: doc.id
+                  })) : []
+                };
+              });
+
+              allProducts.set(category, categoryProducts);
+              
+              const mergedProducts = Array.from(allProducts.values()).flat();
+              
+              setProducts(mergedProducts);
+              if (onUpdate) onUpdate(mergedProducts);
+              
+              if (isFirstLoad) isFirstLoad = false;
+            },
+            (error) => {
+              console.error(`Error listening to ${category} items:`, error);
+            }
+          );
+
+          categoryListeners.set(category, unsubscribeItems);
+        });
+      }
+    );
+
+    // Return cleanup function
+    return () => {
+      console.log("Cleaning up product listeners");
+      unsubscribeCategories();
+      categoryListeners.forEach(unsubscribe => unsubscribe());
+      categoryListeners.clear();
+      allProducts.clear();
+    };
+  }, []); // Empty dependency array since it doesn't depend on any external values
+
+  const value = useMemo(() => ({
+    products,
     listenToProducts,
-    fetchRestockRequests,
-    fetchCategories,
-  };
+  }), [products, listenToProducts]);
 
   return (
     <ServicesContext.Provider value={value}>

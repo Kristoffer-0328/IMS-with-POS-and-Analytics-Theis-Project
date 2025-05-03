@@ -13,12 +13,13 @@ import { useServices } from "../../../FirebaseBackEndQuerry/ProductServices";
 
 const ImportCVGModal = ({ isOpen, onClose }) => {
   const [file, setFile] = useState(null);
+  const [importProgress, setImportProgress] = useState({ total: 0, current: 0 });
   const db = getFirestore(app);
   const { listenToProducts } = useServices();
   listenToProducts((updatedProducts) => {
-    // This will activate the listener and ensure the UI updates
     console.log("Products updated in real-time:", updatedProducts.length);
   });
+
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key === "Escape") {
@@ -36,122 +37,126 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
     if (selectedFile) setFile(selectedFile);
   };
 
-  const handleImport = (e) => {
-    e.preventDefault();
+  const validateCSVData = (data) => {
+    const requiredFields = ['ProductName', 'Category', 'Quantity', 'UnitPrice'];
+    const missingFields = [];
 
+    data.forEach((row, index) => {
+      requiredFields.forEach(field => {
+        if (!row[field]) {
+          missingFields.push(`Row ${index + 1}: Missing ${field}`);
+        }
+      });
+    });
+
+    return missingFields;
+  };
+
+  const handleImport = async (e) => {
+    e.preventDefault();
     if (!file) {
       alert("Please select a file.");
       return;
     }
 
-    // Validate if the file is a CSV
-    if (file.type !== "text/csv") {
-      alert("Please select a valid CSV file.");
-      return;
-    }
-
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        alert(`Imported: ${file.name}`);
-        saveMultipleProducts(results.data);
-      },
-      error: (err) => {
-        console.error("Error parsing CSV:", err.message);
-        alert("Error parsing CSV file.");
-      },
-    });
-
-    setFile(null);
-    onClose();
-};
-
-const saveMultipleProducts = async (products) => {
-  try {
-    const batch = writeBatch(db);
-    const categorySet = new Set();
-
-    // To track existing products and variants
-    const productVariants = new Map();
-
-    products.forEach((item) => {
-      // Clean up the item: Set undefined or empty fields to null
-      const cleanedItem = Object.fromEntries(
-        Object.entries(item).map(([key, value]) => {
-          if (value === undefined || value === null || value === "") {
-            return [key, null]; // Replace undefined or empty values with null
+    try {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: async (results) => {
+          const { data } = results;
+          
+          const missingFields = validateCSVData(data);
+          if (missingFields.length > 0) {
+            alert(`Validation errors:\n${missingFields.join('\n')}`);
+            return;
           }
-          const num = parseFloat(value);
-          return [key, isNaN(num) ? value : num];
-        })
-      );
 
-      // Log the cleaned data for inspection
-      console.log("Cleaned Item:", cleanedItem);
+          setImportProgress({ total: data.length, current: 0 });
+          
+          try {
+            const processedProducts = ProductFactory.processCSVData(data);
+            await saveMultipleProducts(processedProducts);
+            
+            alert(`Successfully imported ${processedProducts.length} products.`);
+            onClose();
+          } catch (error) {
+            console.error('Error processing products:', error);
+            alert(`Error importing products: ${error.message}`);
+          }
+        },
+        error: (err) => {
+          console.error("Error parsing CSV:", err);
+          alert("Error parsing CSV file.");
+        }
+      });
+    } catch (error) {
+      console.error('Error during import:', error);
+      alert(`Import failed: ${error.message}`);
+    }
+  };
 
-      // Ensure required fields are not null or undefined
-      if (
-        !cleanedItem.ProductName ||
-        !cleanedItem.Category ||
-        cleanedItem.Quantity == null ||
-        cleanedItem.UnitPrice == null
-      ) {
-        console.error("Skipping product due to missing required fields:", cleanedItem);
-        return; // Skip this product if essential fields are missing
+  const saveMultipleProducts = async (processedProducts) => {
+    let batch = writeBatch(db);
+    let operationCount = 0;
+    const batchSize = 500;
+    const batches = [];
+    const categories = new Set();
+
+    try {
+      // First, collect all unique categories
+      processedProducts.forEach(product => {
+        categories.add(product.category);
+      });
+
+      // Create category documents if they don't exist
+      categories.forEach(category => {
+        const categoryRef = doc(db, "Products", category);
+        batch.set(categoryRef, {
+          name: category,
+          createdAt: new Date().toISOString(),
+          totalProducts: 0
+        }, { merge: true });
+
+        operationCount++;
+      });
+
+      // Save products
+      processedProducts.forEach((product) => {
+        const productRef = doc(db, "Products", product.category, "Items", product.id);
+        
+        console.log(`Saving product: ${product.id} in category: ${product.category}`);
+        
+        batch.set(productRef, {
+          ...product,
+          lastUpdated: new Date().toISOString()
+        }, { merge: true });
+
+        operationCount++;
+        setImportProgress(prev => ({ ...prev, current: operationCount }));
+
+        if (operationCount === batchSize) {
+          batches.push(batch.commit());
+          batch = writeBatch(db); // Create new batch
+          operationCount = 0;
+        }
+      });
+
+      if (operationCount > 0) {
+        batches.push(batch.commit());
       }
 
-    
-      const productName = cleanedItem.ProductName;
-      const size = cleanedItem.Size;
-      const productVariantID = `${productName}${size}`;
+      await Promise.all(batches);
+      
+      listenToProducts((updatedProducts) => {
+        console.log("Products updated after import:", updatedProducts.length);
+      });
 
-
-      if (!productVariants.has(productVariantID)) {
-        // Create standardized product using the factory
-        productVariants.set(productVariantID, ProductFactory.createProduct({
-          ...cleanedItem,
-          ProductName: productName,
-          Category: cleanedItem.Category,
-          Location: cleanedItem.Location,
-          Quantity: 0, // Will be calculated as we add variants
-        }));
-      }
-
-      // Add variant details
-      const product = productVariants.get(productVariantID);
-      const variant = ProductFactory.createVariant(cleanedItem);
-      product.variants.push(variant);
-
-      // Calculate total quantity for the product
-      product.Quantity += cleanedItem.Quantity;
-
-      const categoryRef = doc(db, "Products", cleanedItem.Category);
-      batch.set(categoryRef, { name: cleanedItem.Category }, { merge: true });
-
-      // Handle the product reference
-      const productRef = doc(
-        collection(db, "Products", cleanedItem.Category, "Items"),
-        productVariantID
-      );
-      batch.set(productRef, product);
-
-      categorySet.add(cleanedItem.Category);
-    });
-
-    // Commit categories
-    categorySet.forEach((categoryName) => {
-      const categoryRef = doc(collection(db, "Categories"), categoryName);
-      batch.set(categoryRef, { name: categoryName });
-    });
-
-    await batch.commit();
-    console.log("All products and categories added successfully!");
-  } catch (error) {
-    console.error("Error adding products and categories:", error.message);
-  }
-};
-
+    } catch (error) {
+      console.error('Error saving products:', error);
+      throw new Error(`Failed to save products: ${error.message}`);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 backdrop-blur-md bg-white/30 flex justify-center items-center">
@@ -171,11 +176,11 @@ const saveMultipleProducts = async (products) => {
         <form onSubmit={handleImport} className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">
-              Upload File (.csv or .xlsx)
+              Upload File (.csv)
             </label>
             <input
               type="file"
-              accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              accept=".csv"
               onChange={handleFileChange}
               className="w-full border p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
@@ -186,12 +191,27 @@ const saveMultipleProducts = async (products) => {
             )}
           </div>
 
+          {importProgress.total > 0 && (
+            <div className="mt-2">
+              <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div
+                  className="bg-green-600 h-2.5 rounded-full transition-all duration-300"
+                  style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                ></div>
+              </div>
+              <p className="text-sm text-gray-600 mt-1">
+                Processing: {importProgress.current} of {importProgress.total}
+              </p>
+            </div>
+          )}
+
           <div className="text-right">
             <button
               type="submit"
               className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
+              disabled={!file || importProgress.total > 0}
             >
-              Import
+              {importProgress.total > 0 ? 'Importing...' : 'Import'}
             </button>
           </div>
         </form>
