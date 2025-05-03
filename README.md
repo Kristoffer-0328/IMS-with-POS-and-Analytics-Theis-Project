@@ -349,9 +349,6 @@ const validateProduct = (product) => {
 3.  **Customer Loyalty System:**
     *   Points-based loyalty program for rewarding repeat customers.
     *   Personalized promotions and discounts based on customer purchase history.
-4.  **Multi-branch Support:**
-    *   Support for multiple store locations with centralized inventory management.
-    *   Real-time synchronization of data across all branches.
-5.  **Advanced Report Generation:**
+4.  **Advanced Report Generation:**
     *   Customizable report templates with advanced filtering and sorting options.
     *   Automated report scheduling and distribution.
