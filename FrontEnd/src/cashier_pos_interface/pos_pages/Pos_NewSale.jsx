@@ -11,6 +11,7 @@ import {
   getDoc,
 } from 'firebase/firestore';
 import app from '../../FirebaseConfig'; // Adjust path if needed
+import { useAuth } from '../../FirebaseBackEndQuerry/FirebaseAuth';
 
 // Import Components from new locations
 import SearchBar from '../pos_component/SearchBar';
@@ -51,6 +52,9 @@ const getFormattedDateTime = () => {
 };
 
 export default function Pos_NewSale() {
+  // --- User ----
+  const { currentUser, loading: authLoading } = useAuth();
+  const [loadingUser, setLoadingUser] = useState(true);
   // --- State Management ---
 
   const [currentDateTime, setCurrentDateTime] = useState(() => getFormattedDateTime());
@@ -79,6 +83,24 @@ export default function Pos_NewSale() {
   const [customerIdentifier, setCustomerIdentifier] = useState('Walk-in Customer');
   const [customerDisplayName, setCustomerDisplayName] = useState('Walk-in Customer');
 
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        if (currentUser) {
+          // Current user is already available from AuthContext
+          setLoadingUser(false);
+        } else {
+          console.error("No user found");
+          // Optionally redirect to login
+        }
+      } catch (error) {
+        console.error("Error fetching user:", error);
+      }
+    };
+
+    fetchUser();
+  }, [currentUser]);
   // Add clock update effect
   useEffect(() => {
     const updateClock = () => {
@@ -441,7 +463,8 @@ export default function Pos_NewSale() {
                 customerName: customerDisplayName || 'Walk-in Customer',
                 customerDetails: isBulkOrder ? {...customerDetails} : null,
                 paymentMethod: paymentMethod || 'Cash',
-                cashierId: "Moni Roy",
+                cashierId: currentUser?.uid || 'unknown',
+                cashierName: currentUser?.name || 'Unknown Cashier',
                 isBulkOrder: Boolean(isBulkOrder)
             };
 
@@ -471,7 +494,7 @@ export default function Pos_NewSale() {
             amountPaid: Number(amountPaid),
             change: Number(amountPaid) - total,
             customerName: customerDisplayName,
-            cashierName: "Moni Roy"
+            cashierName: currentUser?.name || 'Unknown Cashier'
         });
 
         resetSaleState();
@@ -483,7 +506,7 @@ export default function Pos_NewSale() {
     } finally {
         setIsProcessing(false);
     }
-}, [cart, total, subTotal, tax, amountPaid, paymentMethod, customerDetails, customerDisplayName, isBulkOrder, resetSaleState]);
+}, [cart, total, subTotal, tax, amountPaid, paymentMethod, customerDetails, customerDisplayName, isBulkOrder, resetSaleState, currentUser]);
 
 
   // --- UI ---
@@ -513,8 +536,8 @@ export default function Pos_NewSale() {
             </div>
           </div>
           <div className="text-sm font-medium flex items-center bg-white px-3 py-1 rounded-full shadow-xs">
-            <span className="font-semibold text-gray-800">Moni Roy</span>
-            <span className="text-gray-500 ml-2">| Cashier</span>
+            <span className="font-semibold text-gray-800"> {currentUser?.name || 'Loading...'}</span>
+            <span className="text-gray-500 ml-2">| {currentUser?.role || 'User'}</span>
           </div>
         </div>
       </div>

@@ -23,7 +23,7 @@ export function usePosTransaction() {
    * @param {string} paymentMethod - Method of payment.
    * @param {string} amountPaidStr - Amount paid by customer (as string).
    * @param {number} total - Calculated total amount of the sale.
-   * @param {string} cashierId - ID or name of the cashier processing the sale.
+   * @param {object} cashier - Cashier object containing id and name.
    * @returns {Promise<object|null>} - Resolves with transactionData on success, null on failure.
    */
   const processSale = useCallback(async (
@@ -35,7 +35,7 @@ export function usePosTransaction() {
     paymentMethod,
     amountPaidStr, // Receive as string from input
     total,         // Receive calculated total
-    cashierId = "Default Cashier" // Default or get from auth context
+    cashier = { id: 'unknown', name: 'Unknown Cashier' } // Update parameter
   ) => {
     // --- Validation ---
     setError(null); // Clear previous errors
@@ -94,7 +94,8 @@ export function usePosTransaction() {
 
     const transactionData = {
         receiptNumber: receiptNumber,
-        cashierId: cashierId,
+        cashierId: cashier.id,
+        cashierName: cashier.name,
         customerId: customerIdentifier,
         customerName: customerDisplayName,
         isBulkOrder: !!isBulkOrder,

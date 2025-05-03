@@ -84,7 +84,7 @@ export const generateReceiptHtml = (data) => {
                     <div><span>Receipt No:</span><span>${data.receiptNumber}</span></div>
                     <div><span>Date:</span><span>${formattedDate}</span></div>
                     <div><span>Time:</span><span>${formattedTime}</span></div>
-                    <div><span>Cashier:</span><span>${data.cashierId || 'N/A'}</span></div>
+                    <div><span>Cashier:</span><span>${data.cashierName || 'N/A'}</span></div>
                     <div><span>Customer:</span><span>${data.customerName || 'N/A'} ${data.isBulkOrder ? '(Bulk)' : ''}</span></div>
                     <div><span>Payment:</span><span>${data.paymentMethod || 'N/A'}</span></div>
                     ${data.isBulkOrder && data.customerDetails?.phone ? `<div><span>Phone:</span><span>${data.customerDetails.phone}</span></div>` : ''}
