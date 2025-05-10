@@ -11,7 +11,7 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
   
   useEffect(() => {
     if (product) {
-      setImageUrl(product.image || product.productImage || null);
+      setImageUrl(product.imageUrl || null);
     }
   }, [product]);
   
@@ -33,15 +33,39 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
 
   if (!isOpen || !product) return null;
 
+  const formatMoney = (amount) => {
+    const number = parseFloat(amount);
+    return isNaN(number) ? '0.00' : number.toLocaleString('en-PH', {
+      style: 'decimal',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  };
+
   const getProductDetail = (field) => {
-    if (field === 'unitprice' && product['unitprice'] !== undefined) {
-      return typeof product['unitprice'] === 'number' ? product['unitprice'] : 0;
+    if (!product) return "N/A";
+
+    switch (field) {
+      case 'name':
+      case 'category':
+        return product[field] || "N/A";
+      case 'quantity':
+        return product.variants?.reduce((total, variant) => 
+          total + Number(variant.quantity || 0), 0) || 0;
+      case 'unitprice':
+        return product.variants?.[0]?.unitPrice || 0;
+      case 'totalvalue':
+        return product.variants?.reduce((total, variant) => 
+          total + (Number(variant.quantity || 0) * Number(variant.unitPrice || 0)), 0) || 0;
+      case 'location':
+        return product.variants?.[0]?.location || "N/A";
+      case 'unit':
+        return product.variants?.[0]?.unit || product.measurements?.defaultUnit || "N/A";
+      case 'image':
+        return product.imageUrl || null;
+      default:
+        return product[field] !== undefined ? product[field] : "N/A";
     }
-    if (field === 'totalvalue' && product['totalvalue'] !== undefined) {
-      return typeof product['totalvalue'] === 'number' ? product['totalvalue'] : 0;
-    }
-    
-    return product[field] !== undefined ? product[field] : "N/A";
   };
 
   const handleImageClick = () => {
@@ -199,18 +223,15 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
   const standardKeys = [
     "name",
     "category",
-    "quantity",
-    "unitprice",
-    "totalvalue",
-    "location",
-    "expiringDate",
-    "status",
-    "image",
-    "productImage",
+    "variants",
+    "measurements",
+    "imageUrl",
     "id",
-    "action",
-    "size",
-    "unit"
+    "customFields",
+    "categoryValues",
+    "createdAt",
+    "lastUpdated",
+    "restockLevel"
   ];
 
   const additionalFields = Object.entries(product).filter(
@@ -220,6 +241,48 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
       key !== 'ref' &&
       key !== 'key'
   );
+
+  const getVariantsList = () => {
+    if (!product.variants || product.variants.length === 0) return null;
+
+    return (
+      <div className="bg-gray-50 rounded-lg border border-gray-200 p-3 mt-3">
+        <div className="text-xs font-medium text-gray-500 mb-2">Variants</div>
+        <div className="space-y-2">
+          {product.variants.map((variant, index) => (
+            <div key={variant.id} className="bg-white p-2 rounded border border-gray-100">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-gray-500">Size: </span>
+                  <span className="font-medium text-gray-900">{variant.size || 'Default'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Type: </span>
+                  <span className="font-medium text-gray-900">{variant.type || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Quantity: </span>
+                  <span className="font-medium text-gray-900">{variant.quantity}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Price: </span>
+                  <span className="font-medium text-gray-900">₱{formatMoney(variant.unitPrice)}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Location: </span>
+                  <span className="font-medium text-gray-900">{variant.location}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Unit: </span>
+                  <span className="font-medium text-gray-900">{variant.unit}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -277,30 +340,28 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
               </div>
               
               <div className="bg-white p-3 rounded-lg border border-gray-200">
-                <div className="text-xs text-gray-500">Quantity</div>
+                <div className="text-xs text-gray-500">Total Quantity</div>
                 <div className="text-lg font-semibold text-blue-600">{getProductDetail('quantity')}</div>
               </div>
               
               <div className="bg-white p-3 rounded-lg border border-gray-200">
-                <div className="text-xs text-gray-500">Price</div>
-                <div className="text-lg font-semibold text-green-600">₱{getProductDetail('unitprice').toLocaleString()}</div>
+                <div className="text-xs text-gray-500">Base Price</div>
+                <div className="text-lg font-semibold text-green-600">₱{formatMoney(getProductDetail('unitprice'))}</div>
               </div>
             </div>
 
             <div className="bg-gray-50 rounded-lg border border-gray-200 divide-y divide-gray-200">
-              {[
-                { label: 'Location', value: getProductDetail('location') },
-                { label: 'Status', value: getProductDetail('status') },
-                { label: 'Total Value', value: `₱${getProductDetail('totalvalue').toLocaleString()}` },
-                ...(getProductDetail('expiringDate') !== "N/A" ? [{ label: 'Expiring Date', value: getProductDetail('expiringDate') }] : []),
-                ...(getProductDetail('unit') !== "N/A" ? [{ label: 'Unit', value: getProductDetail('unit') }] : [])
-              ].map(({ label, value }) => (
-                <div key={label} className="flex justify-between items-center px-3 py-2">
-                  <span className="text-xs text-gray-500">{label}</span>
-                  <span className="text-sm font-medium text-gray-900">{value}</span>
-                </div>
-              ))}
+              <div className="flex justify-between items-center px-3 py-2">
+                <span className="text-xs text-gray-500">Total Value</span>
+                <span className="text-sm font-medium text-gray-900">₱{formatMoney(getProductDetail('totalvalue'))}</span>
+              </div>
+              <div className="flex justify-between items-center px-3 py-2">
+                <span className="text-xs text-gray-500">Restock Level</span>
+                <span className="text-sm font-medium text-gray-900">{product.restockLevel || 'N/A'}</span>
+              </div>
             </div>
+
+            {getVariantsList()}
 
             {additionalFields.length > 0 && (
               <div className="bg-gray-50 rounded-lg border border-gray-200 p-3">

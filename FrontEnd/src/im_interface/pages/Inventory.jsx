@@ -4,14 +4,13 @@ import InventoryChart from '../components/Inventory/InventoryChart';
 import InventoryTrendChart from '../components/Inventory/InventoryTrendChart';
 import InventoryTable from '../components/Inventory/InventoryTable';
 import InventoryFilters from '../components/Inventory/InventoryFilters';
-import AddProductModal from '../components/Inventory/AddProductPopUp';
+import AddProductModal from '../components/Inventory/AddProductPopUpOld';
 import ViewProductModal from '../components/Inventory/ViewProductModal';
 import { useServices } from '../../FirebaseBackEndQuerry/ProductServices';
 import { FiPlusCircle, FiUpload, FiSearch } from 'react-icons/fi';
 import ImportCVGModal from '../components/Inventory/ImportCVGModal';
 import ProductChoice from '../components/Inventory/ProductChoices';
-import CategoryModal from '../components/Inventory/CategoryModal';
-
+import CategoryMOdalIndex from '../components/Inventory/CategoryModal/CategoryModalIndex';
 const Inventory = () => {
   const [currentFilter, setCurrentFilter] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -233,7 +232,7 @@ const Inventory = () => {
 
       {/* Modals - keeping existing functionality */}
       <ImportCVGModal isOpen={isImportModalOpen} onClose={() => setImportIsModalOpen(false)} />
-      <CategoryModal CategoryOpen={categorymodal} CategoryClose={() => setcategorymodal(false)} />
+      <CategoryMOdalIndex CategoryOpen={categorymodal} CategoryClose={() => setcategorymodal(false)} />
       <ViewProductModal 
         isOpen={viewModalOpen} 
         onClose={() => setViewModalOpen(false)} 

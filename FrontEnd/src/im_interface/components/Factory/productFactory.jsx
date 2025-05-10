@@ -12,49 +12,84 @@ export const ProductFactory = {
         return `${productId}-${cleanSize}`;
     },
 
-    createProduct(data) {
-        const baseName = data.ProductName.split('(')[0].trim();
-        const productId = this.generateProductId(baseName, data.Category);
-        
+    normalizeProductData(data) {
+        // General product attributes that should be at the root level only
         return {
-            id: productId,
-            name: data.ProductName,
-            baseProductName: baseName,
-            category: data.Category,
-            quantity: 0, // Initialize at 0, will be updated with total variant quantities
-            unitPrice: Number(data.UnitPrice || 0),
-            location: data.Location || null,
-            variants: [],
-            image: null,
-            lastUpdated: new Date().toISOString(),
+            name: data.ProductName || data.name,
+            category: data.Category || data.category?.name,
+            restockLevel: Number(data.RestockLevel || data.restockLevel || 0),
+            imageUrl: data.imageUrl || null,
             measurements: {
                 lengthPerUnit: data.LengthPerUnit || null,
-                defaultUnit: data.Unit || "pcs"
-            }
+                defaultUnit: data.Unit || data.unit || 'pcs'
+            },
+            customFields: data.customFields || {},
+            lastUpdated: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+            categoryValues: data.categoryValues || {}
         };
     },
 
-    createVariant(data, productId, index) {
-        let size = data.Size;
-        if (!size && data.ProductName.includes('(')) {
-            const sizeMatch = data.ProductName.match(/\((.*?)\)/);
-            size = sizeMatch ? sizeMatch[1] : '';
-        }
+    createProduct(data) {
+        const normalizedData = this.normalizeProductData(data);
+        const productId = this.generateProductId(normalizedData.name, normalizedData.category);
 
-        const variantId = this.generateVariantId(productId, size, index);
-        const quantity = Number(data.Quantity || 0);
-        
+        // Create the base product with general attributes only
+        const baseProduct = {
+            id: productId,
+            ...normalizedData,
+            variants: []
+        };
+
+        // Create initial variant with variant-specific attributes
+        const initialVariant = this.createVariant(baseProduct, {
+            quantity: data.quantity,
+            unitPrice: data.unitPrice,
+            unit: data.unit,
+            location: data.location,
+            // Use weight as size and keep type separate
+            size: data.categoryValues?.weight ,
+            type: data.categoryValues?.type,
+            // Exclude weight and type from categoryValues spread
+            categoryValues: Object.entries(data.categoryValues || {})
+                .reduce((acc, [key, value]) => {
+                    if (key !== 'weight' && key !== 'type') {
+                        acc[key] = value;
+                    }
+                    return acc;
+                }, {})
+        });
+
+        baseProduct.variants = [initialVariant];
+        baseProduct.quantity = initialVariant.quantity;
+
+        return baseProduct;
+    },
+
+    createVariant(parentProduct, variantData) {
+        const variantId = this.generateVariantId(
+            parentProduct.id, 
+            variantData.size || 'default',
+            (parentProduct.variants || []).length
+        );
+
+        // Variant-specific attributes
         return {
             id: variantId,
-            baseProductId: productId,
-            size: size || "",
-            quantity: quantity, // Individual variant quantity
-            unitPrice: Number(data.UnitPrice || 0),
-            unit: data.Unit || "pcs",
-            location: data.Location || null,
-            lengthPerUnit: data.LengthPerUnit || null,
-            expiringDate: data.ExpiringDate || null,
-            totalValue: quantity * Number(data.UnitPrice || 0)
+            parentProductId: parentProduct.id,
+            name: parentProduct.name,
+            category: parentProduct.category,
+            quantity: Number(variantData.quantity || 0),
+            unitPrice: Number(variantData.unitPrice || 0),
+            unit: variantData.unit || parentProduct.measurements?.defaultUnit || 'pcs',
+            location: variantData.location || 'STR A1',
+            size: variantData.size || 'default',
+            type: variantData.type || null,
+            // Include remaining category values, excluding weight and type
+            ...(variantData.categoryValues || {}),
+            customFields: variantData.customFields || {},
+            createdAt: new Date().toISOString(),
+            lastUpdated: new Date().toISOString()
         };
     },
 
@@ -62,23 +97,40 @@ export const ProductFactory = {
         const groupedProducts = {};
 
         csvData.forEach(row => {
-            const baseName = row.ProductName.split('(')[0].trim();
-            const productKey = this.generateProductId(baseName, row.Category);
+            const productKey = this.generateProductId(row.ProductName, row.Category);
 
             if (!groupedProducts[productKey]) {
-                groupedProducts[productKey] = this.createProduct(row);
+                const normalizedData = this.normalizeProductData(row);
+                groupedProducts[productKey] = {
+                    id: productKey,
+                    ...normalizedData,
+                    variants: [],
+                    quantity: 0
+                };
             }
 
-            const variant = this.createVariant(row, productKey, 
-                groupedProducts[productKey].variants.length);
-            
+            // Create variant with separated weight and type
+            const variant = this.createVariant(groupedProducts[productKey], {
+                quantity: row.Quantity,
+                unitPrice: row.UnitPrice,
+                unit: row.Unit,
+                location: row.Location,
+                size: row.categoryValues?.weight || row.Size || 'default',
+                type: row.categoryValues?.type,
+                categoryValues: Object.entries(row.categoryValues || {})
+                    .reduce((acc, [key, value]) => {
+                        if (key !== 'weight' && key !== 'type') {
+                            acc[key] = value;
+                        }
+                        return acc;
+                    }, {})
+            });
+
             groupedProducts[productKey].variants.push(variant);
             
-            // Update product's total quantity by summing all variant quantities
-            groupedProducts[productKey].quantity = groupedProducts[productKey].variants.reduce(
-                (total, variant) => total + variant.quantity, 
-                0
-            );
+            // Update total quantity
+            groupedProducts[productKey].quantity = groupedProducts[productKey].variants
+                .reduce((total, variant) => total + Number(variant.quantity), 0);
         });
 
         return Object.values(groupedProducts);
