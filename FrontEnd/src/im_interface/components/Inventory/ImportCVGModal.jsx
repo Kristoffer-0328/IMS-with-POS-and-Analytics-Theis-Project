@@ -16,9 +16,7 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
   const [importProgress, setImportProgress] = useState({ total: 0, current: 0 });
   const db = getFirestore(app);
   const { listenToProducts } = useServices();
-  listenToProducts((updatedProducts) => {
-    console.log("Products updated in real-time:", updatedProducts.length);
-  });
+ 
 
   useEffect(() => {
     const handleKeyDown = (event) => {

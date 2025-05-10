@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { FiBox, FiTrendingDown, FiTrendingUp } from 'react-icons/fi';
-import './css/Dashboard.css';
+
 
 const chartData = [
   { name: 'Jan', current: 65, previous: 45 },

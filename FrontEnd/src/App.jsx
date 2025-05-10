@@ -14,11 +14,9 @@ import Login from './pages/auth/Login';
 import Logout from './admin_interface/Logout';
 
 // Admin Interface
-import Dashboard from './admin_interface/Dashboard';
-import Products from './admin_interface/Products';
-import ProductsStock from './admin_interface/ProductsStock';
-import CreateOrder from './admin_interface/CreateOrder';
-import Invoice from './admin_interface/Invoice';
+import ProductsStock from './admin_interface/Products_stock';
+import Audit_trail from './admin_interface/Audit_trail';
+import SystemLogs from './admin_interface/System_log';
 import Team from './admin_interface/Team';
 import AdminSidebar from './admin_interface/AdminSidebar';
 
@@ -129,42 +127,27 @@ const AppRoutes = () => {
         path="/admin"
         element={
           <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
-            <Dashboard />
+            <ProductsStock/>
           </ProtectedRoute>
         }
       />
       <Route
-        path="/admin/products"
+        path="/admin/audit-trail"
         element={
           <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
-            <Products />
+            <Audit_trail />
           </ProtectedRoute>
         }
       />
       <Route
-        path="/admin/products-stock"
+        path="/admin/system-logs"
         element={
           <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
-            <ProductsStock />
+            <SystemLogs />
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/admin/create-order"
-        element={
-          <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
-            <CreateOrder />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/invoice"
-        element={
-          <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
-            <Invoice />
-          </ProtectedRoute>
-        }
-      />
+      
       <Route
         path="/admin/team"
         element={
@@ -215,14 +198,7 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/im/invoice"
-        element={
-          <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
-            <Invoice />
-          </ProtectedRoute>
-        }
-      />
+      
       <Route
         path="/im/team"
         element={

@@ -132,12 +132,13 @@ const Inventory = () => {
   });
 
   return (
-    <div className="flex flex-col w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-6 bg-gray-50">
+    <div className="flex flex-col w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-6 bg-gray-50 min-h-screen">
       <InventoryHeader />
 
-      <div className="bg-gradient-to-r from-orange-100/80 to-amber-100/30 rounded-xl p-4 sm:p-6 mb-6">
-        <div className="flex flex-col md:flex-row justify-between gap-4 mb-4">
-          <div>
+      {/* Enhanced Header Section */}
+      <div className="bg-gradient-to-r from-orange-100/80 to-amber-100/30 rounded-xl p-6 mb-6 shadow-sm border border-orange-100">
+        <div className="flex flex-col md:flex-row justify-between gap-6">
+          <div className="space-y-1">
             <h2 className="text-2xl font-bold text-gray-800">Inventory Management</h2>
             <p className="text-gray-600">View & Update Stock Levels</p>
           </div>
@@ -156,64 +157,73 @@ const Inventory = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm p-5 border border-gray-100 mb-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4 min-w-0">
-          <div>
-            <h3 className="text-gray-800 font-semibold">Glory Star Hardware</h3>
-            <div className="flex gap-6 text-xl font-bold">
-              <p>Total Stock: {getFilteredData().reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0).toLocaleString()}</p>
-              <p className="flex gap-1">
-                Total Value: <span className="text-green-600">₱{totalValue.toLocaleString()}</span>
-              </p>
+      {/* Enhanced Overview Card */}
+      <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 mb-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+          <div className="space-y-2">
+            <h3 className="text-gray-800 font-semibold text-lg">Glory Star Hardware</h3>
+            <div className="flex flex-wrap gap-6 text-xl font-bold">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600 text-sm font-normal">Total Stock:</span>
+                <span className="text-gray-900">{getFilteredData().reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0).toLocaleString()}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600 text-sm font-normal">Total Value:</span>
+                <span className="text-green-600">₱{totalValue.toLocaleString()}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        {selectedChart === 'Stock Level' ? (
-          <InventoryChart data={chartData} />
-        ) : selectedChart === 'Stock Trend' ? (
-          <InventoryTrendChart data={monthlyInventoryData} />
-        ) : null}
+        {/* Chart Section */}
+        <div className="bg-gray-50/50 rounded-xl p-4">
+          {selectedChart === 'Stock Level' ? (
+            <InventoryChart data={chartData} />
+          ) : selectedChart === 'Stock Trend' ? (
+            <InventoryTrendChart data={monthlyInventoryData} />
+          ) : null}
+        </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+      {/* Enhanced Table Section */}
+      <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
         <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-          <h3 className="text-gray-800 font-semibold">Inventory Table</h3>
+          <h3 className="text-gray-800 font-semibold text-lg">Inventory Table</h3>
 
-          {/* Search Input and Buttons */}
-          <div className="flex gap-4 items-center w-full sm:w-auto">
-            {/* Search Input */}
-            <div className="relative w-full sm:w-auto">
+          {/* Search and Actions Group */}
+          <div className="flex flex-wrap gap-4 items-center w-full sm:w-auto">
+            {/* Enhanced Search Input */}
+            <div className="relative flex-1 sm:flex-none min-w-[240px]">
               <input
                 type="text"
                 placeholder="Search inventory..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 w-full"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 transition-shadow"
               />
               <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             </div>
 
-            {/* Buttons */}
+            {/* Action Buttons */}
             <button
               onClick={() => setImportIsModalOpen(true)}
-              className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2 whitespace-nowrap"
+              className="px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 flex items-center gap-2 whitespace-nowrap hover:shadow-md"
             >
               <FiUpload size={18} />
               <span>Import Excel</span>
             </button>
             <button
               onClick={() => setcategorymodal(true)}
-              className="px-4 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2 whitespace-nowrap"
+              className="px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 flex items-center gap-2 whitespace-nowrap hover:shadow-md"
             >
               <FiPlusCircle size={18} />
-              <span>Add product</span>
+              <span>Add Product</span>
             </button>
           </div>
         </div>
 
-        {/* Table Container with fixed width */}
-        <div className="w-full">
+        {/* Table Container */}
+        <div className="w-full rounded-xl overflow-hidden border border-gray-200">
           <InventoryTable 
             data={getFilteredData()} 
             onViewProduct={handleViewProduct} 
@@ -221,11 +231,9 @@ const Inventory = () => {
         </div>
       </div>
 
-      {/* Modals */}
+      {/* Modals - keeping existing functionality */}
       <ImportCVGModal isOpen={isImportModalOpen} onClose={() => setImportIsModalOpen(false)} />
       <CategoryModal CategoryOpen={categorymodal} CategoryClose={() => setcategorymodal(false)} />
-      {/* <ProductChoice open={open} close={() => setopen(false)}/> */}
-      {/* <AddProductModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />  */}
       <ViewProductModal 
         isOpen={viewModalOpen} 
         onClose={() => setViewModalOpen(false)} 
