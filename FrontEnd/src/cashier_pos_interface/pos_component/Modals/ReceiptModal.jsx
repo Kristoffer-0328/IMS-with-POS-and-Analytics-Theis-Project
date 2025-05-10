@@ -69,24 +69,24 @@ const ReceiptModal = ({ transaction, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
-      <div className="fixed inset-0 bg-black/30 backdrop-blur-md" onClick={onClose}></div>
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose}></div>
       <div className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none">
-        <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl animate-modalFadeIn pointer-events-auto">
-          {/* Receipt Header */}
-          <div className="sticky top-0 bg-white/80 backdrop-blur-md border-b border-gray-100 px-6 py-4 flex justify-between items-center">
+        <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl pointer-events-auto animate-slideUp">
+          {/* Enhanced Receipt Header */}
+          <div className="sticky top-0 bg-gradient-to-r from-orange-50 to-amber-50 px-6 py-5 flex justify-between items-center border-b border-orange-100">
             <h2 className="text-2xl font-bold text-gray-800">Receipt Details</h2>
             <button 
               onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              className="p-2 hover:bg-white/50 rounded-full transition-colors"
             >
-              <FiX className="w-6 h-6 text-gray-500" />
+              <FiX className="w-6 h-6 text-gray-600" />
             </button>
           </div>
 
-          {/* Receipt Content */}
+          {/* Enhanced Receipt Content */}
           <div className="p-8 space-y-8">
-            {/* Store Info */}
-            <div className="text-center space-y-2">
+            {/* Store Info with improved styling */}
+            <div className="text-center space-y-3 bg-gradient-to-b from-white to-orange-50 py-6 rounded-xl">
               <h3 className="text-2xl font-bold text-gray-800">Glory Sales</h3>
               <div className="space-y-1 text-gray-600">
                 <p className="text-sm font-medium">Receipt #{transaction.id}</p>
@@ -94,10 +94,13 @@ const ReceiptModal = ({ transaction, onClose }) => {
               </div>
             </div>
 
-            {/* Customer & Cashier Info */}
-            <div className="grid grid-cols-2 gap-6 p-6 bg-gray-50 rounded-xl">
+            {/* Enhanced Customer & Cashier Info */}
+            <div className="grid grid-cols-2 gap-6 p-6 bg-blue-50/50 rounded-xl border border-blue-100">
               <div className="space-y-2">
-                <h4 className="font-semibold text-gray-700">Customer Details</h4>
+                <h4 className="font-semibold text-gray-700 flex items-center gap-2">
+                  <span className="w-2 h-2 bg-blue-400 rounded-full"></span>
+                  Customer Details
+                </h4>
                 <p className="text-sm text-gray-600">{transaction.customerName}</p>
                 {transaction.customerDetails && (
                   <>
@@ -107,20 +110,23 @@ const ReceiptModal = ({ transaction, onClose }) => {
                 )}
               </div>
               <div className="space-y-2">
-                <h4 className="font-semibold text-gray-700">Cashier</h4>
+                <h4 className="font-semibold text-gray-700 flex items-center gap-2">
+                  <span className="w-2 h-2 bg-green-400 rounded-full"></span>
+                  Cashier
+                </h4>
                 <p className="text-sm text-gray-600">{transaction.cashierName}</p>
               </div>
             </div>
 
-            {/* Items Table */}
-            <div className="overflow-hidden rounded-xl border border-gray-200">
+            {/* Enhanced Items Table */}
+            <div className="overflow-hidden rounded-xl border border-gray-200 shadow-sm">
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Qty</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Price</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
+                    <th className="px-6 py-3.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th>
+                    <th className="px-6 py-3.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Qty</th>
+                    <th className="px-6 py-3.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Price</th>
+                    <th className="px-6 py-3.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
@@ -140,8 +146,8 @@ const ReceiptModal = ({ transaction, onClose }) => {
               </table>
             </div>
 
-            {/* Totals */}
-            <div className="space-y-3 p-6 bg-gray-50 rounded-xl">
+            {/* Enhanced Totals Section */}
+            <div className="space-y-3 p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100">
               <div className="flex justify-between text-sm text-gray-600">
                 <span>Subtotal</span>
                 <span>{formatCurrency(transaction.subTotal)}</span>
@@ -170,18 +176,18 @@ const ReceiptModal = ({ transaction, onClose }) => {
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="sticky bottom-0 bg-white/80 backdrop-blur-md border-t border-gray-100 px-6 py-4 flex justify-end gap-4">
+          {/* Enhanced Footer */}
+          <div className="sticky bottom-0 bg-white/90 backdrop-blur-md border-t border-gray-100 px-6 py-4 flex justify-end gap-4">
             <button
               onClick={handlePrintReceipt}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+              className="flex items-center gap-2 px-6 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all duration-200 hover:shadow-md"
             >
               <FiPrinter className="w-4 h-4" />
               <span>Print Receipt</span>
             </button>
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-6 py-2.5 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-all duration-200 hover:shadow-md"
             >
               Close
             </button>

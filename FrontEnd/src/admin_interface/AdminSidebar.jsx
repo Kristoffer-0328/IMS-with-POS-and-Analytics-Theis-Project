@@ -11,6 +11,8 @@ import {
   FiLogOut,
   FiChevronLeft,
   FiChevronRight,
+  FiActivity, // Add this for audit trail
+  FiList, // Add this for logs
 } from 'react-icons/fi';
 
 const AdminSidebar = () => {
@@ -25,26 +27,20 @@ const AdminSidebar = () => {
   };
 
   const navItems = [
-    { path: '/admin', icon: <FiHome size={20} />, label: 'Dashboard' },
-    {
-      path: '/admin/products',
-      icon: <FiPackage size={20} />,
-      label: 'Products',
-    },
-    {
-      path: '/admin/products-stock',
+   {
+      path: '/admin',
       icon: <FiBox size={20} />,
       label: 'Products Stock',
     },
     {
-      path: '/admin/create-order',
-      icon: <FiShoppingCart size={20} />,
-      label: 'Create Order',
+      path: '/admin/audit-trail',
+      icon: <FiActivity size={20} />,
+      label: 'Audit Trail',
     },
     {
-      path: '/admin/invoice',
-      icon: <FiFileText size={20} />,
-      label: 'Invoice',
+      path: '/admin/system-logs',
+      icon: <FiList size={20} />,
+      label: 'System Logs',
     },
     { path: '/admin/team', icon: <FiUsers size={20} />, label: 'Team' },
     {

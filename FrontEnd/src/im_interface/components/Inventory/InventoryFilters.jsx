@@ -20,7 +20,7 @@ const InventoryFilters = ({
 
   // Fetch Categories from Firestore
   const fetchCategories = async () => {
-    const querySnapshot = await getDocs(collection(db, "Categories"));
+    const querySnapshot = await getDocs(collection(db, "Products"));
     const fetchedCategories = querySnapshot.docs.map((doc) => ({
       id: doc.id,
       name: doc.name,

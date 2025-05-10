@@ -38,7 +38,7 @@ export const ServicesProvider = ({ children }) => {
           // Skip if already listening to this category
           if (categoryListeners.has(category)) return;
 
-          console.log(`Setting up listener for category: ${category}`);
+         
 
           const itemsQuery = query(collection(db, "Products", category, "Items"));
           

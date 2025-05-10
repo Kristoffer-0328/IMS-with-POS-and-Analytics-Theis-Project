@@ -114,30 +114,74 @@ export default function Pos_NewSale() {
     return () => clearInterval(timer);
 }, []);
 
+useEffect(() => {
+  // Show bulk order choice modal on component mount
+  setShowBulkOrderPopup(true);
+  setIsBulkOrder(null);
+}, []); // Empty dependency array means this runs once on mount
+
+// Modal visibility debugging
+useEffect(() => {
+  console.log('Modal State:', {
+    showBulkOrderPopup,
+    isBulkOrder,
+    isModalVisible: showBulkOrderPopup && isBulkOrder === null
+  });
+}, [showBulkOrderPopup, isBulkOrder]);
+
   // --- Data Fetching and Processing ---
+
+  // Add validation function
+  const validateCartQuantities = useCallback((currentCart, updatedProducts) => {
+    let cartNeedsUpdate = false;
+    
+    const updatedCart = currentCart.map(cartItem => {
+        const product = updatedProducts.find(p => p.id === cartItem.baseProductId);
+        if (!product) return cartItem;
+
+        const variant = product.variants.find(v => v.id === cartItem.variantId);
+        if (!variant) return cartItem;
+
+        if (variant.quantity < cartItem.qty) {
+            cartNeedsUpdate = true;
+            return {
+                ...cartItem,
+                qty: variant.quantity,
+                invalidQuantity: true
+            };
+        }
+        return cartItem;
+    });
+
+    if (cartNeedsUpdate) {
+        setCart(updatedCart);
+        alert("Some items in your cart have been updated due to inventory changes.");
+    }
+}, []);
 
   // Fetch Products
   useEffect(() => {
     setLoadingProducts(true);
     const unsubscribe = listenToProducts((fetchedProducts) => {
-      if (JSON.stringify(products) !== JSON.stringify(fetchedProducts)) {
-        setProducts(fetchedProducts || []);
-      }
-      setLoadingProducts(false);
+        setProducts(prevProducts => {
+            const cartProductIds = cart.map(item => item.baseProductId);
+            
+            // Check if any cart items are affected by the update
+            const updatedCartProducts = fetchedProducts.filter(p => 
+                cartProductIds.includes(p.id));
+            
+            // Validate cart quantities against new stock levels
+            if (updatedCartProducts.length > 0) {
+                validateCartQuantities(cart, updatedCartProducts);
+            }
+            
+            return fetchedProducts;
+        });
+        setLoadingProducts(false);
     });
 
-    // Show initial customer choice prompt
-    const timer = setTimeout(() => {
-      if (isBulkOrder === null) {
-        setShowBulkOrderPopup(true);
-      }
-    }, 100);
-
-    return () => {
-      unsubscribe();
-      clearTimeout(timer);
-    };
-  }, [listenToProducts]); // Only depend on listenToProducts
+    return () => unsubscribe();
+}, [cart]); // Add cart as dependency
 
   // Group Products (Memoized) - Ensure correct placeholder path
   const groupedProducts = useMemo(() => {
@@ -386,6 +430,27 @@ export default function Pos_NewSale() {
 
 
   // --- Transaction Logic ---
+  const validateStockBeforeTransaction = async () => {
+    const invalidItems = [];
+    
+    for (const item of cart) {
+        const product = products.find(p => p.id === item.baseProductId);
+        if (!product) {
+            invalidItems.push(`${item.name} - Product not found`);
+            continue;
+        }
+
+        const variant = product.variants.find(v => v.id === item.variantId);
+        if (!variant || variant.quantity < item.qty) {
+            invalidItems.push(`${item.name} - Insufficient stock`);
+        }
+    }
+
+    if (invalidItems.length > 0) {
+        throw new Error(`Cannot process transaction:\n${invalidItems.join('\n')}`);
+    }
+};
+
   const handlePrintAndSave = useCallback(async () => {
     if (cart.length === 0 || isProcessing) {
         alert("Cannot process: Cart is empty or transaction in progress");
@@ -395,11 +460,12 @@ export default function Pos_NewSale() {
     setIsProcessing(true);
 
     try {
+        await validateStockBeforeTransaction();
+
         const { formattedDate, formattedTime } = getFormattedDateTime();
         const receiptNumber = `GS-${Date.now()}`;
         
         await runTransaction(db, async (transaction) => {
-            // First, perform all reads and validations
             const productUpdates = [];
             
             for (const item of cart) {
@@ -424,16 +490,23 @@ export default function Pos_NewSale() {
                     throw new Error(`Insufficient stock for ${item.name}: available ${currentQuantity}`);
                 }
 
-                // Store update data for later
+                // Calculate new total quantity for product
+                const newVariants = productData.variants.map((v, idx) => 
+                    idx === variantIndex 
+                        ? { ...v, quantity: currentQuantity - item.qty }
+                        : v
+                );
+                
+                const newTotalQuantity = newVariants.reduce((sum, variant) => 
+                    sum + (Number(variant.quantity) || 0), 0
+                );
+
+                // Store update with correct total quantity
                 productUpdates.push({
                     ref: productRef,
                     data: {
-                        quantity: (Number(productData.quantity) || 0) - item.qty,
-                        variants: productData.variants.map((v, idx) => 
-                            idx === variantIndex 
-                                ? { ...v, quantity: currentQuantity - item.qty }
-                                : v
-                        ),
+                        quantity: newTotalQuantity, // Update total product quantity
+                        variants: newVariants,
                         lastUpdated: serverTimestamp()
                     }
                 });
@@ -471,9 +544,9 @@ export default function Pos_NewSale() {
             // Now perform all writes after reads
             await transaction.set(transactionRef, transactionData);
             
-            // Update all products
+            // Update all products with correct quantities
             for (const update of productUpdates) {
-                transaction.update(update.ref, update.data);
+                await transaction.update(update.ref, update.data);
             }
         });
 
@@ -502,144 +575,155 @@ export default function Pos_NewSale() {
 
     } catch (error) {
         console.error("Transaction failed:", error);
-        alert(`Transaction failed: ${error.message}`);
+        alert(error.message);
     } finally {
         setIsProcessing(false);
     }
-}, [cart, total, subTotal, tax, amountPaid, paymentMethod, customerDetails, customerDisplayName, isBulkOrder, resetSaleState, currentUser]);
+}, [cart, products, total, subTotal, tax, amountPaid, paymentMethod, customerDetails, customerDisplayName, isBulkOrder, resetSaleState, currentUser]);
 
 
   // --- UI ---
   const shouldDisableInteractions = isProcessing || (showBulkOrderPopup && isBulkOrder === null) || (showBulkOrderPopup && isBulkOrder === true);
 
   return (
-    <div className="flex flex-col w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-6 bg-gray-50 h-full">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-orange-100/80 to-amber-100/30 rounded-xl p-4 sm:p-6 mb-6 shadow-sm">
+    <div className="flex flex-col w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-6 bg-gray-50 min-h-screen">
+      {/* Enhanced Header */}
+      <div className="bg-gradient-to-r from-orange-100/80 to-amber-100/30 rounded-xl p-4 sm:p-6 mb-6 shadow-sm border border-orange-100">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-800">New Sale</h2>
-            <div className="clock-display">
-              <span className="clock-time">
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+              New Sale
+              {isProcessing && (
+                <div className="inline-block w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+              )}
+            </h2>
+            <div className="clock-display bg-white/50 backdrop-blur-sm px-4 py-2 rounded-lg font-mono text-gray-700">
+              <span className="clock-time text-lg font-semibold">
                 {currentDateTime.formattedTime?.hours || '00'}
-              </span>
-              <span className="clock-separator">:</span>
-              <span className="clock-time">
+                <span className="clock-separator animate-pulse">:</span>
                 {currentDateTime.formattedTime?.minutes || '00'}
-              </span>
-              <span className="clock-separator">:</span>
-              <span className="clock-time">
+                <span className="clock-separator animate-pulse">:</span>
                 {currentDateTime.formattedTime?.seconds || '00'}
               </span>
-              <span className="clock-divider">|</span>
-              <span>{currentDateTime.formattedDate}</span>
+              <span className="clock-divider mx-3">|</span>
+              <span className="text-gray-600">{currentDateTime.formattedDate}</span>
             </div>
           </div>
-          <div className="text-sm font-medium flex items-center bg-white px-3 py-1 rounded-full shadow-xs">
-            <span className="font-semibold text-gray-800"> {currentUser?.name || 'Loading...'}</span>
-            <span className="text-gray-500 ml-2">| {currentUser?.role || 'User'}</span>
+          <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100">
+            <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
+              <span className="text-orange-600 font-bold">
+                {currentUser?.name?.[0]?.toUpperCase() || '?'}
+              </span>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-gray-800">{currentUser?.name || 'Loading...'}</p>
+              <p className="text-gray-500 text-xs">{currentUser?.role || 'User'}</p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex flex-1 gap-6 overflow-hidden">
-
+      {/* Main Content Area with Enhanced Layout */}
+      <div className="flex flex-1 gap-6 overflow-hidden h-[calc(100vh-12rem)]">
         {/* Left Side: Product Selection */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <SearchBar
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            disabled={shouldDisableInteractions} // Disable search when modals are active or processing
-          />
-          {/* Product Grid Container */}
-          <div className="flex-1 bg-white rounded-lg shadow-sm p-5 border border-gray-100 overflow-y-auto">
-             <ProductGrid
-                products={filteredProducts}
-                onAddProduct={handleAddProduct}
-                loading={loadingProducts}
-                searchQuery={searchQuery}
-                disabled={shouldDisableInteractions}
+        <div className="flex-1 flex flex-col overflow-hidden rounded-xl bg-white shadow-sm border border-gray-100">
+          <div className="p-4 border-b border-gray-100">
+            <SearchBar
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              disabled={shouldDisableInteractions}
+            />
+          </div>
+          <div className="flex-1 p-4 overflow-y-auto">
+            <ProductGrid
+              products={filteredProducts}
+              onAddProduct={handleAddProduct}
+              loading={loadingProducts}
+              searchQuery={searchQuery}
+              disabled={shouldDisableInteractions}
             />
           </div>
         </div>
 
-        {/* Right Side: Invoice Panel */}
-        <aside className="invoice-panel w-80 md:w-96 bg-white rounded-lg shadow-sm border border-gray-100 p-4 flex flex-col">
-            {/* Customer Info */}
+        {/* Right Side: Enhanced Invoice Panel */}
+        <aside className="w-96 flex flex-col gap-4">
+          {/* Customer Info Card */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
             <CustomerInfo
-                customerDisplayName={customerDisplayName}
-                isBulkOrder={isBulkOrder}
-                customerDetails={customerDetails}
-                formattedDate={currentDateTime.formattedDate}
+              customerDisplayName={customerDisplayName}
+              isBulkOrder={isBulkOrder}
+              customerDetails={customerDetails}
+              formattedDate={currentDateTime.formattedDate}
             />
-            {/* Cart Items */}
-            <Cart
+          </div>
+
+          {/* Cart and Summary Card */}
+          <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col">
+            <div className="flex-1 overflow-y-auto p-4">
+              <Cart
                 cartItems={cart}
                 onRemoveItem={handleRemoveItem}
                 isProcessing={isProcessing}
-            />
-            {/* Order Summary (Totals) */}
-            <OrderSummary
+              />
+            </div>
+            <div className="border-t border-gray-100 p-4 space-y-4">
+              <OrderSummary
                 subTotal={subTotal}
                 tax={tax}
                 total={total}
-            />
-            {/* Payment Section */}
+              />
+            </div>
+          </div>
+
+          {/* Payment Section Card */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
             <PaymentSection
-                paymentMethod={paymentMethod}
-                setPaymentMethod={setPaymentMethod}
-                amountPaid={amountPaid}
-                setAmountPaid={setAmountPaid}
-                total={total}
-                isProcessing={isProcessing}
-                cartIsEmpty={cart.length === 0}
-                onPrintAndSave={handlePrintAndSave}
+              paymentMethod={paymentMethod}
+              setPaymentMethod={setPaymentMethod}
+              amountPaid={amountPaid}
+              setAmountPaid={setAmountPaid}
+              total={total}
+              isProcessing={isProcessing}
+              cartIsEmpty={cart.length === 0}
+              onPrintAndSave={handlePrintAndSave}
             />
+          </div>
         </aside>
       </div>
 
-      {/* Modals Section - Render conditionally */}
-      <>
-          {/* Modal 1: Bulk Order Choice */}
-          {showBulkOrderPopup && isBulkOrder === null && (
-             <BulkOrderChoiceModal
-                onChoice={handleBulkOrderChoice}
-             />
-          )}
-
-          {/* Modal 2: Bulk Order Details */}
-          {showBulkOrderPopup && isBulkOrder === true && (
-             <BulkOrderDetailsModal
-                customerDetails={customerDetails}
-                setCustomerDetails={setCustomerDetails}
-                onSubmit={handleCustomerDetailsSubmit}
-                onClose={() => {
-                    setShowBulkOrderPopup(false);
-                    resetSaleState();
-                 }}
-             />
-          )}
-
-          {/* Modal 3: Variant Selection */}
-          {variantModalOpen && selectedProductForModal && (
-             <VariantSelectionModal
-                product={selectedProductForModal}
-                activeVariantIndex={activeVariantIndex}
-                setActiveVariantIndex={setActiveVariantIndex}
-                qty={quantity}
-                setQty={setQuantity}
-                onAddVariant={handleAddVariant}
-                onClose={() => {
-                    setVariantModalOpen(false);
-                    setSelectedProductForModal(null);
-                    setActiveVariantIndex(0);
-                    setQuantity(1);
-                }}
-             />
-          )}
-      </>
-
+      {/* Modal Section with Improved Backdrop */}
+      <div className="relative z-50">
+        {showBulkOrderPopup && isBulkOrder === null && (
+          <BulkOrderChoiceModal onChoice={handleBulkOrderChoice} />
+        )}
+        {showBulkOrderPopup && isBulkOrder === true && (
+          <BulkOrderDetailsModal
+            customerDetails={customerDetails}
+            setCustomerDetails={setCustomerDetails}
+            onSubmit={handleCustomerDetailsSubmit}
+            onClose={() => {
+              setShowBulkOrderPopup(false);
+              resetSaleState();
+            }}
+          />
+        )}
+        {variantModalOpen && selectedProductForModal && (
+          <VariantSelectionModal
+            product={selectedProductForModal}
+            activeVariantIndex={activeVariantIndex}
+            setActiveVariantIndex={setActiveVariantIndex}
+            qty={quantity}
+            setQty={setQuantity}
+            onAddVariant={handleAddVariant}
+            onClose={() => {
+              setVariantModalOpen(false);
+              setSelectedProductForModal(null);
+              setActiveVariantIndex(0);
+              setQuantity(1);
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 } // End Pos_NewSale component

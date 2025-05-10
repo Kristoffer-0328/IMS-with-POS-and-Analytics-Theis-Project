@@ -33,6 +33,28 @@
   50% { opacity: 0; }
 }
 
+@keyframes scaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 @layer components {
   .clock-time {
     @apply inline-block font-bold text-gray-800 min-w-[2ch] text-center;
@@ -43,4 +65,29 @@
   .animate-blink {
     animation: blink 1s step-start infinite;
   }
+  .animate-scaleUp {
+    animation: scaleUp 0.2s ease-out;
+  }
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-out;
+  }
+}
+
+/* Add smooth scrollbar for long content */
+.modal-content {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
+}
+
+.modal-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+  background-color: rgba(156, 163, 175, 0.5);
+  border-radius: 3px;
 }

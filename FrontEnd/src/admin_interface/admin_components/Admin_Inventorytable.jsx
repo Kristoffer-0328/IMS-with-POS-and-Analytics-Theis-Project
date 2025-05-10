@@ -1,7 +1,7 @@
-import { FiAlertTriangle, FiEye } from 'react-icons/fi';
+import { FiAlertTriangle, FiEye, FiEdit, FiTrash2 } from 'react-icons/fi';
 import React from 'react';
 
-const InventoryTable = ({ data, onViewProduct }) => {
+const Admin_Inventorytable = ({ data, onViewProduct, onEditProduct, onDeleteProduct }) => {
   const getStatusBadge = (status) => {
     switch (status) {
       case 'in-stock':
@@ -51,7 +51,7 @@ const InventoryTable = ({ data, onViewProduct }) => {
               Status
             </th>
             <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Action
+              Actions
             </th>
           </tr>
         </thead>
@@ -83,13 +83,26 @@ const InventoryTable = ({ data, onViewProduct }) => {
                 {getStatusBadge(item.status)}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-right">
-                <button
-                  onClick={() => onViewProduct(item)}
-                  className="inline-flex items-center px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors duration-150 gap-1.5"
-                >
-                  <FiEye size={16} />
-                  View Details
-                </button>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    onClick={() => onViewProduct(item)}
+                    className="inline-flex items-center px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors duration-150"
+                  >
+                    <FiEye size={16} />
+                  </button>
+                  <button
+                    onClick={() => onEditProduct(item)}
+                    className="inline-flex items-center px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-sm font-medium hover:bg-amber-100 transition-colors duration-150"
+                  >
+                    <FiEdit size={16} />
+                  </button>
+                  <button
+                    onClick={() => onDeleteProduct(item)}
+                    className="inline-flex items-center px-2 py-1 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors duration-150"
+                  >
+                    <FiTrash2 size={16} />
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -99,4 +112,4 @@ const InventoryTable = ({ data, onViewProduct }) => {
   );
 };
 
-export default InventoryTable;
+export default Admin_Inventorytable;

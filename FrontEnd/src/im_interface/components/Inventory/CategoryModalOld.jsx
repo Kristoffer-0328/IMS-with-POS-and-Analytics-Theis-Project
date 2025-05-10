@@ -21,6 +21,10 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [activeForm, setActiveForm] = useState(null);
+  const [previousState, setPreviousState] = useState({
+    category: null,
+    activeForm: null
+  });
   const { listenToProducts } = useServices();
   const db = getFirestore(app);
 
@@ -31,26 +35,21 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
       storageOptions.push(`STR ${row}${i}`);
     }
   }
-  listenToProducts((updatedProducts) => {
-    // This will activate the listener and ensure the UI updates
-    console.log("Products updated in real-time:", updatedProducts.length);
-  });
 
   useEffect(() => {
     const handleKeyDown = (event) => {
       if (event.key === "Escape") {
-        CategoryClose();
+        handleClose();
       }
     };
 
     const fetchCategories = async () => {
       try {
-        // Get categories directly from Products collection
         const productsRef = collection(db, "Products");
         const querySnapshot = await getDocs(productsRef);
         const fetchedCategories = querySnapshot.docs.map((doc) => ({
           id: doc.id,
-          name: doc.id, // Use the document ID as the category name
+          name: doc.id,
           ...doc.data()
         }));
         setCategories(fetchedCategories);
@@ -73,14 +72,12 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
     if (!newCategoryName.trim()) return;
 
     try {
-      // Create new category document in Products collection
       const categoryRef = doc(db, 'Products', newCategoryName.trim());
       await setDoc(categoryRef, { 
         name: newCategoryName.trim(),
         createdAt: new Date().toISOString()
       });
 
-      // Refresh categories list
       const productsRef = collection(db, "Products");
       const querySnapshot = await getDocs(productsRef);
       const updatedCategories = querySnapshot.docs.map((doc) => ({
@@ -98,9 +95,22 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
     }
   };
 
+  const handleClose = () => {
+    setPreviousState({
+      category: selectedCategory,
+      activeForm: activeForm
+    });
+    setShowAddProductModal(false);
+    setActiveForm(null);
+    CategoryClose();
+  };
+
   const handleCategoryClick = (category) => {
     setSelectedCategory(category);
     setShowAddProductModal(true);
+    if (previousState.category?.id === category.id) {
+      setActiveForm(previousState.activeForm);
+    }
   };
 
   const validateProduct = () => {
@@ -130,51 +140,78 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
     const [unit, setUnit] = useState('pcs');
     const [additionalVariantFields, setAdditionalVariantFields] = useState([]);
     const [newVariantFieldName, setNewVariantFieldName] = useState('');
+    const { listenToProducts } = useServices();
 
     useEffect(() => {
-        const fetchProducts = async () => {
-            if (!selectedCategory?.name) {
-                console.log('No category selected');
-                return;
-            }
+        if (!selectedCategory?.name) {
+            console.log('No category selected');
+            return;
+        }
 
-            try {
-                console.log('Fetching products for category:', selectedCategory.name);
-                const productsRef = collection(db, 'Products', selectedCategory.name, 'Items');
-                const snapshot = await getDocs(productsRef);
-                
-                if (snapshot.empty) {
-                    console.log('No products found in category:', selectedCategory.name);
-                    setExistingProducts([]);
+        try {
+            const unsubscribe = listenToProducts((allProducts) => {
+                console.log('Raw products received:', allProducts);
+
+                if (!Array.isArray(allProducts)) {
+                    console.error('allProducts is not an array:', allProducts);
                     return;
                 }
 
-                const products = snapshot.docs.map(doc => {
-                    const data = doc.data();
-                    return {
-                        id: doc.id,
-                        name: data.name, // Using the name field from ProductFactory
-                        baseProductName: data.baseProductName,
-                        category: data.category,
-                        quantity: data.quantity,
-                        unitPrice: data.unitPrice,
-                        location: data.location,
-                        measurements: data.measurements || {},
-                        variants: data.variants || [],
-                        lastUpdated: data.lastUpdated
-                    };
+                // Filter products that belong to selected category
+                const categoryProducts = allProducts.filter(product => {
+                    const isValidProduct = product && 
+                        typeof product === 'object' &&
+                        product.category === selectedCategory.name &&
+                        !product.isVariant;
+                    
+                    console.log(`Checking product: ${product?.name || 'unnamed'}`, {
+                        hasProduct: !!product,
+                        category: product?.category,
+                        expectedCategory: selectedCategory.name,
+                        isValidProduct
+                    });
+                    
+                    return isValidProduct;
                 });
 
-                console.log('Processed products:', products);
-                setExistingProducts(products);
-            } catch (error) {
-                console.error("Error fetching products:", error);
-                alert("Error loading products: " + error.message);
-            }
-        };
+                // Format the products and RETURN the formatted object
+                const formattedProducts = categoryProducts.map(product => ({
+                    id: product.id || '',
+                    name: product.ProductName || product.name || '',
+                    category: product.category || '',
+                    quantity: parseInt(product.quantity) || 0,
+                    unitPrice: parseFloat(product.unitPrice) || 0,
+                    location: product.location || 'STR A1',
+                    unit: product.unit || 'pcs',
+                    restockLevel: parseInt(product.restockLevel) || 0,
+                    variants: product.variants || [],
+                    lastUpdated: product.lastUpdated || new Date().toISOString()
+                }));
 
-        fetchProducts();
-    }, [selectedCategory]);
+                console.log('Formatted products:', formattedProducts);
+
+                if (formattedProducts.length > 0) {
+                    setExistingProducts(formattedProducts);
+                } else {
+                    console.log('No products found for category:', selectedCategory.name);
+                    setExistingProducts([]); // Set empty array to clear previous products
+                }
+            });
+
+            return () => unsubscribe();
+        } catch (error) {
+            console.error('Error in products listener:', error);
+            setExistingProducts([]); // Set empty array on error
+        }
+    }, [selectedCategory?.name, listenToProducts]);
+
+    // Add this separate useEffect to monitor existingProducts
+    useEffect(() => {
+        console.log('ExistingProducts updated:', {
+            length: existingProducts.length,
+            products: existingProducts
+        });
+    }, [existingProducts]);
 
     const handleProductSelect = (productId) => {
         const product = existingProducts.find(p => p.id === productId);
@@ -182,7 +219,6 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
 
         if (product) {
             setSelectedProduct(product);
-            // Use the correct property names from ProductFactory
             setUnit(product.measurements?.defaultUnit || 'pcs');
             setRestockLevel(product.quantity || '');
             setStorageLocation(product.location || 'STR A1');
@@ -192,34 +228,35 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
     };
 
     return (
-        <div className="space-y-4 mt-4">
-            <h2 className="text-sm font-semibold text-gray-500 mb-2">Add Variant</h2>
-            <p className="font-bold text-sm mb-4">
-                Category: <span className="font-bold text-blue-600">{selectedCategory?.name}</span>
-            </p>
+        <div className="space-y-4">
+            <div className="flex items-center justify-between mb-6">
+            </div>
 
-            <div className="w-full">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Select Product
-                </label>
+            <div className="mb-6">
+                <span className="text-sm text-gray-600">Category: </span>
+                <span className="font-medium text-blue-600">{selectedCategory?.name}</span>
+            </div>
+
+            <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">Select Product</label>
                 <select
-                    className="w-full p-2 border rounded bg-white"
+                    className="w-full p-2.5 border border-gray-300 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     onChange={(e) => handleProductSelect(e.target.value)}
                     value={selectedProduct?.id || ''}
                 >
                     <option value="">-- Select a Product --</option>
-                    {existingProducts.length > 0 ? (
+                    {Array.isArray(existingProducts) && existingProducts.length > 0 ? (
                         existingProducts.map(product => (
                             <option key={product.id} value={product.id}>
-                                {product.name || product.baseProductName}
+                                {product.name || product.ProductName || 'Unnamed Product'}
                             </option>
                         ))
                     ) : (
-                        <option disabled>No products available</option>
+                        <option value="" disabled>No products available in {selectedCategory?.name}</option>
                     )}
                 </select>
                 <div className="text-sm text-gray-500 mt-1">
-                    {existingProducts.length} products available
+                    {existingProducts.length} product(s) available in {selectedCategory?.name}
                 </div>
             </div>
 
@@ -582,25 +619,31 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
   return (
     <>
       {!showAddProductModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-md bg-white/30 bg-opacity-40">
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-xl p-6">
-            <div className="absolute top-3 right-4 text-xl text-gray-500 hover:text-red-500">
-              <button onClick={CategoryClose}>✕</button>
-            </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm"></div>
+          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-xl p-8 animate-scaleUp z-10">
+            <button 
+              onClick={handleClose}
+              className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+            >
+              <span className="text-xl">✕</span>
+            </button>
 
-            <div className="flex justify-center mb-4">
-              <div className="bg-gray-100 px-4 py-2 rounded-lg text-sm font-semibold text-center">
+            <div className="flex justify-center mb-6">
+              <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-3 rounded-xl text-sm font-medium text-blue-700 shadow-sm">
                 Select a Category to Add New Product
               </div>
             </div>
 
-            <div className="bg-gray-100 rounded-xl p-6 shadow-inner grid grid-cols-2 sm:grid-cols-4 gap-4 justify-items-center mb-6">
+            <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-6 shadow-inner grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
               {categories.map((cat) => (
                 <button
                   key={cat.id}
-                  className={`bg-white shadow p-2 rounded-lg w-full text-center text-sm hover:bg-blue-100 ${
-                    selectedCategory?.id === cat.id ? 'bg-blue-200 font-bold' : ''
-                  }`}
+                  className={`bg-white shadow-sm p-3 rounded-xl w-full text-center text-sm transition-all duration-200
+                    ${selectedCategory?.id === cat.id 
+                      ? 'bg-blue-500 text-white font-medium scale-105 shadow-md' 
+                      : 'hover:bg-blue-50 hover:shadow hover:scale-105'
+                    }`}
                   onClick={() => handleCategoryClick(cat)}
                 >
                   {cat.name}
@@ -609,31 +652,47 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
             </div>
 
             {showAddCategory && (
-              <div className="flex items-center justify-between gap-4 mb-4 bg-gray-100 p-4 rounded-xl">
-                <div className="flex flex-col w-full">
-                  <label className="text-sm mb-1 text-gray-600">Category Name</label>
-                  <input
-                    type="text"
-                    className="border border-blue-400 rounded-md px-2 py-1 focus:outline-none focus:ring w-full"
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                  />
+              <div className="mb-6 bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl shadow-inner">
+                <div className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <label className="text-sm font-medium text-gray-700 mb-1 block">
+                      Category Name
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full px-4 py-2 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-shadow"
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      placeholder="Enter category name"
+                    />
+                  </div>
+                  <button
+                    onClick={handleAddCategory}
+                    className="h-10 w-10 bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-sm hover:shadow transition-all duration-200"
+                  >
+                    +
+                  </button>
                 </div>
-                <button
-                  onClick={handleAddCategory}
-                  className="bg-blue-500 hover:bg-blue-600 text-white text-lg rounded-full w-10 h-10 flex items-center justify-center"
-                >
-                  +
-                </button>
               </div>
             )}
 
             <div className="flex justify-center">
               <button
-                className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition"
+                className="px-6 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl 
+                  hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow transition-all duration-200
+                  flex items-center gap-2"
                 onClick={() => setShowAddCategory((prev) => !prev)}
               >
-                {showAddCategory ? "Cancel" : "Add New Category"}
+                {showAddCategory ? (
+                  <>
+                    <span>Cancel</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Add New Category</span>
+                    <span className="text-lg">+</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -641,38 +700,49 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
       )}
 
       {showAddProductModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-md bg-white/30 bg-opacity-40">
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-            <div className="absolute top-3 right-4 text-xl text-gray-500 hover:text-red-500">
-              <button
-                onClick={() => {
-                  if (activeForm) setActiveForm(null);
-                  else setShowAddProductModal(false);
-                }}
-                className="flex items-center gap-2"
-              >
-                <span className="text-2xl">&#8592;</span>
-                Back
-              </button>
-            </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm"></div>
+          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-8 animate-scaleUp z-10">
+            <button
+              onClick={() => {
+                if (activeForm) {
+                  setActiveForm(null);
+                } else {
+                  setPreviousState({
+                    category: selectedCategory,
+                    activeForm: activeForm
+                  });
+                  setShowAddProductModal(false);
+                }
+              }}
+              className="absolute top-4 left-4 px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
+            >
+              <span className="text-xl">←</span>
+              <span>Back</span>
+            </button>
 
             {!activeForm ? (
               <>
-                <div className="mt-12 flex justify-center mb-4">
-                  <div className="bg-gray-100 px-4 py-2 rounded-lg text-sm font-semibold text-center">
-                    Add New Variant or New Product in <span className="font-bold text-blue-600">{selectedCategory?.name}</span>
+                <div className="mt-12 mb-6 text-center">
+                  <div className="inline-block bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-3 rounded-xl">
+                    <span className="text-sm font-medium text-blue-700">
+                      Add New Variant or New Product in{' '}
+                      <span className="font-bold">{selectedCategory?.name}</span>
+                    </span>
                   </div>
                 </div>
 
-                <div className="bg-gray-100 rounded-xl p-6 shadow-inner flex justify-center gap-4">
+                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-xl">
                   <button
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+                    className="px-4 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 
+                      shadow-sm hover:shadow transition-all duration-200"
                     onClick={() => setActiveForm('variant')}
                   >
                     New Variant
                   </button>
                   <button
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+                    className="px-4 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 
+                      shadow-sm hover:shadow transition-all duration-200"
                     onClick={() => setActiveForm('product')}
                   >
                     New Product
