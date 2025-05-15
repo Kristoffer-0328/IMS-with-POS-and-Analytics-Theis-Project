@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FiBell } from 'react-icons/fi';
+import { useNavigate } from 'react-router-dom';
 import { getFirestore, collection, query, where, onSnapshot } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
-import { useNavigate } from 'react-router-dom';
 
 // Click outside hook
 const useClickOutside = (ref, handler) => {
@@ -22,21 +22,22 @@ const useClickOutside = (ref, handler) => {
   }, [ref, handler]);
 };
 
-const InventoryHeader = () => {
+const RestockingHeader = () => {
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [readNotifications, setReadNotifications] = useState(new Set());
   const [hasNewNotification, setHasNewNotification] = useState(false);
   const notificationsRef = useRef(null);
-  const db = getFirestore(app);
   const navigate = useNavigate();
+  const db = getFirestore(app);
 
   useClickOutside(notificationsRef, () => setShowNotifications(false));
 
   useEffect(() => {
     const notificationsQuery = query(
       collection(db, 'Notifications'),
-      where('status', '==', 'pending')
+      where('status', '==', 'pending'),
+      where('type', '==', 'restock_alert')
     );
 
     const unsubscribe = onSnapshot(notificationsQuery, 
@@ -66,7 +67,6 @@ const InventoryHeader = () => {
     return () => unsubscribe();
   }, [readNotifications]);
 
-  // Add function to mark notifications as read
   const handleOpenNotifications = () => {
     setShowNotifications(true);
     // Mark all current notifications as read
@@ -81,14 +81,13 @@ const InventoryHeader = () => {
   const handleNotificationClick = (notification) => {
     if (notification.type === 'restock_alert') {
       setShowNotifications(false);
-      navigate('/im/restocking-request');
     }
   };
 
   return (
     <div className="flex justify-between items-center mb-6 bg-white rounded-xl shadow-sm border border-gray-100 p-4">
       <div className="flex items-center gap-4">
-        <h1 className="text-2xl font-bold text-gray-800">Inventory</h1>
+        <h1 className="text-2xl font-bold text-gray-800">Restocking Request</h1>
         <span className="hidden sm:inline-block px-3 py-1 bg-orange-100 text-orange-600 text-sm font-medium rounded-full">
           Management
         </span>
@@ -116,7 +115,7 @@ const InventoryHeader = () => {
           {showNotifications && (
             <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-100 z-50">
               <div className="p-3 border-b border-gray-100">
-                <h3 className="text-sm font-semibold text-gray-800">Inventory Notifications</h3>
+                <h3 className="text-sm font-semibold text-gray-800">Restock Notifications</h3>
               </div>
               <div className="max-h-96 overflow-y-auto">
                 {notifications.length > 0 ? (
@@ -139,7 +138,7 @@ const InventoryHeader = () => {
                           {notification.createdAt ? new Date(notification.createdAt).toLocaleDateString() : 'N/A'}
                         </span>
                         <span className="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-600 rounded-full">
-                          {notification.type === 'restock_alert' ? 'Restock Alert' : 'Notification'}
+                          Restock Alert
                         </span>
                       </div>
                     </div>
@@ -169,4 +168,4 @@ const InventoryHeader = () => {
   );
 };
 
-export default InventoryHeader;
+export default RestockingHeader;
