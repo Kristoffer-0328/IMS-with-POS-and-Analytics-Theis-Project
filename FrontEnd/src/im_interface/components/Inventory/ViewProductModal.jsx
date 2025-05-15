@@ -42,6 +42,19 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
     });
   };
 
+  const formatDate = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-PH', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
+
   const getProductDetail = (field) => {
     if (!product) return "N/A";
 
@@ -356,8 +369,24 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
                 <span className="text-sm font-medium text-gray-900">₱{formatMoney(getProductDetail('totalvalue'))}</span>
               </div>
               <div className="flex justify-between items-center px-3 py-2">
+                <span className="text-xs text-gray-500">Maximum Stock Level</span>
+                <span className="text-sm font-medium text-gray-900">{product.maximumStockLevel || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between items-center px-3 py-2">
                 <span className="text-xs text-gray-500">Restock Level</span>
                 <span className="text-sm font-medium text-gray-900">{product.restockLevel || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between items-center px-3 py-2">
+                <span className="text-xs text-gray-500">Created At</span>
+                <span className="text-sm font-medium text-gray-900">
+                  {formatDate(product.createdAt)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center px-3 py-2">
+                <span className="text-xs text-gray-500">Last Updated</span>
+                <span className="text-sm font-medium text-gray-900">
+                  {formatDate(product.lastUpdated)}
+                </span>
               </div>
             </div>
 

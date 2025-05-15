@@ -79,7 +79,7 @@ const Inventory = () => {
         // Calculate status based on quantity and restock level
         if (quantity <= 0) {
             status = 'out-of-stock';
-        } else if (quantity <= restockLevel) {
+        } else if (quantity <= restockLevel || quantity <= 60) {
             status = 'low-stock';
         }
 

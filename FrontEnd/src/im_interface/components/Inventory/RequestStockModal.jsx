@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import app from "../../../FirebaseConfig";
-import { getFirestore, addDoc, collection } from "firebase/firestore";
+import { getFirestore, addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { useServices } from "../../../FirebaseBackEndQuerry/ProductServices";
 
 export const RestockRequestModal = ({ isOpen, onClose }) => {
@@ -52,7 +52,17 @@ export const RestockRequestModal = ({ isOpen, onClose }) => {
         CreatedAt:   new Date().toISOString().split('T')[0],
       };
 
-      const docRef = await addDoc(collection(db, "StockRestocks"), newRequest);
+      const docRef = await addDoc(collection(db, "RestockRequests"), {
+        ...newRequest,
+        status: "pending",
+        type: "restock_request",
+        timestamp: serverTimestamp(),
+        requestedQuantity: parseInt(requestedQty),
+        maximumStockLevel: selectedProduct?.maximumStockLevel || 0,
+        restockLevel: selectedProduct?.restockLevel || 0,
+        productId: selectedProduct?.id,
+        category: selectedProduct?.category
+      });
       console.log("Restock request created with ID: ", docRef.id);
       alert("Stock restocking request submitted.");
       onClose();
@@ -107,7 +117,7 @@ export const RestockRequestModal = ({ isOpen, onClose }) => {
               min={0}
               className="w-full border p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
               required
-              disabled // Disable editing if it’s auto-filled
+              disabled // Disable editing if it's auto-filled
             />
           </div>
 

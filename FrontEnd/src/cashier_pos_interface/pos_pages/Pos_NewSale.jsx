@@ -105,7 +105,6 @@ export default function Pos_NewSale() {
   useEffect(() => {
     const updateClock = () => {
         const time = getFormattedDateTime();
-        console.log("Current time data:", time); // Debug log
         setCurrentDateTime(time);
     };
     
@@ -131,7 +130,7 @@ useEffect(() => {
 
   // --- Data Fetching and Processing ---
 
-  // Add validation function
+  // Validation function
   const validateCartQuantities = useCallback((currentCart, updatedProducts) => {
     let cartNeedsUpdate = false;
     
@@ -399,23 +398,20 @@ useEffect(() => {
 
    // --- Sale Reset Logic ---
    const resetSaleState = useCallback(() => {
-       setCart([]);
+       setCart([]); // This line clears the cart
        setAmountPaid('');
        setPaymentMethod('Cash');
-       setIsBulkOrder(null); // Reset customer type choice
-       setCustomerDetails({ name: '', phone: '', address: '' }); // Clear details
-       // Reset walk-in counter? Decide based on desired behavior. Usually not reset per sale.
-       // setWalkInCounter(0);
-       setCustomerIdentifier('Walk-in Customer'); // Reset to default
-       setCustomerDisplayName('Walk-in Customer'); // Reset to default
-       setSearchQuery(''); // Clear search
-       setQuantity(1); // Reset modal quantity
-       setSelectedProductForModal(null); // Clear modal product
-       setVariantModalOpen(false); // Close variant modal if open
+       setIsBulkOrder(null);
+       setCustomerDetails({ name: '', phone: '', address: '' });
+       setCustomerIdentifier('Walk-in Customer');
+       setCustomerDisplayName('Walk-in Customer');
+       setSearchQuery('');
+       setQuantity(1);
+       setSelectedProductForModal(null);
+       setVariantModalOpen(false);
        setActiveVariantIndex(0);
-       setShowBulkOrderPopup(true); // IMPORTANT: Show initial choice popup for the next sale
-       console.log("Sale state reset.");
-   }, []); // No dependencies needed if it only uses setters
+       setShowBulkOrderPopup(true);
+   }, []);
 
 
   // --- Calculations ---
@@ -461,17 +457,35 @@ useEffect(() => {
 
     try {
         await validateStockBeforeTransaction();
-
         const { formattedDate, formattedTime } = getFormattedDateTime();
         const receiptNumber = `GS-${Date.now()}`;
-        
+
         await runTransaction(db, async (transaction) => {
-            const productUpdates = [];
-            
+            // 1. First, read all required documents
+            const productReads = [];
+            const restockChecks = [];
+
+            // Read all product documents first
             for (const item of cart) {
+                // Create document references
                 const productRef = doc(db, 'Products', item.category, 'Items', item.baseProductId);
+                
+                // Get document snapshots using transaction.get()
                 const productDoc = await transaction.get(productRef);
                 
+                productReads.push({
+                    item,
+                    ref: productRef,
+                    doc: productDoc
+                });
+            }
+
+            // 2. Process reads and prepare writes
+            const productUpdates = [];
+            const notificationWrites = [];
+            const restockWrites = [];
+
+            for (const { item, ref, doc: productDoc } of productReads) {
                 if (!productDoc.exists()) {
                     throw new Error(`Product not found: ${item.name}`);
                 }
@@ -490,29 +504,87 @@ useEffect(() => {
                     throw new Error(`Insufficient stock for ${item.name}: available ${currentQuantity}`);
                 }
 
-                // Calculate new total quantity for product
                 const newVariants = productData.variants.map((v, idx) => 
                     idx === variantIndex 
                         ? { ...v, quantity: currentQuantity - item.qty }
                         : v
                 );
-                
+
                 const newTotalQuantity = newVariants.reduce((sum, variant) => 
                     sum + (Number(variant.quantity) || 0), 0
                 );
 
-                // Store update with correct total quantity
                 productUpdates.push({
-                    ref: productRef,
+                    ref,
                     data: {
-                        quantity: newTotalQuantity, // Update total product quantity
+                        quantity: newTotalQuantity,
                         variants: newVariants,
-                        lastUpdated: serverTimestamp()
+                        lastUpdated: new Date().toISOString()
                     }
                 });
+
+                // Check restock levels
+                const restockLevel = Number(productData.restockLevel || 0);
+                const maximumStockLevel = Number(productData.maximumStockLevel || 0);
+                const newQuantity = currentQuantity - Number(item.qty);
+
+                // Debug log
+                console.log('Stock Check:', {
+                    productName: item.name,
+                    currentQuantity,
+                    newQuantity,
+                    restockLevel,
+                    maximumStockLevel,
+                    shouldNotify: newQuantity <= restockLevel
+                });
+
+                if (restockLevel > 0 && newQuantity <= restockLevel) {
+                    const timestamp = Date.now();
+                    // Create document references using doc()
+                    const notificationRef = doc(db, 'Notifications', `Notify-${item.category}-${item.baseProductId}-${timestamp}`);
+                    const restockRequestRef = doc(db, 'RestockRequests', `Restock-${item.category}-${item.baseProductId}-${timestamp}`);
+
+                    const notificationData = {
+                        message: `Low stock alert for ${item.name}`,
+                        productId: item.baseProductId,
+                        variantId: item.variantId,
+                        currentQuantity: newQuantity,
+                        restockLevel: restockLevel,
+                        maximumStockLevel: maximumStockLevel,
+                        category: item.category,
+                        productName: item.name,
+                        status: 'pending',
+                        timestamp: serverTimestamp(),
+                        type: 'restock_alert',
+                        createdAt: new Date().toISOString()
+                    };
+
+                    notificationWrites.push({
+                        ref: notificationRef,
+                        data: notificationData
+                    });
+
+                    restockWrites.push({
+                        ref: restockRequestRef,
+                        data: {
+                            ...notificationData,
+                            requestedQuantity: maximumStockLevel - newQuantity,
+                            type: 'restock_request'
+                        }
+                    });
+
+                    // Debug log
+                    console.log('Created Restock Request:', {
+                        productName: item.name,
+                        currentQuantity: newQuantity,
+                        restockLevel,
+                        maximumStockLevel,
+                        requestedQuantity: maximumStockLevel - newQuantity
+                    });
+                }
             }
 
-            // Create transaction record
+            // 3. Create transaction record
             const transactionRef = doc(db, 'Transactions', receiptNumber);
             const transactionData = {
                 id: receiptNumber,
@@ -541,16 +613,22 @@ useEffect(() => {
                 isBulkOrder: Boolean(isBulkOrder)
             };
 
-            // Now perform all writes after reads
+            // 4. Perform all writes
             await transaction.set(transactionRef, transactionData);
             
-            // Update all products with correct quantities
-            for (const update of productUpdates) {
-                await transaction.update(update.ref, update.data);
+            for (const { ref, data } of productUpdates) {
+                await transaction.update(ref, data);
+            }
+
+            for (const { ref, data } of notificationWrites) {
+                await transaction.set(ref, data);
+            }
+
+            for (const { ref, data } of restockWrites) {
+                await transaction.set(ref, data);
             }
         });
 
-        // After successful transaction, print receipt and reset
         await printReceiptContent({
             receiptNumber,
             date: formattedDate,
@@ -570,7 +648,7 @@ useEffect(() => {
             cashierName: currentUser?.name || 'Unknown Cashier'
         });
 
-        resetSaleState();
+        resetSaleState(); // This should clear everything including the cart
         alert("Transaction completed successfully!");
 
     } catch (error) {

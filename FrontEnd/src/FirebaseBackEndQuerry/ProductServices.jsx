@@ -1,6 +1,6 @@
 // ProductServices.jsx
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import { getFirestore, collection, onSnapshot, query } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, query, getDocs, orderBy } from 'firebase/firestore';
 import app from '../FirebaseConfig';
 import { ProductFactory } from '../im_interface/components/Factory/productFactory';
 
@@ -18,8 +18,7 @@ export const ServicesProvider = ({ children }) => {
     const unsubscribeCategories = onSnapshot(
       collection(db, "Products"),
       (categoriesSnapshot) => {
-        console.log("Categories update received");
-
+        
         // Handle removed categories
         const currentCategories = new Set(categoriesSnapshot.docs.map(doc => doc.id));
         [...categoryListeners.keys()].forEach(category => {
@@ -93,10 +92,29 @@ export const ServicesProvider = ({ children }) => {
     };
   }, []); // Empty dependency array since it doesn't depend on any external values
 
+  const fetchRestockRequests = useCallback(async () => {
+    try {
+      const restockRequestsRef = collection(db, 'RestockRequests');
+      const q = query(restockRequestsRef, orderBy('timestamp', 'desc'));
+      const querySnapshot = await getDocs(q);
+      
+      const requests = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      return { success: true, requests };
+    } catch (error) {
+      console.error('Error fetching restock requests:', error);
+      return { success: false, error };
+    }
+  }, []);
+
   const value = useMemo(() => ({
     products,
     listenToProducts,
-  }), [products, listenToProducts]);
+    fetchRestockRequests
+  }), [products, listenToProducts, fetchRestockRequests]);
 
   return (
     <ServicesContext.Provider value={value}>
