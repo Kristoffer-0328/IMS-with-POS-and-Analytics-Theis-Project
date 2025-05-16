@@ -2,6 +2,16 @@
  * Utility functions for generating and printing receipts.
  */
 
+// Add the currency formatter helper
+const formatCurrency = (number) => {
+    // Ensure we're working with a valid number
+    const validNumber = typeof number === 'number' && !isNaN(number) ? number : 0;
+    return new Intl.NumberFormat('en-PH', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(validNumber);
+};
+
 // Helper function to format Date/Time consistently
 const getFormattedDateTime = (date = new Date()) => {
     const timestamp = date instanceof Date ? date : new Date(); // Ensure it's a Date object
@@ -106,20 +116,35 @@ export const generateReceiptHtml = (data) => {
                     <div class="item-row">
                         <span class="col-desc">${item.name || 'Unknown Item'}</span>
                         <span class="col-qty">${item.quantity || 0}</span>
-                        <span class="col-price">₱${(typeof item.price === 'number' ? item.price : 0).toFixed(2)}</span>
-                        <span class="col-total">₱${(typeof item.price === 'number' && typeof item.quantity === 'number' ? (item.price * item.quantity) : 0).toFixed(2)}</span>
+                        <span class="col-price">₱${formatCurrency(Number(item.price))}</span>
+                        <span class="col-total">₱${formatCurrency(Number(item.price) * Number(item.quantity))}</span>
                     </div>
                 `).join('')}
                 <div class="divider"></div>
             </div>
             <div class="totals-section">
-                <div class="item-row"><span>Subtotal:</span><span>₱${(typeof data.subTotal === 'number' ? data.subTotal : 0).toFixed(2)}</span></div>
-                <div class="item-row"><span>VAT (12%):</span><span>₱${(typeof data.tax === 'number' ? data.tax : 0).toFixed(2)}</span></div>
+                <div class="item-row">
+                    <span>Subtotal:</span>
+                    <span>₱${formatCurrency(Number(data.subTotal))}</span>
+                </div>
+                <div class="item-row">
+                    <span>VAT (12%):</span>
+                    <span>₱${formatCurrency(Number(data.tax))}</span>
+                </div>
                 <div class="divider"></div>
-                <div class="item-row total-line"><span>TOTAL:</span><span>₱${(typeof data.total === 'number' ? data.total : 0).toFixed(2)}</span></div>
+                <div class="item-row total-line">
+                    <span>TOTAL:</span>
+                    <span>₱${formatCurrency(Number(data.total))}</span>
+                </div>
                 <div class="payment-info">
-                   <div class="item-row"><span>Amount Paid:</span><span>₱${(typeof data.amountPaid === 'number' ? data.amountPaid : 0).toFixed(2)}</span></div>
-                   <div class="item-row"><span>Change:</span><span>₱${(typeof data.change === 'number' ? data.change : 0).toFixed(2)}</span></div>
+                   <div class="item-row">
+                       <span>Amount Paid:</span>
+                       <span>₱${formatCurrency(Number(data.amountPaid))}</span>
+                   </div>
+                   <div class="item-row">
+                       <span>Change:</span>
+                       <span>₱${formatCurrency(Number(data.change))}</span>
+                   </div>
                 </div>
                 <div class="divider"></div>
             </div>

@@ -50,10 +50,7 @@ function PaymentSection({
             disabled={isProcessing || cartIsEmpty}
           >
             <option value="Cash">Cash</option>
-            <option value="Credit Card">Credit Card</option>
-            <option value="Debit Card">Debit Card</option>
-            <option value="GCash">GCash</option>
-            <option value="Maya">Maya</option>
+            
             {/* Add more methods as needed */}
           </select>
         </div>

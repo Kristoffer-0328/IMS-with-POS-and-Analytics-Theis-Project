@@ -42,6 +42,16 @@ const InventoryFilters = ({
     'August', 'September', 'October', 'November', 'December'
   ];
 
+  // Add new filter options
+  const filterOptions = [
+    { label: 'Category', field: 'category' },
+    { label: 'Sub-Category', field: 'subCategory' },
+    { label: 'Brand', field: 'brand' },
+    { label: 'Storage Type', field: 'storageType' },
+    { label: 'Location', field: 'location' },
+    { label: 'Supplier', field: 'supplier.name' }
+  ];
+
   return (
     <div className="flex flex-col sm:flex-row gap-3 mt-4 md:mt-0">
       <div className="flex items-center gap-2">

@@ -53,12 +53,27 @@ export const ServicesProvider = ({ children }) => {
                 return {
                   id: doc.id,
                   baseProductId: doc.id.split('-')[0],
-                  category,
+                  category: category,
+                  brand: data.brand || 'Generic',
+                  subCategory: data.subCategory || category,
+                  specifications: data.specifications || '',
+                  storageType: data.storageType || 'Goods',
+                  supplier: data.supplier || {
+                    name: 'Unknown',
+                    code: ''
+                  },
                   ...data,
                   variants: Array.isArray(data.variants) ? data.variants.map((variant, index) => ({
                     ...variant,
                     id: `${doc.id}-${index}`,
-                    baseProductId: doc.id
+                    baseProductId: doc.id,
+                    brand: data.brand || 'Generic',
+                    storageType: variant.storageType || data.storageType || 'Goods',
+                    specifications: variant.specifications || data.specifications || '',
+                    supplier: variant.supplier || data.supplier || {
+                      name: 'Unknown',
+                      code: ''
+                    }
                   })) : []
                 };
               });

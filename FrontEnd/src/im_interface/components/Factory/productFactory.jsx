@@ -1,24 +1,40 @@
 export const ProductFactory = {
-    generateProductId(productName, category) {
+    generateProductId(productName, category, brand) {
         const cleanName = productName.split('(')[0].trim().replace(/[^a-zA-Z0-9]/g, '_');
         const cleanCategory = category.replace(/[^a-zA-Z0-9]/g, '_');
-        return `${cleanCategory}-${cleanName}`;
+        const cleanBrand = brand.replace(/[^a-zA-Z0-9]/g, '_');
+        return `${cleanCategory}-${cleanBrand}-${cleanName}`;
     },
 
-    generateVariantId(productId, size, index) {
+    generateVariantId(productId, size, specifications, index) {
         const cleanSize = size 
             ? size.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_')
             : `variant_${index}`;
-        return `${productId}-${cleanSize}`;
+        const cleanSpecs = specifications
+            ? `-${specifications.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 15)}`
+            : '';
+        return `${productId}-${cleanSize}${cleanSpecs}`;
     },
 
     normalizeProductData(data) {
         return {
             name: data.ProductName || data.name,
-            category: data.Category || data.category?.name,
-            // Make sure these are properly set
+            brand: data.Brand || data.brand || 'Generic',
+            category: data.Category || data.category,
+            subCategory: data.SubCategory || data.subCategory || data.category,
+            specifications: data.Specifications || data.specifications || '',
+            storageType: data.StorageType || data.storageType || 'Goods',
+            // Supplier information
+            supplier: {
+                name: data.Supplier || data.supplier || 'Unknown',
+                code: data.SupplierCode || data.supplierCode || '',
+            },
+            // Stock levels
             restockLevel: Number(data.RestockLevel || data.restockLevel || 0),
             maximumStockLevel: Number(data.MaximumStockLevel || data.maximumStockLevel || 0),
+            // Location
+            location: data.Location || 'STR A1',
+            // Additional fields
             imageUrl: data.imageUrl || null,
             measurements: {
                 lengthPerUnit: data.LengthPerUnit || null,
@@ -26,7 +42,7 @@ export const ProductFactory = {
             },
             customFields: {
                 ...(data.TotalValue && { totalValue: Number(data.TotalValue) }),
-                ...(data.ExpiringDate && { expiringDate: data.ExpiringDate })
+                ...(data.specifications && { specifications: data.specifications })
             },
             lastUpdated: new Date().toISOString(),
             createdAt: new Date().toISOString(),
@@ -39,10 +55,14 @@ export const ProductFactory = {
 
     createProduct(data) {
         const normalizedData = this.normalizeProductData(data);
-        const productId = this.generateProductId(normalizedData.name, normalizedData.category);
+        const productId = this.generateProductId(
+            normalizedData.name, 
+            normalizedData.category,
+            normalizedData.brand
+        );
         const timestamp = new Date().toISOString();
 
-        // Create the base product with general attributes only
+        // Create the base product
         const baseProduct = {
             id: productId,
             ...normalizedData,
@@ -51,21 +71,20 @@ export const ProductFactory = {
             lastUpdated: timestamp
         };
 
-        // Create initial variant with variant-specific attributes
+        // Create initial variant
         const initialVariant = this.createVariant(baseProduct, {
             quantity: data.quantity,
             unitPrice: data.unitPrice,
             unit: data.unit,
             location: data.location,
-            size: data.categoryValues?.weight,
-            type: data.categoryValues?.type,
-            categoryValues: Object.entries(data.categoryValues || {})
-                .reduce((acc, [key, value]) => {
-                    if (key !== 'weight' && key !== 'type') {
-                        acc[key] = value;
-                    }
-                    return acc;
-                }, {}),
+            size: data.Size || data.size,
+            specifications: data.Specifications || data.specifications,
+            storageType: data.StorageType || data.storageType,
+            supplier: {
+                name: data.Supplier,
+                code: data.SupplierCode
+            },
+            categoryValues: data.categoryValues || {},
             createdAt: timestamp,
             lastUpdated: timestamp
         });
@@ -80,23 +99,25 @@ export const ProductFactory = {
         const variantId = this.generateVariantId(
             parentProduct.id, 
             variantData.size || 'default',
+            variantData.specifications,
             (parentProduct.variants || []).length
         );
 
-        // Variant-specific attributes
         return {
             id: variantId,
             parentProductId: parentProduct.id,
             name: parentProduct.name,
+            brand: parentProduct.brand,
             category: parentProduct.category,
+            subCategory: parentProduct.subCategory,
             quantity: Number(variantData.quantity || 0),
             unitPrice: Number(variantData.unitPrice || 0),
             unit: variantData.unit || parentProduct.measurements?.defaultUnit || 'pcs',
             location: variantData.location || 'STR A1',
+            storageType: variantData.storageType || 'Goods',
             size: variantData.size || 'default',
-            type: variantData.type || null,
-            // Include remaining category values, excluding weight and type
-            ...(variantData.categoryValues || {}),
+            specifications: variantData.specifications || '',
+            supplier: variantData.supplier || parentProduct.supplier,
             customFields: variantData.customFields || {},
             createdAt: new Date().toISOString(),
             lastUpdated: new Date().toISOString()
@@ -108,7 +129,7 @@ export const ProductFactory = {
         const timestamp = new Date().toISOString();
 
         csvData.forEach(row => {
-            const productKey = this.generateProductId(row.ProductName, row.Category);
+            const productKey = this.generateProductId(row.ProductName, row.Category, row.Brand);
 
             if (!groupedProducts[productKey]) {
                 const normalizedData = this.normalizeProductData(row);
@@ -117,22 +138,27 @@ export const ProductFactory = {
                     ...normalizedData,
                     variants: [],
                     quantity: 0,
-                    maxStock: Number(row.MaximumStockLevel || 0), // Add maxStock field
                     createdAt: timestamp,
                     lastUpdated: timestamp
                 };
             }
 
-            // Create variant with CSV data structure
+            // Create variant with enhanced CSV data structure
             const variant = this.createVariant(groupedProducts[productKey], {
                 quantity: row.Quantity,
                 unitPrice: row.UnitPrice,
                 unit: row.Unit,
                 location: row.Location,
-                size: row.Size || 'default',  // Use direct Size column
+                storageType: row.StorageType,
+                size: row.Size,
+                specifications: row.Specifications,
+                supplier: {
+                    name: row.Supplier,
+                    code: row.SupplierCode
+                },
                 categoryValues: {
                     lengthPerUnit: row.LengthPerUnit,
-                    ...(row.ExpiringDate && { expiringDate: row.ExpiringDate }),
+                    specifications: row.Specifications,
                     ...(row.TotalValue && { totalValue: Number(row.TotalValue) })
                 },
                 createdAt: timestamp,
@@ -141,7 +167,7 @@ export const ProductFactory = {
 
             groupedProducts[productKey].variants.push(variant);
             
-            // Update total quantity and timestamp
+            // Update total quantity
             groupedProducts[productKey].quantity = groupedProducts[productKey].variants
                 .reduce((total, variant) => total + Number(variant.quantity), 0);
             groupedProducts[productKey].lastUpdated = timestamp;

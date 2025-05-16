@@ -15,6 +15,13 @@ export default function BulkOrderDetailsModal({
     }));
   };
 
+  const formatCurrency = (number) => {
+    return new Intl.NumberFormat('en-PH', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(number);
+  };
+
   return (
     <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center z-50 p-4">
       <form onSubmit={onSubmit} className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">

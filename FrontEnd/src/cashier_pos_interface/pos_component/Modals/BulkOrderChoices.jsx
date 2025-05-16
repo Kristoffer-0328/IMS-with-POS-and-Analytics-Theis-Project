@@ -13,13 +13,13 @@ export default function BulkOrderChoiceModal({ onChoice }) {
             onClick={() => onChoice(true)} // Call onChoice with true for Yes
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
           >
-            <FiCheckCircle size={18} /> Yes, Enter Details
+            <FiCheckCircle size={18} /> Enter Details
           </button>
           <button
             onClick={() => onChoice(false)} // Call onChoice with false for No
             className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition flex items-center gap-2"
           >
-            <FiXCircle size={18} /> No, Walk-in
+            <FiXCircle size={18} /> Walk-in
           </button>
         </div>
       </div>

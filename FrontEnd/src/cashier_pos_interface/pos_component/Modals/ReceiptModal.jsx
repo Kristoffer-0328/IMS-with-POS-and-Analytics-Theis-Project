@@ -17,13 +17,11 @@ const ReceiptModal = ({ transaction, onClose }) => {
   }, []);
 
   // Add this helper function at the top of your component
-  const formatCurrency = (amount) => {
+  const formatCurrency = (number) => {
     return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
-    }).format(amount).replace('PHP', '₱');
+    }).format(number);
   };
 
   // Format the timestamp when the modal opens
@@ -135,10 +133,10 @@ const ReceiptModal = ({ transaction, onClose }) => {
                       <td className="px-6 py-4 text-sm text-gray-900">{item.name}</td>
                       <td className="px-6 py-4 text-sm text-gray-600 text-center">{item.quantity}</td>
                       <td className="px-6 py-4 text-sm text-gray-600 text-right">
-                        {formatCurrency(item.price)}
+                        ₱{formatCurrency(item.price)}
                       </td>
                       <td className="px-6 py-4 text-sm font-medium text-gray-900 text-right">
-                        {formatCurrency(item.price * item.quantity)}
+                        ₱{formatCurrency(item.price * item.quantity)}
                       </td>
                     </tr>
                   ))}
@@ -150,24 +148,24 @@ const ReceiptModal = ({ transaction, onClose }) => {
             <div className="space-y-3 p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100">
               <div className="flex justify-between text-sm text-gray-600">
                 <span>Subtotal</span>
-                <span>{formatCurrency(transaction.subTotal)}</span>
+                <span>₱{formatCurrency(transaction.subTotal)}</span>
               </div>
               <div className="flex justify-between text-sm text-gray-600">
                 <span>Tax (12%)</span>
-                <span>{formatCurrency(transaction.tax)}</span>
+                <span>₱{formatCurrency(transaction.tax)}</span>
               </div>
               <div className="h-px bg-gray-200 my-2"></div>
               <div className="flex justify-between text-lg font-bold text-gray-900">
                 <span>Total</span>
-                <span>{formatCurrency(transaction.total)}</span>
+                <span>₱{formatCurrency(transaction.total)}</span>
               </div>
               <div className="flex justify-between text-sm text-gray-600">
                 <span>Amount Paid</span>
-                <span>{formatCurrency(transaction.amountPaid)}</span>
+                <span>₱{formatCurrency(transaction.amountPaid)}</span>
               </div>
               <div className="flex justify-between text-sm font-medium text-green-600">
                 <span>Change</span>
-                <span>{formatCurrency(transaction.change)}</span>
+                <span>₱{formatCurrency(transaction.change)}</span>
               </div>
               <div className="flex justify-between text-sm text-gray-600 mt-2">
                 <span>Payment Method</span>

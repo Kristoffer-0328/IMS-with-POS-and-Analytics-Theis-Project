@@ -1,6 +1,13 @@
 import React from 'react';
 import { FiShoppingCart, FiX } from 'react-icons/fi';
 
+const formatCurrency = (number) => {
+  return new Intl.NumberFormat('en-PH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(number);
+};
+
 export default function VariantSelectionModal({
   product,
   activeVariantIndex,
@@ -60,19 +67,15 @@ export default function VariantSelectionModal({
 
                   return (
                     <button
-                      key={variant.variantId}
-                      onClick={() => setActiveVariantIndex(index)}
-                      disabled={!isAvailable}
-                      className={`px-4 py-2 rounded-lg border-2 text-sm font-medium transition-all duration-200 ${
-                        activeVariantIndex === index
-                          ? 'bg-orange-500 text-white border-orange-500 shadow-md scale-105'
-                          : isAvailable
-                            ? 'bg-white text-gray-700 border-gray-200 hover:border-orange-200 hover:bg-orange-50'
-                            : 'bg-gray-50 text-gray-400 border-gray-100 cursor-not-allowed line-through'
+                      key={index}
+                      className={`p-4 border rounded-lg ${
+                        activeVariantIndex === index ? 'border-orange-500 bg-orange-50' : 'border-gray-200'
                       }`}
+                      onClick={() => setActiveVariantIndex(index)}
                     >
-                      {variantLabel}
-                      {!isAvailable && ' (Out of Stock)'}
+                      <div className="text-sm font-medium">{variant.size} {variant.unit}</div>
+                      <div className="text-lg font-bold">₱{formatCurrency(variant.price)}</div>
+                      <div className="text-sm text-gray-500">Stock: {variant.quantity}</div>
                     </button>
                   );
                 })}
@@ -85,7 +88,7 @@ export default function VariantSelectionModal({
             <div className="flex justify-between items-center">
               <span className="text-gray-600">Price:</span>
               <span className="text-lg font-bold text-green-600">
-                ₱{activeVariant?.price?.toFixed(2) || 'N/A'}
+                ₱{formatCurrency(activeVariant?.price || 0)}
               </span>
             </div>
             <div className="flex justify-between items-center">
@@ -133,6 +136,11 @@ export default function VariantSelectionModal({
             <FiShoppingCart size={20} className="text-white" />
             <span className="text-white font-medium">Add {qty} to Cart</span>
           </button>
+
+          {/* Total Calculation */}
+          <div className="text-xl font-bold text-green-600">
+            Total: ₱{formatCurrency(product.variants[activeVariantIndex].price * qty)}
+          </div>
         </div>
       </div>
     </div>

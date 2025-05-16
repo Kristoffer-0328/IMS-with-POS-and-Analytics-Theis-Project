@@ -30,6 +30,14 @@ import { printReceiptContent } from '../utils/ReceiptGenerator';
 
 const db = getFirestore(app);
 
+// Add this helper function near the top of the file, after imports
+const formatCurrency = (number) => {
+  return new Intl.NumberFormat('en-PH', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(number);
+};
+
 // Helper function to format Date/Time (can be moved to utils)
 const getFormattedDateTime = () => {
     const now = new Date();
@@ -49,6 +57,39 @@ const getFormattedDateTime = () => {
         formattedDate,
         formattedTime: { hours, minutes, seconds }
     };
+};
+
+// First, let's create a simple CategorySelector component at the top of Pos_NewSale.jsx
+const CategorySelector = ({ categories, selectedCategory, onSelectCategory }) => {
+  return (
+    <div className="overflow-x-auto">
+      <div className="flex gap-2 p-4 min-w-max">
+        <button
+          className={`px-4 py-2 rounded-lg transition-colors ${
+            !selectedCategory 
+              ? 'bg-orange-500 text-white' 
+              : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+          }`}
+          onClick={() => onSelectCategory(null)}
+        >
+          All Categories
+        </button>
+        {categories.map((category) => (
+          <button
+            key={category}
+            className={`px-4 py-2 rounded-lg transition-colors ${
+              selectedCategory === category 
+                ? 'bg-orange-500 text-white' 
+                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+            }`}
+            onClick={() => onSelectCategory(category)}
+          >
+            {category}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 };
 
 export default function Pos_NewSale() {
@@ -83,6 +124,13 @@ export default function Pos_NewSale() {
   const [customerIdentifier, setCustomerIdentifier] = useState('Walk-in Customer');
   const [customerDisplayName, setCustomerDisplayName] = useState('Walk-in Customer');
 
+  // New state for category selection
+  const [selectedCategory, setSelectedCategory] = useState(null);
+
+  // Add this memoized value to get unique categories:
+  const categories = useMemo(() => {
+    return [...new Set(products.map(product => product.category))].sort();
+  }, [products]);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -229,14 +277,24 @@ useEffect(() => {
 
   // Filter Products (Memoized)
   const filteredProducts = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (query === '') {
-        return groupedProducts;
+    let filtered = groupedProducts;
+    
+    // First filter by category if one is selected
+    if (selectedCategory) {
+      filtered = filtered.filter(p => p.category === selectedCategory);
     }
-    return groupedProducts.filter(p =>
-        p.name && p.name.toLowerCase().includes(query)
-    );
-  }, [searchQuery, groupedProducts]);
+    
+    // Then apply search query if exists
+    const query = searchQuery.trim().toLowerCase();
+    if (query) {
+      filtered = filtered.filter(p => 
+        p.name.toLowerCase().includes(query) ||
+        p.category.toLowerCase().includes(query)
+      );
+    }
+    
+    return filtered;
+  }, [groupedProducts, selectedCategory, searchQuery]);
 
 
   // --- Cart Logic ---
@@ -417,11 +475,18 @@ useEffect(() => {
   // --- Calculations ---
   // Calculate totals using useMemo based on cart
   const { subTotal, tax, total } = useMemo(() => {
-    const subTotalCalc = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
-    const taxRateCalc = 0.12; // Consider making this a config/prop if it changes
-    const taxCalc = subTotalCalc * taxRateCalc;
-    const totalCalc = subTotalCalc + taxCalc;
-    return { subTotal: subTotalCalc, tax: taxCalc, total: totalCalc };
+    // Calculate total from cart (this is VAT-inclusive total)
+    const totalCalc = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+    
+    // Calculate VAT and subtotal from the VAT-inclusive total
+    const subTotalCalc = totalCalc / 1.12; // Net of VAT
+    const taxCalc = totalCalc - subTotalCalc; // VAT amount
+    
+    return { 
+      subTotal: subTotalCalc, 
+      tax: taxCalc, 
+      total: totalCalc 
+    };
   }, [cart]); // Dependency
 
 
@@ -598,13 +663,22 @@ useEffect(() => {
                     variantId: item.variantId || '',
                     price: Number(item.price) || 0,
                     quantity: Number(item.qty) || 0,
-                    total: (Number(item.price) || 0) * (Number(item.qty) || 0)
+                    total: (Number(item.price) || 0) * (Number(item.qty) || 0),
+                    // Add formatted values for display
+                    formattedPrice: formatCurrency(Number(item.price) || 0),
+                    formattedTotal: formatCurrency((Number(item.price) || 0) * (Number(item.qty) || 0))
                 })),
                 subTotal: Number(subTotal) || 0,
                 tax: Number(tax) || 0,
                 total: Number(total) || 0,
                 amountPaid: Number(amountPaid) || 0,
                 change: (Number(amountPaid) || 0) - (Number(total) || 0),
+                // Add formatted values for display
+                formattedSubTotal: formatCurrency(Number(subTotal) || 0),
+                formattedTax: formatCurrency(Number(tax) || 0),
+                formattedTotal: formatCurrency(Number(total) || 0),
+                formattedAmountPaid: formatCurrency(Number(amountPaid) || 0),
+                formattedChange: formatCurrency((Number(amountPaid) || 0) - (Number(total) || 0)),
                 customerName: customerDisplayName || 'Walk-in Customer',
                 customerDetails: isBulkOrder ? {...customerDetails} : null,
                 paymentMethod: paymentMethod || 'Cash',
@@ -636,14 +710,14 @@ useEffect(() => {
             items: cart.map(item => ({
                 name: item.name,
                 quantity: item.qty,
-                price: item.price,
-                total: item.price * item.qty
+                price: Number(item.price),
+                total: Number(item.price * item.qty)
             })),
-            subTotal,
-            tax,
-            total,
+            subTotal: Number(subTotal),
+            tax: Number(tax),
+            total: Number(total),
             amountPaid: Number(amountPaid),
-            change: Number(amountPaid) - total,
+            change: Number(amountPaid) - Number(total),
             customerName: customerDisplayName,
             cashierName: currentUser?.name || 'Unknown Cashier'
         });
@@ -705,19 +779,43 @@ useEffect(() => {
       <div className="flex flex-1 gap-6 overflow-hidden h-[calc(100vh-12rem)]">
         {/* Left Side: Product Selection */}
         <div className="flex-1 flex flex-col overflow-hidden rounded-xl bg-white shadow-sm border border-gray-100">
-          <div className="p-4 border-b border-gray-100">
-            <SearchBar
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              disabled={shouldDisableInteractions}
+          <div className="border-b border-gray-100">
+            {/* Search Bar */}
+            <div className="p-4">
+              <SearchBar
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+                disabled={shouldDisableInteractions}
+                placeholder="Search products by name or code..."
+              />
+            </div>
+            
+            {/* Category Selector */}
+            <CategorySelector 
+              categories={categories}
+              selectedCategory={selectedCategory}
+              onSelectCategory={setSelectedCategory}
             />
           </div>
+
+          {/* Products Display */}
           <div className="flex-1 p-4 overflow-y-auto">
+            {selectedCategory && (
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-xl font-semibold text-gray-800">
+                  {selectedCategory}
+                </h3>
+                <span className="text-sm text-gray-500">
+                  {filteredProducts.length} items
+                </span>
+              </div>
+            )}
+            
             <ProductGrid
               products={filteredProducts}
               onAddProduct={handleAddProduct}
               loading={loadingProducts}
-              searchQuery={searchQuery}
+              layout="list"
               disabled={shouldDisableInteractions}
             />
           </div>
@@ -739,7 +837,11 @@ useEffect(() => {
           <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col">
             <div className="flex-1 overflow-y-auto p-4">
               <Cart
-                cartItems={cart}
+                cartItems={cart.map(item => ({
+                    ...item,
+                    formattedPrice: formatCurrency(item.price),
+                    formattedTotal: formatCurrency(item.price * item.qty)
+                }))}
                 onRemoveItem={handleRemoveItem}
                 isProcessing={isProcessing}
               />
@@ -761,6 +863,8 @@ useEffect(() => {
               amountPaid={amountPaid}
               setAmountPaid={setAmountPaid}
               total={total}
+              formattedTotal={formatCurrency(total)}
+              formattedChange={formatCurrency(Number(amountPaid) - total)}
               isProcessing={isProcessing}
               cartIsEmpty={cart.length === 0}
               onPrintAndSave={handlePrintAndSave}
