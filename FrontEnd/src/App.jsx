@@ -19,6 +19,7 @@ import Audit_trail from './features/admin/pages/Audit_trail';
 import SystemLogs from './features/admin/pages/System_log';
 import Team from './features/admin/pages/Team';
 import AdminSidebar from './features/admin/pages/AdminSidebar';
+import AdminPurchaseOrders from './features/admin/pages/AdminPurchaseOrders';
 
 // IM Interface
 import IMDashboard from './features/inventory/pages/IMDashboard';
@@ -29,7 +30,7 @@ import ReportsAndLogs from './features/inventory/pages/ReportsAndLogs';
 import Settings from './features/inventory/pages/Settings';
 import IMSidebar from './features/inventory/pages/IMSidebar';
 import LoadingScreen from './features/inventory/components/LoadingScreen';
-
+import PurchaseOrders from './features/inventory/pages/PurchaseOrders';
 
 // POS cashier Interface
 
@@ -88,12 +89,19 @@ const pos_CashierLayout = ({ children }) => {
 // Access Control Wrapper
 const ProtectedRoute = ({ allowedRole, layout: Layout, children }) => {
   const { currentUser, loading } = useAuth();
-  // if (!currentUser || currentUser.role !== allowedRole) return <Navigate to="/unauthorized" />;
- 
- if(loading) return <LoadingScreen/>;
- return <Layout>{children}</Layout>;  
-
   
+  if (loading) return <LoadingScreen/>;
+  
+  // Check if user is logged in and has the correct role
+  if (!currentUser || currentUser.role !== allowedRole) {
+    console.log('Access denied:', { 
+      userRole: currentUser?.role, 
+      requiredRole: allowedRole 
+    });
+    return <Navigate to="/unauthorized" />;
+  }
+  
+  return <Layout>{children}</Layout>;
 };
 
 // Unauthorized page
@@ -156,6 +164,14 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/admin/purchase-orders"
+        element={
+          <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
+            <AdminPurchaseOrders />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Inventory Manager */}
       <Route
@@ -171,6 +187,14 @@ const AppRoutes = () => {
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
             <Inventory />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/im/purchase-orders"
+        element={
+          <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
+            <PurchaseOrders />
           </ProtectedRoute>
         }
       />
@@ -256,7 +280,7 @@ const AppRoutes = () => {
 };
 
 const App = () => (
-  <Router>
+  <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
     <AuthProvider>
       <ServicesProvider>
         <AppRoutes />

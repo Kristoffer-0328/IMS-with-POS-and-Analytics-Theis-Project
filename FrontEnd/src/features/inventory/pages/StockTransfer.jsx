@@ -15,7 +15,7 @@ const StockTransfer = () => {
   const [products, setProduct] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const { listenToProducts } = useServices();
-
+ 
   useEffect(() => {
     const unsubscribe = listenToProducts(setProduct);
     return () => unsubscribe();

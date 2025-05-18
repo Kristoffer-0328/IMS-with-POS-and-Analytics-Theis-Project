@@ -49,18 +49,7 @@ const PaymentSection = ({
             <span className="text-lg font-semibold">₱</span>
             Cash
           </button>
-          <button
-            onClick={() => setPaymentMethod('Card')}
-            disabled={isProcessing}
-            className={`flex-1 py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors duration-200 ${
-              paymentMethod === 'Card'
-                ? 'bg-orange-500 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            <FiCreditCard />
-            Card
-          </button>
+         
         </div>
       </div>
 

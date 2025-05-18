@@ -11,6 +11,7 @@ import {
   FiLogOut,
   FiChevronLeft,
   FiChevronRight,
+  FiShoppingBag
 } from 'react-icons/fi';
 
 const IMSidebar = ({ collapsed, setCollapsed }) => {
@@ -26,6 +27,7 @@ const IMSidebar = ({ collapsed, setCollapsed }) => {
   const navItems = [
     { path: '/im', icon: <FiHome size={20} />, label: 'Dashboard' },
     { path: '/im/inventory', icon: <FiPackage size={20} />, label: 'Inventory' },
+    { path: '/im/purchase-orders', icon: <FiShoppingBag size={20} />, label: 'Purchase Orders' },
     { path: '/im/stock-transfer', icon: <FiRefreshCw size={20} />, label: 'Stock Transfer' },
     { path: '/im/restocking-request', icon: <FiClipboard size={20} />, label: 'Restocking Request' },
     { path: '/im/reports', icon: <FiFileText size={20} />, label: 'Reports and Logs' },

@@ -69,8 +69,8 @@ const CategorySelector = ({ categories, selectedCategory, onSelectCategory }) =>
         <button
           className={`px-4 py-2 rounded-lg transition-colors ${
             !selectedCategory 
-              ? 'bg-orange-500 text-white' 
-              : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+              ? 'bg-green-600 text-white' 
+              : 'bg-gray-50 hover:bg-gray-100 text-gray-600'
           }`}
           onClick={() => onSelectCategory(null)}
         >
@@ -81,8 +81,8 @@ const CategorySelector = ({ categories, selectedCategory, onSelectCategory }) =>
             key={category}
             className={`px-4 py-2 rounded-lg transition-colors ${
               selectedCategory === category 
-                ? 'bg-orange-500 text-white' 
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                ? 'bg-green-600 text-white' 
+                : 'bg-gray-50 hover:bg-gray-100 text-gray-600'
             }`}
             onClick={() => onSelectCategory(category)}
           >
@@ -215,7 +215,7 @@ useEffect(() => {
         setAddedProducts(updatedProductsList);
         alert("Some products have been updated due to inventory changes.");
     }
-  }, []);
+}, []);
 
   // Fetch Products
   useEffect(() => {
@@ -508,9 +508,9 @@ useEffect(() => {
             const productDoc = await getDoc(productRef);
             
             if (!productDoc.exists()) {
-                invalidItems.push(`${item.name} - Product not found`);
-                continue;
-            }
+            invalidItems.push(`${item.name} - Product not found`);
+            continue;
+        }
 
             const productData = productDoc.data();
             const variantIndex = parseInt(item.variantId.split('-').pop(), 10);
@@ -659,7 +659,8 @@ useEffect(() => {
                         data: {
                             ...notificationData,
                             requestedQuantity: maximumStockLevel - newQuantity,
-                            type: 'restock_request'
+                            type: 'restock_request',
+                            productId: item.baseProductId
                         }
                     });
 
@@ -763,44 +764,44 @@ useEffect(() => {
   const shouldDisableInteractions = isProcessing || (showBulkOrderPopup && isBulkOrder === null) || (showBulkOrderPopup && isBulkOrder === true);
 
   return (
-    <div className="flex flex-col w-full max-w-[1920px] mx-auto bg-gray-50 min-h-screen">
+    <div className="flex flex-col w-full max-w-[1920px] mx-auto bg-white min-h-screen">
       {/* Enhanced Header with Gradient */}
-      <div className="bg-gradient-to-r from-orange-200 to-amber-100 border-b border-orange-200 sticky top-0 z-30">
+      <div className="bg-orange-50 border-b border-gray-100 sticky top-0 z-30 h-[73px]">
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6 py-4">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-6">
               <div className="space-y-1">
-                <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                  New Sale
-                  {isProcessing && (
-                    <div className="inline-block w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-                  )}
-                </h2>
-                <div className="text-sm text-gray-700">
+            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+              New Sale
+              {isProcessing && (
+                    <div className="inline-block w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+              )}
+            </h2>
+                <div className="text-sm text-gray-500">
                   Create a new sales transaction
                 </div>
               </div>
-              <div className="h-8 w-px bg-orange-200 hidden md:block" />
-              <div className="clock-display bg-white/90 backdrop-blur px-4 py-2 rounded-lg font-mono text-gray-700 hidden md:block shadow-sm border border-orange-200">
-                <span className="clock-time text-lg font-semibold">
-                  {currentDateTime.formattedTime?.hours || '00'}
-                  <span className="clock-separator animate-pulse">:</span>
-                  {currentDateTime.formattedTime?.minutes || '00'}
-                  <span className="clock-separator animate-pulse">:</span>
-                  {currentDateTime.formattedTime?.seconds || '00'}
-                </span>
+              <div className="h-8 w-px bg-gray-200 hidden md:block" />
+              <div className="clock-display bg-white px-4 py-2 rounded-lg font-mono text-gray-600 hidden md:block shadow-sm border border-gray-100">
+              <span className="clock-time text-lg font-semibold">
+                {currentDateTime.formattedTime?.hours || '00'}
+                <span className="clock-separator animate-pulse">:</span>
+                {currentDateTime.formattedTime?.minutes || '00'}
+                <span className="clock-separator animate-pulse">:</span>
+                {currentDateTime.formattedTime?.seconds || '00'}
+              </span>
                 <span className="clock-divider mx-3 text-gray-500">|</span>
                 <span className="text-gray-700">{currentDateTime.formattedDate}</span>
-              </div>
             </div>
+          </div>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center border-2 border-orange-200">
-                <span className="text-orange-600 font-bold">
-                  {currentUser?.name?.[0]?.toUpperCase() || '?'}
-                </span>
-              </div>
-              <div className="text-sm">
-                <p className="font-semibold text-gray-800">{currentUser?.name || 'Loading...'}</p>
+              <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center border-2 border-slate-200">
+                <span className="text-slate-600 font-bold">
+                {currentUser?.name?.[0]?.toUpperCase() || '?'}
+              </span>
+            </div>
+            <div className="text-sm">
+              <p className="font-semibold text-gray-800">{currentUser?.name || 'Loading...'}</p>
                 <p className="text-gray-700 text-xs">{currentUser?.role || 'User'}</p>
               </div>
             </div>
@@ -810,32 +811,36 @@ useEffect(() => {
 
       {/* Main Content Area */}
       <div className="flex-1 flex">
-        {/* Left Side: Product Selection */}
-        <div className="flex-1 flex flex-col min-w-0 border-r border-gray-200">
-          <div className="sticky top-[73px] bg-white z-20 border-b border-gray-200">
-            <div className="px-4 sm:px-6 py-4 bg-gradient-to-r from-orange-100 to-amber-50 border-b border-orange-200">
-              <div className="relative">
-                <SearchBar
-                  searchQuery={searchQuery}
-                  setSearchQuery={setSearchQuery}
-                  disabled={shouldDisableInteractions}
-                  placeholder="Search products by name, category, or brand..."
-                  className="bg-white shadow-sm border-orange-200"
-                />
-              </div>
-              <div className="mt-4">
-                <ProductFilters
-                  products={products}
-                  selectedCategory={selectedCategory}
-                  setSelectedCategory={setSelectedCategory}
-                  selectedBrand={selectedBrand}
-                  setSelectedBrand={setSelectedBrand}
-                  className="bg-white"
-                />
+        {/* Left Side: Product Selection - Scrollable */}
+        <div className="flex-1 flex flex-col min-w-0 border-r border-gray-100 mr-[480px]">
+          <div className="sticky top-[73px] bg-white z-20 border-b border-gray-100">
+            <div className="px-4 sm:px-6 py-4 bg-gray-50">
+              <div className="flex gap-4">
+                {/* Search Bar Column */}
+                <div className="flex-1">
+              <SearchBar
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+                disabled={shouldDisableInteractions}
+                    placeholder="Search products by name, category, or brand..."
+                    className="bg-white shadow-sm border-gray-200"
+              />
+            </div>
+                {/* Filters Column */}
+                <div className="flex-1">
+                  <ProductFilters
+                    products={products}
+              selectedCategory={selectedCategory}
+                    setSelectedCategory={setSelectedCategory}
+                    selectedBrand={selectedBrand}
+                    setSelectedBrand={setSelectedBrand}
+                    className="bg-white"
+            />
+          </div>
               </div>
             </div>
           </div>
-
+            
           <div className="flex-1 overflow-y-auto p-4 sm:p-6">
             <ProductGrid
               products={filteredProducts}
@@ -846,54 +851,60 @@ useEffect(() => {
           </div>
         </div>
 
-        {/* Right Side: Added Products & Payment */}
-        <div className="w-[480px] flex flex-col bg-gradient-to-br from-white to-orange-100">
-          <div className="p-4 sm:p-6 border-b border-orange-200 bg-gradient-to-r from-orange-200 to-amber-100">
+        {/* Right Side: Fixed Panel */}
+        <div className="w-[480px] fixed right-0 top-0 h-screen bg-white flex flex-col border-l border-gray-100">
+          {/* Customer Info */}
+          <div className="pt-[73px]">
+            <div className="border-b border-gray-100 bg-gray-50">
+              <div className="p-4 sm:p-6">
             <CustomerInfo
               customerDisplayName={customerDisplayName}
               isBulkOrder={isBulkOrder}
               customerDetails={customerDetails}
               formattedDate={currentDateTime.formattedDate}
             />
+              </div>
+            </div>
           </div>
 
-          <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          {/* Scrollable Product List */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4 sm:p-6">
               <ProductList
                 cartItems={addedProducts.map(item => ({
-                  ...item,
-                  formattedPrice: formatCurrency(item.price),
-                  formattedTotal: formatCurrency(item.price * item.qty)
+                    ...item,
+                    formattedPrice: formatCurrency(item.price),
+                    formattedTotal: formatCurrency(item.price * item.qty)
                 }))}
                 onRemoveItem={handleRemoveProduct}
                 isProcessing={isProcessing}
               />
             </div>
+          </div>
 
-            <div className="border-t border-orange-200">
-              <div className="p-4 sm:p-6 bg-gradient-to-r from-orange-100 to-amber-50">
-                <OrderSummary
-                  subTotal={subTotal}
-                  tax={tax}
-                  total={total}
-                />
-              </div>
-
-              <div className="p-4 sm:p-6 bg-gradient-to-b from-orange-100 to-white border-t border-orange-200">
-                <PaymentSection
-                  paymentMethod={paymentMethod}
-                  setPaymentMethod={setPaymentMethod}
-                  amountPaid={amountPaid}
-                  setAmountPaid={setAmountPaid}
-                  total={total}
-                  formattedTotal={formatCurrency(total)}
-                  formattedChange={formatCurrency(Number(amountPaid) - total)}
-                  isProcessing={isProcessing}
-                  hasProducts={addedProducts.length > 0}
-                  onPrintAndSave={handlePrintAndSave}
-                />
-              </div>
+          {/* Payment Section */}
+          <div className="border-t border-gray-100 bg-white">
+            <div className="p-4 sm:p-6 bg-green-50">
+              <OrderSummary
+                subTotal={subTotal}
+                tax={tax}
+                total={total}
+              />
             </div>
+            <div className="p-4 sm:p-6 bg-white">
+            <PaymentSection
+              paymentMethod={paymentMethod}
+              setPaymentMethod={setPaymentMethod}
+              amountPaid={amountPaid}
+              setAmountPaid={setAmountPaid}
+              total={total}
+              formattedTotal={formatCurrency(total)}
+              formattedChange={formatCurrency(Number(amountPaid) - total)}
+              isProcessing={isProcessing}
+                hasProducts={addedProducts.length > 0}
+              onPrintAndSave={handlePrintAndSave}
+            />
+          </div>
           </div>
         </div>
       </div>

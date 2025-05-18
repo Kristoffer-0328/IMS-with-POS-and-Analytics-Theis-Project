@@ -34,6 +34,7 @@ export const AuthProvider = ({ children }) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
             const userData = {
+              uid: user.uid,
               email: data.email,
               role: data.role,
               name: data.name,
@@ -75,6 +76,7 @@ export const AuthProvider = ({ children }) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         const userData = {
+          uid: user.uid,
           email: data.email,
           role: data.role,
           name: data.name,

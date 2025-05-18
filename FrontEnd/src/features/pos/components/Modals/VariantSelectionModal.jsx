@@ -48,12 +48,12 @@ export default function VariantSelectionModal({
             <p className="text-gray-600 mb-1">Product:</p>
             <p className="font-medium">{product.name}</p>
             <p className="text-gray-600 mt-1">Available Stock: {maxQty}</p>
-          </div>
+        </div>
 
           {/* Quick Select */}
           <div className="grid grid-cols-4 gap-2 mb-4">
             {quickQuantities.map((quickQty) => (
-              <button
+                    <button
                 key={quickQty}
                 onClick={() => setQty(Math.min(quickQty, maxQty))}
                 disabled={quickQty > maxQty}
@@ -64,7 +64,7 @@ export default function VariantSelectionModal({
                 }`}
               >
                 {quickQty}
-              </button>
+                    </button>
             ))}
           </div>
 
@@ -72,28 +72,28 @@ export default function VariantSelectionModal({
           <div className="mb-6">
             <p className="text-gray-600 mb-2">Custom Quantity</p>
             <div className="flex items-center">
-              <button
+            <button
                 onClick={() => adjustQuantity(-1)}
                 className="px-4 py-2 border rounded-l-lg bg-gray-50"
-                disabled={qty <= 1}
-              >
+              disabled={qty <= 1}
+            >
                 −
-              </button>
-              <input
-                type="number"
-                value={qty}
-                onChange={handleQuantityChange}
+            </button>
+            <input
+              type="number"
+              value={qty}
+              onChange={handleQuantityChange}
                 className="w-full px-3 py-2 border-y text-center"
-                min="1"
-                max={maxQty}
-              />
-              <button
+              min="1"
+              max={maxQty}
+            />
+            <button
                 onClick={() => adjustQuantity(1)}
                 className="px-4 py-2 border rounded-r-lg bg-gray-50"
-                disabled={qty >= maxQty}
-              >
-                +
-              </button>
+              disabled={qty >= maxQty}
+            >
+              +
+            </button>
             </div>
           </div>
 

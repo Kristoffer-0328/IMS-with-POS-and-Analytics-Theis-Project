@@ -13,6 +13,7 @@ import {
   FiChevronRight,
   FiActivity, // Add this for audit trail
   FiList, // Add this for logs
+  FiShoppingBag
 } from 'react-icons/fi';
 
 const AdminSidebar = () => {
@@ -31,6 +32,11 @@ const AdminSidebar = () => {
       path: '/admin',
       icon: <FiBox size={20} />,
       label: 'Products Stock',
+    },
+    {
+      path: '/admin/purchase-orders',
+      icon: <FiShoppingBag size={20} />,
+      label: 'Purchase Orders',
     },
     {
       path: '/admin/audit-trail',
