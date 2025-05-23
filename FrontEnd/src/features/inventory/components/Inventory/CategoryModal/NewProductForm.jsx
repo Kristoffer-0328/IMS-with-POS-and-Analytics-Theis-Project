@@ -3,6 +3,7 @@ import ProductFactory from '../../Factory/productFactory';
 import { getFirestore, doc, setDoc } from 'firebase/firestore';
 import app from '../../../../../FirebaseConfig';
 import { validateProduct, getStorageOptions, getCategorySpecificFields, updateFieldOptions } from './Utils';
+import SupplierSelector from '../../Supplier/SupplierSelector';
 
 const NewProductForm = ({ selectedCategory, onClose }) => {
     const [productName, setProductName] = useState('');
@@ -21,6 +22,22 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
     const [editingField, setEditingField] = useState(null);
     const [newOptionValue, setNewOptionValue] = useState('');
     const [localCategoryFields, setLocalCategoryFields] = useState([]);
+    
+    // Add new state for supplier information
+    const [brand, setBrand] = useState('');
+    const [specifications, setSpecifications] = useState('');
+    const [storageType, setStorageType] = useState('Goods');
+    const [maximumStockLevel, setMaximumStockLevel] = useState('');
+    const [selectedSupplier, setSelectedSupplier] = useState(null);
+    const [size, setSize] = useState('');
+    const [supplier, setSupplier] = useState({
+        name: '',
+        code: '',
+        address: '',
+        contactPerson: '',
+        phone: '',
+        email: ''
+    });
     
     useEffect(() => {
         if (selectedCategory?.name) {
@@ -109,9 +126,20 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
         document.getElementById("productImage").value = "";
     };
 
+    const handleSupplierSelect = (supplier) => {
+        setSelectedSupplier(supplier);
+        // Update the supplier state with the selected supplier's data
+        setSupplier({
+            name: supplier.name,
+            code: supplier.code,
+            address: supplier.address,
+            contactPerson: supplier.contactPerson,
+            phone: supplier.phone,
+            email: supplier.email
+        });
+    };
+
     const handleAddProduct = async () => {
- 
-        
         const productData = {
             name: productName,
             quantity: Number(quantity),
@@ -119,26 +147,28 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
             category: selectedCategory,
             location,
             unit,
+            brand,
+            size: size || 'default',
+            specifications,
+            storageType,
+            maximumStockLevel: Number(maximumStockLevel),
             restockLevel: Number(restockLevel),
             dateStocked: dateStocked || new Date().toISOString().split('T')[0],
             imageUrl: productImage,
             categoryValues: categoryValues,
+            supplierId: selectedSupplier?.id,
+            supplierCode: selectedSupplier?.code,
+            supplier: supplier,
             customFields: additionalFields.reduce((acc, field) => ({
                 ...acc,
                 [field.name]: field.value
             }), {})
         };
 
-        // const validation = validateProduct(productData);
-        // if (!validation.isValid) {
-        //     alert(`Please fix the following errors:\n${validation.errors.join('\n')}`);
-        //     return;
-        // }
-
         try {
             const db = getFirestore(app);
             const newProduct = ProductFactory.createProduct(productData);
-            const productId = ProductFactory.generateProductId(newProduct.name, selectedCategory.name);
+            const productId = ProductFactory.generateProductId(newProduct.name, selectedCategory.name, brand);
             const productRef = doc(db, 'Products', selectedCategory.name, 'Items', productId);
             await setDoc(productRef, newProduct);
 
@@ -284,88 +314,171 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
                     ))}
 
                     <div className="space-y-2 md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700">Product Name</label>
-                        <input
-                            type="text"
-                            value={productName}
-                            onChange={(e) => setProductName(e.target.value)}
-                            placeholder="Enter product name"
-                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 
-                                     focus:ring-blue-500 focus:border-blue-500 transition-all"
-                        />
+                        <h3 className="font-medium text-gray-900">Product Information</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">Product Name</label>
+                                <input
+                                    type="text"
+                                    value={productName}
+                                    onChange={(e) => setProductName(e.target.value)}
+                                    placeholder="Enter product name"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">Brand</label>
+                                <input
+                                    type="text"
+                                    value={brand}
+                                    onChange={(e) => setBrand(e.target.value)}
+                                    placeholder="Enter brand name"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">Size/Dimension</label>
+                                <input
+                                    type="text"
+                                    value={size}
+                                    onChange={(e) => setSize(e.target.value)}
+                                    placeholder="Enter size or dimension"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">Specifications</label>
+                                <textarea
+                                    value={specifications}
+                                    onChange={(e) => setSpecifications(e.target.value)}
+                                    placeholder="Enter product specifications"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                    rows="2"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">Storage Type</label>
+                                <select
+                                    value={storageType}
+                                    onChange={(e) => setStorageType(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                >
+                                    <option value="Goods">Goods</option>
+                                    <option value="Raw Materials">Raw Materials</option>
+                                    <option value="Finished Products">Finished Products</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
 
-                    <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Quantity</label>
-                        <input
-                            type="number"
-                            value={quantity}
-                            onChange={(e) => setQuantity(e.target.value)}
-                            placeholder="Enter quantity"
-                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 
-                                     focus:ring-blue-500 focus:border-blue-500 transition-all"
-                        />
+                    <div className="space-y-2 md:col-span-2">
+                        <h3 className="font-medium text-gray-900">Stock Information</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">Quantity</label>
+                                <input
+                                    type="number"
+                                    value={quantity}
+                                    onChange={(e) => setQuantity(e.target.value)}
+                                    placeholder="Enter quantity"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">Unit</label>
+                                <input
+                                    type="text"
+                                    value={unit}
+                                    onChange={(e) => setUnit(e.target.value)}
+                                    placeholder="e.g. pcs, kg"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">Unit Price (₱)</label>
+                                <input
+                                    type="number"
+                                    value={unitPrice}
+                                    onChange={(e) => setUnitPrice(e.target.value)}
+                                    placeholder="0.00"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">Restock Level</label>
+                                <input
+                                    type="number"
+                                    value={restockLevel}
+                                    onChange={(e) => setRestockLevel(e.target.value)}
+                                    placeholder="Minimum quantity"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">Maximum Stock Level</label>
+                                <input
+                                    type="number"
+                                    value={maximumStockLevel}
+                                    onChange={(e) => setMaximumStockLevel(e.target.value)}
+                                    placeholder="Maximum quantity"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">Storage Location</label>
+                                <select
+                                    value={location}
+                                    onChange={(e) => setLocation(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                >
+                                    {getStorageOptions().map((option) => (
+                                        <option key={option} value={option}>{option}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
                     </div>
 
-                    <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Unit</label>
-                        <input
-                            type="text"
-                            value={unit}
-                            onChange={(e) => setUnit(e.target.value)}
-                            placeholder="e.g. pcs, kg"
-                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 
-                                     focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    <div className="space-y-2 md:col-span-2">
+                        <h3 className="font-medium text-gray-900">Supplier Information</h3>
+                        <SupplierSelector
+                            onSelect={handleSupplierSelect}
+                            selectedSupplierId={selectedSupplier?.id}
                         />
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Unit Price (₱)</label>
-                        <input
-                            type="number"
-                            value={unitPrice}
-                            onChange={(e) => setUnitPrice(e.target.value)}
-                            placeholder="0.00"
-                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 
-                                     focus:ring-blue-500 focus:border-blue-500 transition-all"
-                        />
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Storage Location</label>
-                        <select
-                            value={location}
-                            onChange={(e) => setLocation(e.target.value)}
-                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 
-                                     focus:ring-blue-500 focus:border-blue-500 transition-all"
-                        >
-                            {getStorageOptions().map((option) => (
-                                <option key={option} value={option}>{option}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Restock Level</label>
-                        <input
-                            type="number"
-                            value={restockLevel}
-                            onChange={(e) => setRestockLevel(e.target.value)}
-                            placeholder="Minimum quantity"
-                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 
-                                     focus:ring-blue-500 focus:border-blue-500 transition-all"
-                        />
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">Date Stocked</label>
-                        <input
-                            type="date"
-                            value={dateStocked}
-                            onChange={(e) => setDateStocked(e.target.value)}
-                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 
-                                     focus:ring-blue-500 focus:border-blue-500 transition-all"
-                        />
+                        
+                        {selectedSupplier && (
+                            <div className="mt-4 bg-gray-50 p-4 rounded-lg">
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                        <span className="font-medium">Name:</span> {selectedSupplier.name}
+                                    </div>
+                                    <div>
+                                        <span className="font-medium">Code:</span> {selectedSupplier.code}
+                                    </div>
+                                    <div>
+                                        <span className="font-medium">Contact:</span> {selectedSupplier.contactPerson}
+                                    </div>
+                                    <div>
+                                        <span className="font-medium">Phone:</span> {selectedSupplier.phone}
+                                    </div>
+                                    <div>
+                                        <span className="font-medium">Email:</span> {selectedSupplier.email}
+                                    </div>
+                                    <div className="col-span-2">
+                                        <span className="font-medium">Address:</span> {selectedSupplier.address}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 

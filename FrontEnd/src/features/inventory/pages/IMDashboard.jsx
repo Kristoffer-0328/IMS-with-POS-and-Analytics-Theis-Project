@@ -13,14 +13,26 @@ import { useServices } from '../../../services/firebase/ProductServices';
 
 const IMDashboard = () => {
   const [currentMonth, setCurrentMonth] = useState('October');
-  const { listenToProducts } = useServices(); 
+  const { listenToProducts, fetchRestockRequests } = useServices(); 
   const [products, setProduct] = useState([]);
   const [lowStock, setLowstock] = useState([]);
+  const [request, setRequest] = useState([]);
   
   useEffect(() => {
     const unsubscribe = listenToProducts(setProduct);
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const getRequests = async () => {
+      const res = await fetchRestockRequests();
+      if (res.success) {
+        setRequest(res.requests);
+      }
+    };
+
+    getRequests();
+  }, [fetchRestockRequests]);
   
   const chartData = products.map((p) => {
     let color = '#4779FF';
@@ -74,7 +86,7 @@ const IMDashboard = () => {
           <div className="flex justify-between items-center">
             <div>
               <p className="text-gray-500 text-xs sm:text-sm mb-1">Low Stock</p>
-              <h3 className="text-xl sm:text-2xl font-bold text-gray-800">{lowStock} Items</h3>
+              <h3 className="text-xl sm:text-2xl font-bold text-gray-800">{products.filter(p => p.quantity <= 60).length} Items</h3>
               <div className="flex items-center text-red-500 text-xs mt-1">
                 <FiAlertTriangle className="mr-1" />
                 <span>Critical</span>
@@ -91,7 +103,7 @@ const IMDashboard = () => {
           <div className="flex justify-between items-center">
             <div>
               <p className="text-gray-500 text-xs sm:text-sm mb-1">Restocks</p>
-              <h3 className="text-xl sm:text-2xl font-bold text-gray-800">Requests</h3>
+              <h3 className="text-xl sm:text-2xl font-bold text-gray-800">{request.filter(r => r.status === 'pending').length} Requests</h3>
               <div className="flex items-center text-green-500 text-xs mt-1">
                 <FiTrendingUp className="mr-1" />
               </div>

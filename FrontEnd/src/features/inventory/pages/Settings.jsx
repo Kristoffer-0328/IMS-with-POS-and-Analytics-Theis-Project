@@ -11,6 +11,7 @@ import {
   FiToggleRight,
   FiChevronRight,
 } from 'react-icons/fi';
+import DashboardHeader from '../components/Dashboard/DashboardHeader';
 
 const Settings = () => {
   const [activeTab, setActiveTab] = useState('account');
@@ -533,26 +534,7 @@ const Settings = () => {
 
   return (
     <div className="w-full max-w-[1600px] mx-auto p-6 bg-gray-50">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold text-gray-800">Settings</h1>
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <FiBell size={20} className="text-gray-500" />
-            <span className="absolute top-0 right-0 w-4 h-4 flex items-center justify-center bg-red-500 text-white text-xs rounded-full">
-              2
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-sm font-medium">I love Toff</p>
-              <p className="text-xs text-gray-500">Admin</p>
-            </div>
-            <div className="w-9 h-9 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center text-white font-medium">
-              IT
-            </div>
-          </div>
-        </div>
-      </div>
+      <DashboardHeader />
 
       <div className="flex flex-col md:flex-row gap-6">
         {/* Settings Sidebar */}

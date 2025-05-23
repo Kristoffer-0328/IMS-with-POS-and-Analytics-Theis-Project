@@ -10,6 +10,7 @@ import {
 } from 'react-icons/fi';
 import { useServices } from '../../../services/firebase/ProductServices';
 import TransferFormModal from '../components/Inventory/TransferFormModal';
+import DashboardHeader from '../components/Dashboard/DashboardHeader';
 
 const StockTransfer = () => {
   const [products, setProduct] = useState([]);
@@ -60,27 +61,7 @@ const StockTransfer = () => {
 
   return (
     <div className="w-full max-w-[1600px] mx-auto p-4 sm:p-6 bg-gray-50">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-        <h1 className="text-2xl font-bold text-gray-800">Stock Transfer</h1>
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <FiBell size={22} className="text-gray-500" />
-            <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center bg-red-500 text-white text-[10px] rounded-full">
-              2
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="text-right">
-              <p className="text-sm font-semibold">I love Toff</p>
-              <p className="text-xs text-gray-500">Admin</p>
-            </div>
-            <div className="w-9 h-9 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold">
-              IT
-            </div>
-          </div>
-        </div>
-      </div>
+      <DashboardHeader />
 
       {/* Summary Cards Section */}
       <div className="relative mb-6">

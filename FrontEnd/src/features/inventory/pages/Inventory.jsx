@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import InventoryHeader from '../components/Inventory/InventoryHeader';
 import InventoryChart from '../components/Inventory/InventoryChart';
 import InventoryTrendChart from '../components/Inventory/InventoryTrendChart';
 import InventoryTable from '../components/Inventory/InventoryTable';
 import InventoryFilters from '../components/Inventory/InventoryFilters';
-
+import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import ViewProductModal from '../components/Inventory/ViewProductModal';
 import { useServices } from '../../../services/firebase/ProductServices';
 import { FiPlusCircle, FiUpload, FiSearch } from 'react-icons/fi';
 import ImportCVGModal from '../components/Inventory/ImportCVGModal';
 import ProductChoice from '../components/Inventory/ProductChoices';
 import CategoryMOdalIndex from '../components/Inventory/CategoryModal/CategoryModalIndex';
+
 const Inventory = () => {
   const [currentFilter, setCurrentFilter] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -79,7 +79,7 @@ const Inventory = () => {
         // Calculate status based on quantity and restock level
         if (quantity <= 0) {
             status = 'out-of-stock';
-        } else if (quantity <= restockLevel || quantity <= 60) {
+        } else if (quantity < restockLevel ) {
             status = 'low-stock';
         }
 
@@ -120,8 +120,8 @@ const Inventory = () => {
 
   const chartData = getFilteredData().map((p) => {
     let color = '#4779FF';
-    if (p.quantity <= 40) color = '#FF4D4D';
-    else if (p.quantity <= 60) color = '#FFC554';
+    if (p.quantity < p.restockLevel) color = '#FF4D4D';
+    else if (p.quantity <= 40) color = '#FFC554';
 
     return {
       name: p.name,
@@ -132,7 +132,7 @@ const Inventory = () => {
 
   return (
     <div className="flex flex-col w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-6 bg-gray-50 min-h-screen">
-      <InventoryHeader />
+      <DashboardHeader />
 
       {/* Enhanced Header Section */}
       <div className="bg-gradient-to-r from-orange-100/80 to-amber-100/30 rounded-xl p-6 mb-6 shadow-sm border border-orange-100">

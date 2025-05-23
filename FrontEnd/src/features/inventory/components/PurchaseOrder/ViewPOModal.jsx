@@ -191,6 +191,39 @@ const ViewPOModal = ({ poId, onClose }) => {
       setError(null);
       const result = await poServices.submitPOForApproval(poId);
       if (result.success) {
+        // Generate and save PDF with signature
+        const doc = await documentServices.generatePOPDF({
+          ...poData,
+          status: 'pending_approval',
+          preparedBy: {
+            id: currentUser.uid,
+            name: currentUser.name,
+            role: currentUser.role,
+            signature: '/src/assets/IMSignature.png'
+          }
+        });
+        
+        const pdfBlob = doc.output('blob');
+        const uploadResult = await documentServices.uploadDocument(
+          pdfBlob,
+          `purchase_orders/${poId}/po_${poData.poNumber}.pdf`
+        );
+
+        if (uploadResult.success) {
+          await documentServices.saveDocumentMetadata({
+            referenceId: poId,
+            type: 'purchase_order',
+            name: `PO ${poData.poNumber}`,
+            url: uploadResult.url,
+            fileType: 'pdf',
+            createdBy: {
+              id: currentUser.uid,
+              name: currentUser.name,
+              role: currentUser.role
+            }
+          });
+        }
+
         // Refresh PO data to show new status
         const updatedPO = await poServices.getPurchaseOrder(poId);
         if (updatedPO.success) {
@@ -211,7 +244,15 @@ const ViewPOModal = ({ poId, onClose }) => {
   const handleDownloadPDF = async () => {
     try {
       setError(null);
-      const doc = await documentServices.generatePOPDF(poData);
+      const doc = await documentServices.generatePOPDF({
+        ...poData,
+        preparedBy: poData.status === 'pending_approval' || poData.status === 'approved' ? {
+          id: currentUser.uid,
+          name: currentUser.name,
+          role: currentUser.role,
+          signature: '/src/assets/IMSignature.png'
+        } : null
+      });
       const pdfBlob = doc.output('blob');
       const url = URL.createObjectURL(pdfBlob);
       const link = document.createElement('a');
@@ -469,14 +510,50 @@ const ViewPOModal = ({ poId, onClose }) => {
           {/* Signature Section */}
           <div className="grid grid-cols-2 gap-4 mt-8">
             <div className="text-center">
-              <div className="h-24 border-b border-gray-300 mb-2"></div>
+              <div className="h-24 border-b border-gray-300 mb-2 flex items-center justify-center">
+                {(poData.status === 'pending_approval' || poData.status === 'approved') && (
+                  <img 
+                    src="/src/assets/IMSignature.png" 
+                    alt="Inventory Manager Signature" 
+                    className="object-contain"
+                    style={{ 
+                      width: '500px',
+                      height: '300px',
+                      objectFit: 'contain'
+                    }}
+                  />
+                )}
+              </div>
               <p className="font-medium">Inventory Manager</p>
               <p className="text-sm text-gray-600">Prepared by</p>
+              {(poData.status === 'pending_approval' || poData.status === 'approved') && poData.submittedAt && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Signed on {new Date(poData.submittedAt.toDate()).toLocaleDateString()}
+                </p>
+              )}
             </div>
             <div className="text-center">
-              <div className="h-24 border-b border-gray-300 mb-2"></div>
+              <div className="h-24 border-b border-gray-300 mb-2 flex items-center justify-center">
+                {poData.status === 'approved' && (
+                  <img 
+                    src="/src/assets/AdminSignature.png" 
+                    alt="Admin Signature" 
+                    className="object-contain"
+                    style={{ 
+                      width: '500px',
+                      height: '300px',
+                      objectFit: 'contain'
+                    }}
+                  />
+                )}
+              </div>
               <p className="font-medium">Admin</p>
               <p className="text-sm text-gray-600">Approved by</p>
+              {poData.status === 'approved' && poData.approvedAt && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Signed on {new Date(poData.approvedAt.toDate()).toLocaleDateString()}
+                </p>
+              )}
             </div>
           </div>
 

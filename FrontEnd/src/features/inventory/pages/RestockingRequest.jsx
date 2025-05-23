@@ -10,53 +10,66 @@ import {
   FiPlus,
 } from 'react-icons/fi';
 import RestockRequestModal from '../components/Inventory/RequestStockModal';
-import RestockingHeader from '../components/Inventory/RestockingHeader';
+import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import { useServices } from '../../../services/firebase/ProductServices';
+import { getFirestore, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import app from '../../../FirebaseConfig';
+
+const db = getFirestore(app);
 
 const RestockingRequest = () => {
-  const [products, setProduct] = useState([]);
+  const [products, setProducts] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { listenToProducts, fetchRestockRequests } = useServices();
-  const [request, setRequest] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const { listenToProducts } = useServices();
 
+  // Listen to products
   useEffect(() => {
-    const unsubscribe = listenToProducts(setProduct);
+    const unsubscribe = listenToProducts(setProducts);
+    return () => unsubscribe();
+  }, [listenToProducts]);
+
+  // Listen to restock requests
+  useEffect(() => {
+    const restockRequestsRef = collection(db, 'RestockRequests');
+    const q = query(restockRequestsRef, orderBy('timestamp', 'desc'));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const requestsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().timestamp?.toDate() || new Date()
+      }));
+      setRequests(requestsData);
+    }, (error) => {
+      console.error('Error fetching restock requests:', error);
+    });
+
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    const getRequests = async () => {
-      const res = await fetchRestockRequests();
-      if (res.success) {
-        setRequest(res.requests);
-      }
-    };
-
-    getRequests();
-  }, [fetchRestockRequests]);
-
-  // Calculate summary data based on actual data
+  // Calculate summary data
   const summaryData = {
     totalRequests: {
-      value: `${request.length} Requests`,
+      value: `${requests.length} Requests`,
       change: 0,
       period: 'today',
     },
     pendingRequests: {
-      value: `${request.filter(r => r.status === 'pending').length} Pending`,
+      value: `${requests.filter(r => r.status === 'pending').length} Pending`,
       isCritical: true,
     },
     approvedRequests: {
-      value: `${request.filter(r => r.status === 'approved').length} Approved`,
+      value: `${requests.filter(r => r.status === 'approved').length} Approved`,
       isPositive: true,
     },
     processingRequests: {
-      value: `${request.filter(r => r.status === 'processing').length} Processing`,
+      value: `${requests.filter(r => r.status === 'processing').length} Processing`,
       period: 'current',
     },
   };
 
-  // Render status badge based on status type
+  // Render status badge
   const renderStatusBadge = (status) => {
     switch (status?.toLowerCase()) {
       case 'pending':
@@ -77,6 +90,12 @@ const RestockingRequest = () => {
             Processing
           </span>
         );
+      case 'completed':
+        return (
+          <span className="px-4 py-1.5 bg-gray-100 text-gray-800 rounded-full text-xs font-medium">
+            Completed
+          </span>
+        );
       default:
         return (
           <span className="px-4 py-1.5 bg-gray-100 text-gray-800 rounded-full text-xs font-medium">
@@ -88,7 +107,7 @@ const RestockingRequest = () => {
 
   return (
     <div className="w-full max-w-[1600px] mx-auto p-6 bg-gray-50">
-      <RestockingHeader />
+      <DashboardHeader />
 
       {/* Background gradient design element */}
       <div className="relative mb-6">
@@ -194,7 +213,7 @@ const RestockingRequest = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
-              {request.map((request) => (
+              {requests.map((request) => (
                 <tr key={request.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {request.productName}
@@ -209,21 +228,19 @@ const RestockingRequest = () => {
                     {request.maximumStockLevel}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {request.category}
+                    {request.category || request.productId?.split('-')[0] || 'N/A'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {renderStatusBadge(request.status)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(request.createdAt).toLocaleDateString()}
+                    {request.createdAt ? new Date(request.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Not specified'}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-
-        
       </div>
       <RestockRequestModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>

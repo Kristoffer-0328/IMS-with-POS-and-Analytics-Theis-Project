@@ -39,6 +39,9 @@ const Admin_Inventorytable = ({ data, onViewProduct, onEditProduct, onDeleteProd
               Product Name
             </th>
             <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+              Brand
+            </th>
+            <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
               Category
             </th>
             <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
@@ -63,6 +66,9 @@ const Admin_Inventorytable = ({ data, onViewProduct, onEditProduct, onDeleteProd
             >
               <td className="px-6 py-4 whitespace-nowrap">
                 <div className="text-sm font-medium text-gray-900">{item.name}</div>
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap">
+                <div className="text-sm text-gray-600">{item.brand || 'N/A'}</div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">

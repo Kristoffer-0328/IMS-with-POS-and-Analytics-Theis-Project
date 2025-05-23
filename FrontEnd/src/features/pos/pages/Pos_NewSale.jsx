@@ -116,7 +116,7 @@ export default function Pos_NewSale() {
   const [variantModalOpen, setVariantModalOpen] = useState(false);
   const [selectedProductForModal, setSelectedProductForModal] = useState(null);
   const [activeVariantIndex, setActiveVariantIndex] = useState(0);
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(0);
 
   // Customer State
   const [showBulkOrderPopup, setShowBulkOrderPopup] = useState(false);
@@ -142,6 +142,13 @@ export default function Pos_NewSale() {
   // Add new state for quick quantity modal
   const [quickQuantityModalOpen, setQuickQuantityModalOpen] = useState(false);
   const [selectedProductForQuantity, setSelectedProductForQuantity] = useState(null);
+
+  const getCartItemQuantity = useCallback((productId, variantId) => {
+    const cartItem = addedProducts.find(item => 
+      item.baseProductId === productId && item.variantId === variantId
+    );
+    return cartItem ? cartItem.qty : 0;
+  }, [addedProducts]);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -355,6 +362,47 @@ useEffect(() => {
     setAddedProducts(currentProducts => currentProducts.filter((_, i) => i !== indexToRemove));
   }, []);
 
+  const handleUpdateCartQuantity = useCallback((itemIndex, newQuantity) => {
+    setAddedProducts(currentProducts => {
+      const updatedProducts = [...currentProducts];
+      const item = updatedProducts[itemIndex];
+      
+      // Find the product in the products array to check stock
+      const product = products.find(p => p.id === item.baseProductId);
+      if (!product) {
+        alert('Product not found');
+        return currentProducts;
+      }
+
+      // Find the variant
+      const variantIndex = parseInt(item.variantId.split('-').pop(), 10);
+      const variant = product.variants[variantIndex];
+      
+      if (!variant) {
+        alert('Product variant not found');
+        return currentProducts;
+      }
+
+      // Validate new quantity
+      if (newQuantity <= 0) {
+        // If quantity is 0 or negative, remove the item
+        return currentProducts.filter((_, index) => index !== itemIndex);
+      }
+
+      if (newQuantity > variant.quantity) {
+        alert(`Cannot set quantity to ${newQuantity}. Only ${variant.quantity} available in stock.`);
+        return currentProducts;
+      }
+
+      // Update the quantity
+      updatedProducts[itemIndex] = {
+        ...item,
+        qty: newQuantity
+      };
+
+      return updatedProducts;
+    });
+  }, [products]);
 
   // --- Product Selection Logic ---
   const handleAddProduct = useCallback((productGroup) => {
@@ -378,16 +426,22 @@ useEffect(() => {
         setVariantModalOpen(true);
     } else if (productGroup.variants.length === 1) {
         const variant = productGroup.variants[0];
-        if (variant.quantity <= 0) {
-            alert(`${productGroup.name} is out of stock.`);
+        const cartQty = getCartItemQuantity(productGroup.id, variant.variantId);
+        const availableQty = variant.quantity - cartQty;
+
+        if (availableQty <= 0) {
+            alert(`Maximum quantity already in cart for ${productGroup.name}`);
             return;
         }
 
         // Show quick quantity modal for single variant products
-        setSelectedProductForQuantity(productGroup);
+        setSelectedProductForQuantity({
+            ...productGroup,
+            maxAvailableQty: availableQty // Add this property
+        });
         setQuickQuantityModalOpen(true);
     }
-}, [addProduct, isProcessing, showBulkOrderPopup]);
+}, [addProduct, isProcessing, showBulkOrderPopup, getCartItemQuantity]);
 
   const handleAddVariant = useCallback(() => {
     if (!selectedProductForModal?.variants?.[activeVariantIndex]) {
@@ -397,8 +451,11 @@ useEffect(() => {
     }
 
     const variant = selectedProductForModal.variants[activeVariantIndex];
-    if (variant.quantity < quantity) {
-        alert(`Insufficient stock. Only ${variant.quantity} available.`);
+    const cartQty = getCartItemQuantity(selectedProductForModal.id, variant.variantId);
+    const availableQty = variant.quantity - cartQty;
+
+    if (availableQty < quantity) {
+        alert(`Cannot add ${quantity} items. Only ${availableQty} available.`);
         return;
     }
 
@@ -406,13 +463,6 @@ useEffect(() => {
     const displayName = variant.size || variant.unit 
         ? `${selectedProductForModal.name} (${variant.size || ''} ${variant.unit || ''})`.trim()
         : selectedProductForModal.name;
-
-    // Log the variant data for debugging
-    console.log('Adding variant:', {
-        variant,
-        baseProductId: variant.baseProductId,
-        selectedProduct: selectedProductForModal
-    });
 
     addProduct({
         id: variant.variantId,
@@ -422,14 +472,14 @@ useEffect(() => {
         qty: quantity,
         variantId: variant.variantId,
         category: selectedProductForModal.category,
-        baseProductId: variant.baseProductId // Use variant's baseProductId directly
+        baseProductId: variant.baseProductId
     });
 
     setVariantModalOpen(false);
     setSelectedProductForModal(null);
     setActiveVariantIndex(0);
     setQuantity(1);
-}, [selectedProductForModal, activeVariantIndex, quantity, addProduct]);
+}, [selectedProductForModal, activeVariantIndex, quantity, addProduct, getCartItemQuantity]);
 
 
   // --- Customer Logic ---
@@ -634,6 +684,10 @@ useEffect(() => {
                     const notificationRef = doc(db, 'Notifications', `Notify-${item.category}-${item.baseProductId}-${timestamp}`);
                     const restockRequestRef = doc(db, 'RestockRequests', `Restock-${item.category}-${item.baseProductId}-${timestamp}`);
 
+                    // Get supplier information from product data
+                    const supplier = productData.supplier || productData.variants?.[variantIndex]?.supplier;
+                    const supplierCode = productData.supplierCode || productData.variants?.[variantIndex]?.supplierCode;
+
                     const notificationData = {
                         message: `Low stock alert for ${item.name}`,
                         productId: item.baseProductId,
@@ -646,7 +700,10 @@ useEffect(() => {
                         status: 'pending',
                         timestamp: serverTimestamp(),
                         type: 'restock_alert',
-                        createdAt: new Date().toISOString()
+                        createdAt: new Date().toISOString(),
+                        // Add supplier information
+                        supplier: supplier || null,
+                        supplierCode: supplierCode || null
                     };
 
                     notificationWrites.push({
@@ -660,7 +717,10 @@ useEffect(() => {
                             ...notificationData,
                             requestedQuantity: maximumStockLevel - newQuantity,
                             type: 'restock_request',
-                            productId: item.baseProductId
+                            productId: item.baseProductId,
+                            // Ensure supplier information is included
+                            supplier: supplier || null,
+                            supplierCode: supplierCode || null
                         }
                     });
 
@@ -670,7 +730,9 @@ useEffect(() => {
                         currentQuantity: newQuantity,
                         restockLevel,
                         maximumStockLevel,
-                        requestedQuantity: maximumStockLevel - newQuantity
+                        requestedQuantity: maximumStockLevel - newQuantity,
+                        supplier,
+                        supplierCode
                     });
                 }
             }
@@ -847,6 +909,7 @@ useEffect(() => {
               onAddProduct={handleAddProduct}
               loading={loadingProducts}
               disabled={shouldDisableInteractions}
+              getCartItemQuantity={getCartItemQuantity}
             />
           </div>
         </div>
@@ -877,6 +940,7 @@ useEffect(() => {
                     formattedTotal: formatCurrency(item.price * item.qty)
                 }))}
                 onRemoveItem={handleRemoveProduct}
+                onUpdateQuantity={handleUpdateCartQuantity}
                 isProcessing={isProcessing}
               />
             </div>
@@ -968,13 +1032,20 @@ useEffect(() => {
         {quickQuantityModalOpen && selectedProductForQuantity && (
           <QuickQuantityModal
             product={selectedProductForQuantity}
-            maxQuantity={selectedProductForQuantity.variants[0].quantity}
+            maxQuantity={selectedProductForQuantity.maxAvailableQty || selectedProductForQuantity.variants[0].quantity}
             onClose={() => {
               setQuickQuantityModalOpen(false);
               setSelectedProductForQuantity(null);
             }}
             onAdd={(quantity) => {
               const variant = selectedProductForQuantity.variants[0];
+              const cartQty = getCartItemQuantity(selectedProductForQuantity.id, variant.variantId);
+              
+              if (cartQty + quantity > variant.quantity) {
+                alert(`Cannot add ${quantity} items. Only ${variant.quantity - cartQty} available.`);
+                return;
+              }
+
               const displayName = variant.size || variant.unit 
                 ? `${selectedProductForQuantity.name} (${variant.size || ''} ${variant.unit || ''})`.trim()
                 : selectedProductForQuantity.name;

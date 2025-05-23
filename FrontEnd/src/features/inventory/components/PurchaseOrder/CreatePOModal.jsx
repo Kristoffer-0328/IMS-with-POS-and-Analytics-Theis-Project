@@ -31,11 +31,13 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
           restockRequestsRef,
           where('status', '==', 'pending')
         );
+    
         const querySnapshot = await getDocs(q);
         const requests = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
+        console.log('Restock requests:', requests);
         setRestockRequests(requests);
 
         // Set up products listener
@@ -70,7 +72,7 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
     newItems[index] = { ...newItems[index], [field]: value };
     
     if (field === 'productId') {
-      const product = products.find(p => p.id === value);
+      const product = products.find(p => p.id === value); 
       if (product) {
         // Find the restock request for this product
         const restockRequest = restockRequests.find(req => req.productId === value);
@@ -83,12 +85,14 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
             supplier: product.supplier || product.variants[0]?.supplier,
             total: 0 // Will be calculated below
           };
+         
         }
       }
     }
     
     newItems[index].total = calculateItemTotal(newItems[index]);
     setItems(newItems);
+    
   };
 
   // Add/Remove items
@@ -201,25 +205,24 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
               />
             </div>
 
-            {/* Payment Terms */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Payment Terms
-              </label>
-              <input
-                type="text"
-                value={paymentTerms}
-                onChange={(e) => setPaymentTerms(e.target.value)}
-                placeholder="e.g., Net 30, COD"
-                className="w-full border rounded-lg px-3 py-2"
-              />
-            </div>
+            
           </div>
 
           {/* Items */}
           <div className="mb-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-medium">Order Items</h3>
+              <h3 className="text-md font-medium"></h3>
+              <h3 className="text-md font-medium"></h3>
+              <h3 className="text-md font-medium"></h3>
+              <h3 className="text-md font-medium"></h3>
+              <h3 className="text-md font-medium"></h3>
+              <h3 className="text-md font-medium"></h3>
+              <h3 className="text-md font-medium"></h3>
+              <h3 className="text-md font-medium">Quantity</h3>
+              <h3 className="text-md font-medium">Unit Price</h3>
+              
+              <h3 className="text-md font-medium">Total</h3>
               <button
                 type="button"
                 onClick={addItem}
@@ -307,6 +310,20 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
               </div>
             </div>
           </div>
+          {/* Payment Terms */}
+          <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Payment Terms
+              </label>
+              <textarea
+                type="text"
+                rows={3}
+                value={paymentTerms}
+                onChange={(e) => setPaymentTerms(e.target.value)}
+                placeholder="e.g., Net 30, COD"
+                className="w-full border rounded-lg px-3 py-2"
+              />
+            </div>
 
           {/* Notes */}
           <div className="mb-6">

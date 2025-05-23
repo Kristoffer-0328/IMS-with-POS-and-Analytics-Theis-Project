@@ -37,8 +37,6 @@ export const ServicesProvider = ({ children }) => {
           // Skip if already listening to this category
           if (categoryListeners.has(category)) return;
 
-         
-
           const itemsQuery = query(collection(db, "Products", category, "Items"));
           
           const unsubscribeItems = onSnapshot(
@@ -50,7 +48,15 @@ export const ServicesProvider = ({ children }) => {
 
               const categoryProducts = itemsSnapshot.docs.map(doc => {
                 const data = doc.data();
+                console.log('Raw product data:', {
+                  id: doc.id,
+                  name: data.name,
+                  supplier: data.supplier,
+                  supplierCode: data.supplierCode,
+                  variants: data.variants
+                });
                 return {
+                  ...data,
                   id: doc.id,
                   baseProductId: doc.id.split('-')[0],
                   category: category,
@@ -58,11 +64,16 @@ export const ServicesProvider = ({ children }) => {
                   subCategory: data.subCategory || category,
                   specifications: data.specifications || '',
                   storageType: data.storageType || 'Goods',
+                  unitPrice: typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice),
+                  supplierCode: data.supplierCode || '',
                   supplier: data.supplier || {
                     name: 'Unknown',
-                    code: ''
+                    code: '',
+                    address: '',
+                    contactPerson: '',
+                    phone: '',
+                    email: ''
                   },
-                  ...data,
                   variants: Array.isArray(data.variants) ? data.variants.map((variant, index) => ({
                     ...variant,
                     id: `${doc.id}-${index}`,
@@ -70,6 +81,8 @@ export const ServicesProvider = ({ children }) => {
                     brand: data.brand || 'Generic',
                     storageType: variant.storageType || data.storageType || 'Goods',
                     specifications: variant.specifications || data.specifications || '',
+                    unitPrice: typeof variant.unitPrice === 'number' ? variant.unitPrice : parseFloat(variant.unitPrice) || 0,
+                    supplierCode: variant.supplierCode || data.supplierCode || '',
                     supplier: variant.supplier || data.supplier || {
                       name: 'Unknown',
                       code: ''

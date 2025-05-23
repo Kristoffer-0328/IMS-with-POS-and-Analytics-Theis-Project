@@ -103,15 +103,18 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
     const batchSize = 500;
     const batches = [];
     const categories = new Set();
+    const totalOperations = processedProducts.length + new Set(processedProducts.map(p => p.category)).size;
 
     try {
+      setImportProgress({ total: totalOperations, current: 0 });
+      
       // First, collect all unique categories
       processedProducts.forEach(product => {
         categories.add(product.category);
       });
 
       // Create category documents if they don't exist
-      categories.forEach(category => {
+      for (const category of categories) {
         const categoryRef = doc(db, "Products", category);
         batch.set(categoryRef, {
           name: category,
@@ -120,10 +123,11 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
         }, { merge: true });
 
         operationCount++;
-      });
+        setImportProgress(prev => ({ ...prev, current: operationCount }));
+      }
 
       // Save products
-      processedProducts.forEach((product) => {
+      for (const product of processedProducts) {
         const productRef = doc(db, "Products", product.category, "Items", product.id);
         
         console.log(`Saving product: ${product.id} in category: ${product.category}`);
@@ -136,18 +140,15 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
         operationCount++;
         setImportProgress(prev => ({ ...prev, current: operationCount }));
 
-        if (operationCount === batchSize) {
-          batches.push(batch.commit());
-          batch = writeBatch(db); // Create new batch
-          operationCount = 0;
+        if (operationCount % batchSize === 0) {
+          await batch.commit();
+          batch = writeBatch(db);
         }
-      });
-
-      if (operationCount > 0) {
-        batches.push(batch.commit());
       }
 
-      await Promise.all(batches);
+      if (operationCount % batchSize !== 0) {
+        await batch.commit();
+      }
       
       listenToProducts((updatedProducts) => {
         console.log("Products updated after import:", updatedProducts.length);
@@ -179,30 +180,50 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
             <label className="block text-sm font-medium mb-1">
               Upload File (.csv)
             </label>
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleFileChange}
-              className="w-full border p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => document.getElementById('fileInput').click()}
+                className="w-full bg-white border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-green-500 transition-colors cursor-pointer"
+              >
+                <FiUpload className="mx-auto h-6 w-6 text-gray-400 mb-2" />
+                <span className="text-sm text-gray-600">
+                  {file ? file.name : 'Click to upload CSV file'}
+                </span>
+              </button>
+              <input
+                id="fileInput"
+                type="file"
+                accept=".csv"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+            </div>
             {file && (
-              <p className="text-sm text-gray-600 mt-1">
-                Selected: {file.name}
+              <p className="text-sm text-green-600 mt-1">
+                File selected and ready to import
               </p>
             )}
           </div>
 
           {importProgress.total > 0 && (
-            <div className="mt-2">
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
+            <div className="mt-4">
+              <div className="w-full h-4 bg-gray-100 rounded-full overflow-hidden border border-gray-200">
                 <div
-                  className="bg-green-600 h-2.5 rounded-full transition-all duration-300"
-                  style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                  className="bg-green-600 h-full rounded-full transition-all duration-500 ease-out"
+                  style={{ 
+                    width: `${Math.min((importProgress.current / importProgress.total) * 100, 100)}%`,
+                  }}
                 ></div>
               </div>
-              <p className="text-sm text-gray-600 mt-1">
-                Processing: {importProgress.current} of {importProgress.total}
-              </p>
+              <div className="flex justify-between mt-2">
+                <p className="text-sm text-gray-600">
+                  Processing: {importProgress.current} of {importProgress.total}
+                </p>
+                <p className="text-sm text-gray-600">
+                  {Math.min(Math.round((importProgress.current / importProgress.total) * 100), 100)}%
+                </p>
+              </div>
             </div>
           )}
 

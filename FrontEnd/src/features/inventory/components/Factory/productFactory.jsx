@@ -28,6 +28,10 @@ export const ProductFactory = {
             supplier: {
                 name: data.Supplier || data.supplier || 'Unknown',
                 code: data.SupplierCode || data.supplierCode || '',
+                address: data.SupplierAddress || data.supplierAddress || '',
+                contactPerson: data.SupplierContactPerson || data.supplierContactPerson || '',
+                phone: data.SupplierPhone || data.supplierPhone || '',
+                email: data.SupplierEmail || data.supplierEmail || ''
             },
             // Stock levels
             restockLevel: Number(data.RestockLevel || data.restockLevel || 0),

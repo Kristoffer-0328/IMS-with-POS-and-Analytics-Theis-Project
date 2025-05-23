@@ -31,6 +31,8 @@ import Settings from './features/inventory/pages/Settings';
 import IMSidebar from './features/inventory/pages/IMSidebar';
 import LoadingScreen from './features/inventory/components/LoadingScreen';
 import PurchaseOrders from './features/inventory/pages/PurchaseOrders';
+import ReceivingManagement from './features/inventory/pages/ReceivingManagement';
+import SupplierManagement from './features/inventory/pages/SupplierManagement';
 
 // POS cashier Interface
 
@@ -191,6 +193,14 @@ const AppRoutes = () => {
         }
       />
       <Route
+        path="/im/receiving"
+        element={
+          <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
+            <ReceivingManagement />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/im/purchase-orders"
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
@@ -216,10 +226,10 @@ const AppRoutes = () => {
       />
       
       <Route
-        path="/im/team"
+        path="/im/suppliers"
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
-            <Team />
+            <SupplierManagement/>
           </ProtectedRoute>
         }
       />

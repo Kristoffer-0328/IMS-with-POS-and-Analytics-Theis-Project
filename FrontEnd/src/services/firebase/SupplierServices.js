@@ -10,7 +10,8 @@ import {
   where,
   orderBy,
   serverTimestamp,
-  getFirestore
+  getFirestore,
+  limit
 } from 'firebase/firestore';
 import app from '../../FirebaseConfig';
 
@@ -20,8 +21,22 @@ export const useSupplierServices = () => {
   // Create Supplier
   const createSupplier = async (supplierData) => {
     try {
+      // Validate required fields
+      const requiredFields = ['name', 'code', 'address', 'contactPerson', 'phone', 'email'];
+      const missingFields = requiredFields.filter(field => !supplierData[field]);
+      
+      if (missingFields.length > 0) {
+        throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+      }
+
       const newSupplier = {
-        ...supplierData,
+        name: supplierData.name,
+        code: supplierData.code,
+        address: supplierData.address,
+        contactPerson: supplierData.contactPerson,
+        phone: supplierData.phone,
+        email: supplierData.email,
+        supplierCodes: supplierData.supplierCodes || [],
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         status: 'active'
@@ -38,6 +53,14 @@ export const useSupplierServices = () => {
   // Update Supplier
   const updateSupplier = async (supplierId, updateData) => {
     try {
+      // Validate update data
+      const allowedFields = ['name', 'code', 'address', 'contactPerson', 'phone', 'email', 'status', 'supplierCodes'];
+      const invalidFields = Object.keys(updateData).filter(field => !allowedFields.includes(field));
+      
+      if (invalidFields.length > 0) {
+        throw new Error(`Invalid fields: ${invalidFields.join(', ')}`);
+      }
+
       const supplierRef = doc(db, 'suppliers', supplierId);
       await updateDoc(supplierRef, {
         ...updateData,

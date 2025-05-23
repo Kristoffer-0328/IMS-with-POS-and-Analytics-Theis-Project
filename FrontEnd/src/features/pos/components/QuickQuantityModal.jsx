@@ -10,8 +10,21 @@ const QuickQuantityModal = ({
   const [quantity, setQuantity] = useState(1);
   
   const handleQuantityChange = (e) => {
-    const value = Math.min(maxQuantity, Math.max(1, parseInt(e.target.value) || 1));
-    setQuantity(value);
+    const value = e.target.value;
+    if (value === '') {
+      setQuantity('');
+    } else {
+      const numValue = parseInt(value);
+      if (!isNaN(numValue)) {
+        setQuantity(Math.min(maxQuantity, numValue));
+      }
+    }
+  };
+
+  const handleQuantityBlur = () => {
+    if (quantity === '' || quantity < 1) {
+      setQuantity(1);
+    }
   };
 
   const adjustQuantity = (amount) => {
@@ -81,6 +94,7 @@ const QuickQuantityModal = ({
                 max={maxQuantity}
                 value={quantity}
                 onChange={handleQuantityChange}
+                onBlur={handleQuantityBlur}
                 className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-center"
               />
               <button

@@ -11,7 +11,10 @@ import {
   FiLogOut,
   FiChevronLeft,
   FiChevronRight,
-  FiShoppingBag
+  FiShoppingBag,
+  FiTruck,
+  FiAlertCircle,
+  FiUsers
 } from 'react-icons/fi';
 
 const IMSidebar = ({ collapsed, setCollapsed }) => {
@@ -25,13 +28,60 @@ const IMSidebar = ({ collapsed, setCollapsed }) => {
   };
 
   const navItems = [
-    { path: '/im', icon: <FiHome size={20} />, label: 'Dashboard' },
-    { path: '/im/inventory', icon: <FiPackage size={20} />, label: 'Inventory' },
-    { path: '/im/purchase-orders', icon: <FiShoppingBag size={20} />, label: 'Purchase Orders' },
-    { path: '/im/stock-transfer', icon: <FiRefreshCw size={20} />, label: 'Stock Transfer' },
-    { path: '/im/restocking-request', icon: <FiClipboard size={20} />, label: 'Restocking Request' },
-    { path: '/im/reports', icon: <FiFileText size={20} />, label: 'Reports and Logs' },
-    { path: '/im/settings', icon: <FiSettings size={20} />, label: 'Settings' },
+    { 
+      path: '/im', 
+      icon: <FiHome size={20} />, 
+      label: 'Overview',
+      badge: null
+    },
+    { 
+      path: '/im/inventory', 
+      icon: <FiPackage size={20} />, 
+      label: 'Stock Management',
+      badge: null
+    },
+    { 
+      path: '/im/restocking-request', 
+      icon: <FiAlertCircle size={20} />, 
+      label: 'Restock Requests',
+      badge: null
+    },
+    { 
+      path: '/im/receiving', 
+      icon: <FiTruck size={20} />, 
+      label: 'Receiving',
+      badge: 0
+    },
+    { 
+      path: '/im/purchase-orders', 
+      icon: <FiShoppingBag size={20} />, 
+      label: 'Purchase Orders',
+      badge: null
+    },
+    { 
+      path: '/im/suppliers', 
+      icon: <FiUsers size={20} />, 
+      label: 'Supplier Management',
+      badge: null
+    },
+    { 
+      path: '/im/stock-transfer', 
+      icon: <FiRefreshCw size={20} />, 
+      label: 'Stock Transfer',
+      badge: null
+    },
+    { 
+      path: '/im/reports', 
+      icon: <FiFileText size={20} />, 
+      label: 'Reports & Logs',
+      badge: null
+    },
+    { 
+      path: '/im/settings', 
+      icon: <FiSettings size={20} />, 
+      label: 'Settings',
+      badge: null
+    },
   ];
 
   const handleToggle = () => {
@@ -84,7 +134,19 @@ const IMSidebar = ({ collapsed, setCollapsed }) => {
                   {item.icon}
                 </span>
                 {!collapsed && (
-                  <span className="ml-3 truncate">{item.label}</span>
+                  <div className="flex items-center justify-between flex-1 ml-3">
+                    <span className="truncate">{item.label}</span>
+                    {item.badge > 0 && (
+                      <span className="ml-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                        {item.badge}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {collapsed && item.badge > 0 && (
+                  <span className="absolute right-2 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                    {item.badge}
+                  </span>
                 )}
               </Link>
             </li>
@@ -108,11 +170,11 @@ const IMSidebar = ({ collapsed, setCollapsed }) => {
 
       {/* Bottom Navigation for mobile screens */}
       <div className="sm:hidden fixed bottom-0 left-0 w-full bg-white shadow-lg z-50 flex justify-around items-center border-t border-gray-200">
-        {navItems.map((item) => (
+        {navItems.slice(0, 5).map((item) => (
           <Link
             key={item.path}
             to={item.path}
-            className={`flex flex-col items-center p-3 transition-colors
+            className={`flex flex-col items-center p-3 transition-colors relative
               ${
                 location.pathname === item.path
                   ? 'text-[#ff7b54] bg-orange-50'
@@ -121,15 +183,13 @@ const IMSidebar = ({ collapsed, setCollapsed }) => {
           >
             <span className="text-lg">{item.icon}</span>
             <span className="text-xs">{item.label}</span>
+            {item.badge > 0 && (
+              <span className="absolute top-2 right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                {item.badge}
+              </span>
+            )}
           </Link>
         ))}
-        <button
-          onClick={handleLogout}
-          className="flex flex-col items-center p-3 text-gray-500 hover:bg-gray-50"
-        >
-          <FiLogOut size={20} />
-          <span className="text-xs">Logout</span>
-        </button>
       </div>
     </>
   );
