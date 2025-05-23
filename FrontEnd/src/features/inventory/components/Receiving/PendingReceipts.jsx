@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiEye, FiCheckCircle, FiXCircle } from 'react-icons/fi';
 import { usePurchaseOrderServices } from '../../../../services/firebase/PurchaseOrderServices';
+import { AnalyticsService } from '../../../../services/firebase/AnalyticsService';
 import ViewPOModal from '../PurchaseOrder/ViewPOModal';
 import ProcessReceiptModal from './ProcessReceiptModal';
 import RejectReceiptModal from './RejectReceiptModal';
@@ -42,9 +43,28 @@ const PendingReceipts = () => {
     setShowViewModal(true);
   };
 
-  const handleProcessReceipt = (po) => {
-    setSelectedPO(po);
-    setShowProcessModal(true);
+  const handleProcessReceipt = async (po, receivedItems) => {
+    try {
+      setLoading(true);
+      
+      // First, process the receiving in PO service
+      await poServices.processReceiving(po.id, receivedItems);
+      
+      // Then, update the inventory snapshot
+      await AnalyticsService.updateInventorySnapshotAfterReceiving(receivedItems);
+      
+      // Close modal and refresh data
+      setSelectedPO(null);
+      setShowProcessModal(false);
+      
+      // Success message
+      alert('Items received successfully and inventory updated!');
+    } catch (error) {
+      console.error('Error receiving items:', error);
+      alert('Error receiving items. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleRejectReceipt = (po) => {
@@ -137,7 +157,10 @@ const PendingReceipts = () => {
                           <FiEye size={18} />
                         </button>
                         <button
-                          onClick={() => handleProcessReceipt(po)}
+                          onClick={() => {
+                            setSelectedPO(po);
+                            setShowProcessModal(true);
+                          }}
                           className="p-1 text-green-600 hover:text-green-800"
                           title="Process Receipt"
                         >
@@ -178,6 +201,7 @@ const PendingReceipts = () => {
             setShowProcessModal(false);
             setSelectedPO(null);
           }}
+          onProcess={handleProcessReceipt}
         />
       )}
 

@@ -3,14 +3,17 @@ import { FiActivity, FiBarChart, FiFileText } from 'react-icons/fi';
 
 import ReportCard from '../components/Reports/ReportCard';
 import ReportHeader from '../components/Reports/ReportHeader';
-import InventoryTurnoverReport from '../components/Reports/InventoryTurnOverReport';
+import InventoryTurnoverReport from '../components/Reports/InventoryTurnoverReport';
 import StockMovementReport from '../components/Reports/StockMovementReport';
 import ShrinkageReport from '../components/Reports/ShrinkageReport';
+import TestDataGenerator from '../components/Reports/TestDataGenerator';
 
 const ReportsAndLogs = () => {
   const [selectedReport, setSelectedReport] = useState(null);
-  const [yearFilter, setYearFilter] = useState('This year');
-  const [monthFilter, setMonthFilter] = useState('October');
+  const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
+  const [monthFilter, setMonthFilter] = useState(
+    new Date().toLocaleString('default', { month: 'long' })
+  );
 
   // Report data
   const reports = [
@@ -129,6 +132,7 @@ const ReportsAndLogs = () => {
     <div className="w-full max-w-[1600px] mx-auto p-6 bg-gray-50">
       <ReportHeader />
       {renderReport()}
+      <TestDataGenerator />
     </div>
   );
 };

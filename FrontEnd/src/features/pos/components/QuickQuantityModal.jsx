@@ -7,31 +7,48 @@ const QuickQuantityModal = ({
   onAdd,
   maxQuantity
 }) => {
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState('1');
   
   const handleQuantityChange = (e) => {
     const value = e.target.value;
-    if (value === '') {
-      setQuantity('');
-    } else {
-      const numValue = parseInt(value);
-      if (!isNaN(numValue)) {
-        setQuantity(Math.min(maxQuantity, numValue));
+    // Allow empty value or numbers
+    if (value === '' || /^\d*$/.test(value)) {
+      if (value === '') {
+        setQuantity('');
+      } else {
+        const numValue = parseInt(value);
+        if (!isNaN(numValue)) {
+          if (numValue > maxQuantity) {
+            setQuantity(maxQuantity.toString());
+          } else {
+            setQuantity(value);
+          }
+        }
       }
     }
   };
 
   const handleQuantityBlur = () => {
-    if (quantity === '' || quantity < 1) {
-      setQuantity(1);
+    if (quantity === '' || parseInt(quantity) < 1) {
+      setQuantity('1');
     }
   };
 
   const adjustQuantity = (amount) => {
-    setQuantity(prev => Math.min(maxQuantity, Math.max(1, prev + amount)));
+    const currentQty = quantity === '' ? 0 : parseInt(quantity);
+    const newValue = Math.min(maxQuantity, Math.max(1, currentQty + amount));
+    setQuantity(newValue.toString());
   };
 
   const quickQuantities = [5, 10, 25, 50];
+
+  const getDisplayQuantity = () => {
+    return quantity === '' ? '0' : quantity;
+  };
+
+  const getCurrentQuantity = () => {
+    return quantity === '' ? 0 : parseInt(quantity);
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -60,11 +77,11 @@ const QuickQuantityModal = ({
             {quickQuantities.map((qty) => (
               <button
                 key={qty}
-                onClick={() => setQuantity(Math.min(qty, maxQuantity))}
+                onClick={() => setQuantity(Math.min(qty, maxQuantity).toString())}
                 disabled={qty > maxQuantity}
                 className={`py-2 px-3 rounded-lg text-sm font-medium transition-all
                   ${qty <= maxQuantity
-                    ? quantity === qty
+                    ? parseInt(quantity) === qty
                       ? 'bg-orange-500 text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     : 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -83,15 +100,15 @@ const QuickQuantityModal = ({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => adjustQuantity(-1)}
-                disabled={quantity <= 1}
+                disabled={getCurrentQuantity() <= 1}
                 className="p-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FiMinus size={18} />
               </button>
               <input
-                type="number"
-                min="1"
-                max={maxQuantity}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={quantity}
                 onChange={handleQuantityChange}
                 onBlur={handleQuantityBlur}
@@ -99,7 +116,7 @@ const QuickQuantityModal = ({
               />
               <button
                 onClick={() => adjustQuantity(1)}
-                disabled={quantity >= maxQuantity}
+                disabled={getCurrentQuantity() >= maxQuantity}
                 className="p-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FiPlus size={18} />
@@ -115,12 +132,12 @@ const QuickQuantityModal = ({
             </div>
             <div className="flex justify-between text-sm mt-1">
               <span className="text-gray-600">Quantity:</span>
-              <span className="font-medium">{quantity} {product.variants[0].unit}</span>
+              <span className="font-medium">{getDisplayQuantity()} {product.variants[0].unit}</span>
             </div>
             <div className="flex justify-between text-base font-medium mt-2 pt-2 border-t">
               <span>Total:</span>
               <span className="text-orange-600">
-                ₱{(product.variants[0].price * quantity).toLocaleString()}
+                ₱{(product.variants[0].price * getCurrentQuantity()).toLocaleString()}
               </span>
             </div>
           </div>
@@ -129,8 +146,9 @@ const QuickQuantityModal = ({
         {/* Footer */}
         <div className="p-4 border-t">
           <button
-            onClick={() => onAdd(quantity)}
-            className="w-full py-2.5 rounded-lg font-medium bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+            onClick={() => onAdd(parseInt(quantity))}
+            disabled={quantity === '' || parseInt(quantity) < 1}
+            className="w-full py-2.5 rounded-lg font-medium bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Add to Cart
           </button>

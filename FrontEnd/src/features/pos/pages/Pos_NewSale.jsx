@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import app from  '../../../FirebaseConfig';
 import { useAuth } from '../../auth/services/FirebaseAuth';
+import { AnalyticsService } from '../../../services/firebase/AnalyticsService';
 
 // Import Components from new locations
 import SearchBar from '../components/SearchBar';
@@ -791,6 +792,15 @@ useEffect(() => {
             }
         });
 
+        // Create analytics records after successful transaction
+        try {
+          await AnalyticsService.createInventorySnapshot();
+          await AnalyticsService.createSalesAggregation();
+        } catch (analyticsError) {
+          console.error('Error creating analytics:', analyticsError);
+          // Don't throw the error - we don't want to affect the main transaction
+        }
+
         await printReceiptContent({
             receiptNumber,
             date: formattedDate,
@@ -810,7 +820,7 @@ useEffect(() => {
             cashierName: currentUser?.name || 'Unknown Cashier'
         });
 
-        resetSaleState(); // This should clear everything including the cart
+        resetSaleState();
         alert("Transaction completed successfully!");
 
     } catch (error) {

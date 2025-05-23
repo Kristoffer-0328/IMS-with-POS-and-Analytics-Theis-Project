@@ -13,6 +13,8 @@ import {
   Cell,
   ResponsiveContainer
 } from 'recharts';
+import { FiInfo } from 'react-icons/fi';
+import InfoModal from '../Dashboard/InfoModal';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
@@ -22,6 +24,7 @@ const POAnalytics = () => {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [activeInfoModal, setActiveInfoModal] = useState(null);
 
   useEffect(() => {
     loadAnalytics();
@@ -110,6 +113,98 @@ const POAnalytics = () => {
     value: product.totalValue
   }));
 
+  // Chart information content
+  const chartInfo = {
+    totalPOs: {
+      title: "Total Purchase Orders",
+      content: (
+        <div className="space-y-4">
+          <p>This metric shows the total number of purchase orders created during the selected time period:</p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li>Includes all POs regardless of status</li>
+            <li>Helps track purchasing activity volume</li>
+            <li>Can be compared across different time periods</li>
+          </ul>
+          <p>A significant change in this number may indicate shifts in business activity or purchasing patterns.</p>
+        </div>
+      )
+    },
+    totalValue: {
+      title: "Total Purchase Value",
+      content: (
+        <div className="space-y-4">
+          <p>The total monetary value of all purchase orders in the selected period:</p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li>Represents total purchasing commitment</li>
+            <li>Helps track spending patterns</li>
+            <li>Key indicator for budget monitoring</li>
+          </ul>
+          <p>Use this to monitor spending trends and make budget forecasts.</p>
+        </div>
+      )
+    },
+    processingTime: {
+      title: "Average Processing Time",
+      content: (
+        <div className="space-y-4">
+          <p>Shows the average time taken from PO creation to completion:</p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li>Measured in days</li>
+            <li>Includes approval and receiving time</li>
+            <li>Key efficiency indicator</li>
+          </ul>
+          <p>Lower processing times generally indicate more efficient operations.</p>
+        </div>
+      )
+    },
+    statusDistribution: {
+      title: "Understanding PO Status Distribution",
+      content: (
+        <div className="space-y-4">
+          <p>The pie chart shows the distribution of purchase orders by their current status:</p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li><span className="text-yellow-600 font-medium">Pending Approval:</span> Orders awaiting authorization</li>
+            <li><span className="text-green-600 font-medium">Approved:</span> Orders cleared for processing</li>
+            <li><span className="text-blue-600 font-medium">Completed:</span> Fully received orders</li>
+            <li><span className="text-red-600 font-medium">Rejected:</span> Orders not approved</li>
+            <li><span className="text-gray-600 font-medium">Draft:</span> Orders in preparation</li>
+          </ul>
+          <p>Use this to monitor order processing efficiency and identify bottlenecks.</p>
+        </div>
+      )
+    },
+    supplierMetrics: {
+      title: "Supplier Performance Metrics",
+      content: (
+        <div className="space-y-4">
+          <p>The bar chart shows key metrics by supplier:</p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li>Total value of orders placed</li>
+            <li>Number of orders placed</li>
+            <li>Helps identify key suppliers</li>
+            <li>Shows supplier relationship strength</li>
+          </ul>
+          <p>Use this to evaluate supplier relationships and optimize purchasing strategies.</p>
+        </div>
+      )
+    },
+    topProducts: {
+      title: "Top Products Analysis",
+      content: (
+        <div className="space-y-4">
+          <p>This chart shows the most frequently ordered products:</p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li>Total value of orders per product</li>
+            <li>Quantity ordered per product</li>
+            <li>Helps identify high-value items</li>
+            <li>Useful for inventory planning</li>
+          </ul>
+          <p>Use this information to optimize stock levels and negotiate better terms for frequently ordered items.</p>
+        </div>
+      )
+    }
+  };
+
   return (
     <div className="p-6">
       {/* Time Frame Selection */}
@@ -131,16 +226,43 @@ const POAnalytics = () => {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-medium mb-2">Total Purchase Orders</h3>
-          <p className="text-3xl font-bold">{analytics.totalPOs}</p>
+          <div className="flex justify-between items-start">
+            <h3 className="text-lg font-medium mb-2">Total Purchase Orders</h3>
+            <button
+              onClick={() => setActiveInfoModal('totalPOs')}
+              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+              title="Learn about total POs"
+            >
+              <FiInfo className="w-5 h-5 text-gray-400" />
+            </button>
+          </div>
+          <p className="text-3xl font-bold">{analytics?.totalPOs}</p>
         </div>
         <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-medium mb-2">Total Value</h3>
-          <p className="text-3xl font-bold">₱{analytics.totalValue.toLocaleString()}</p>
+          <div className="flex justify-between items-start">
+            <h3 className="text-lg font-medium mb-2">Total Value</h3>
+            <button
+              onClick={() => setActiveInfoModal('totalValue')}
+              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+              title="Learn about total value"
+            >
+              <FiInfo className="w-5 h-5 text-gray-400" />
+            </button>
+          </div>
+          <p className="text-3xl font-bold">₱{analytics?.totalValue.toLocaleString()}</p>
         </div>
         <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-medium mb-2">Avg. Processing Time</h3>
-          <p className="text-3xl font-bold">{analytics.averageProcessingTime.toFixed(1)} days</p>
+          <div className="flex justify-between items-start">
+            <h3 className="text-lg font-medium mb-2">Avg. Processing Time</h3>
+            <button
+              onClick={() => setActiveInfoModal('processingTime')}
+              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+              title="Learn about processing time"
+            >
+              <FiInfo className="w-5 h-5 text-gray-400" />
+            </button>
+          </div>
+          <p className="text-3xl font-bold">{analytics?.averageProcessingTime.toFixed(1)} days</p>
         </div>
       </div>
 
@@ -148,7 +270,16 @@ const POAnalytics = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Status Distribution */}
         <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-medium mb-4">PO Status Distribution</h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-gray-800">Status Distribution</h3>
+            <button
+              onClick={() => setActiveInfoModal('statusDistribution')}
+              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+              title="Learn about status distribution"
+            >
+              <FiInfo className="w-5 h-5 text-gray-400" />
+            </button>
+          </div>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -174,7 +305,16 @@ const POAnalytics = () => {
 
         {/* Top Suppliers */}
         <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-medium mb-4">Top Suppliers by Value</h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-gray-800">Top Suppliers by Value</h3>
+            <button
+              onClick={() => setActiveInfoModal('supplierMetrics')}
+              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+              title="Learn about supplier metrics"
+            >
+              <FiInfo className="w-5 h-5 text-gray-400" />
+            </button>
+          </div>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={supplierData}>
@@ -192,7 +332,16 @@ const POAnalytics = () => {
 
         {/* Top Products */}
         <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-medium mb-4">Top Products by Value</h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-gray-800">Top Products by Value</h3>
+            <button
+              onClick={() => setActiveInfoModal('topProducts')}
+              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+              title="Learn about top products"
+            >
+              <FiInfo className="w-5 h-5 text-gray-400" />
+            </button>
+          </div>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={productData}>
@@ -208,6 +357,14 @@ const POAnalytics = () => {
           </div>
         </div>
       </div>
+
+      {/* Info Modal */}
+      <InfoModal
+        isOpen={!!activeInfoModal}
+        onClose={() => setActiveInfoModal(null)}
+        title={activeInfoModal ? chartInfo[activeInfoModal].title : ''}
+        content={activeInfoModal ? chartInfo[activeInfoModal].content : ''}
+      />
     </div>
   );
 };

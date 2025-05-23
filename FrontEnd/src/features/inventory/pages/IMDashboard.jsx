@@ -6,9 +6,20 @@ import {
   FiAlertTriangle,
   FiRefreshCw,
   FiBell,
+  FiInfo
 } from 'react-icons/fi';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer
+} from 'recharts';
 import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import DashboardBarChart from '../components/Dashboard/DashboardBarChart';
+import InfoModal from '../components/Dashboard/InfoModal';
 import { useServices } from '../../../services/firebase/ProductServices';
 
 const IMDashboard = () => {
@@ -18,6 +29,73 @@ const IMDashboard = () => {
   const [lowStock, setLowstock] = useState([]);
   const [request, setRequest] = useState([]);
   
+  // Modal states
+  const [activeModal, setActiveModal] = useState(null);
+
+  // Chart information content
+  const chartInfo = {
+    inventory: {
+      title: "How to Read the Inventory Chart",
+      content: (
+        <div className="space-y-4">
+          <p>This bar chart shows the current inventory levels for each product:</p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li><span className="text-blue-500">Blue bars</span> indicate healthy stock levels (above 60 units)</li>
+            <li><span className="text-yellow-500">Yellow bars</span> indicate moderate stock levels (between 41-60 units)</li>
+            <li><span className="text-red-500">Red bars</span> indicate low stock levels (40 units or below)</li>
+          </ul>
+          <p>Hover over any bar to see the exact quantity for that product.</p>
+        </div>
+      )
+    },
+    turnover: {
+      title: "Understanding Inventory Turnover",
+      content: (
+        <div className="space-y-4">
+          <p>The area chart displays inventory turnover rates throughout the year:</p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li>Higher peaks indicate faster inventory movement</li>
+            <li>Lower valleys show slower turnover periods</li>
+            <li>The blue gradient helps visualize the intensity of turnover activity</li>
+          </ul>
+          <p>A higher turnover rate generally indicates efficient inventory management and strong sales performance.</p>
+        </div>
+      )
+    },
+    stockLog: {
+      title: "About the Stock Movement Log",
+      content: (
+        <div className="space-y-4">
+          <p>The stock movement log tracks all inventory transactions:</p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li>Product: The item being transferred</li>
+            <li>From/To: Source and destination locations</li>
+            <li>Qty: Number of units moved</li>
+            <li>Date: When the transfer occurred</li>
+            <li>Status: Current state of the transfer</li>
+          </ul>
+          <p>Use the month selector to filter movements by specific time periods.</p>
+        </div>
+      )
+    }
+  };
+
+  // Sample turnover data - replace with actual data later
+  const turnoverData = [
+    { name: 'Jan', value: 0 },
+    { name: 'Feb', value: 0 },
+    { name: 'Mar', value: 0 },
+    { name: 'Apr', value: 0.001 },
+    { name: 'May', value: 0.045 },
+    { name: 'Jun', value: 0.015 },
+    { name: 'Jul', value: 0 },
+    { name: 'Aug', value: 0 },
+    { name: 'Sep', value: 0 },
+    { name: 'Oct', value: 0 },
+    { name: 'Nov', value: 0 },
+    { name: 'Dec', value: 0 }
+  ];
+
   useEffect(() => {
     const unsubscribe = listenToProducts(setProduct);
     return () => unsubscribe();
@@ -47,6 +125,36 @@ const IMDashboard = () => {
       color,
     };
   });
+
+  // Custom tooltip for the bar chart
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white p-3 shadow-lg rounded-lg border border-gray-100">
+          <p className="font-medium text-sm">{label}</p>
+          <p className="text-sm text-blue-600">
+            <span className="font-semibold">{payload[0].value}</span> items
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Custom tooltip for the area chart
+  const TurnoverTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white p-3 shadow-lg rounded-lg border border-gray-100">
+          <p className="font-medium text-sm">{label}</p>
+          <p className="text-sm text-blue-600">
+            <span className="font-semibold">{payload[0].value.toFixed(3)}</span>
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
 
   const stockMovements = [];
   
@@ -138,16 +246,92 @@ const IMDashboard = () => {
           <h3 className="text-lg sm:text-xl text-gray-800 font-semibold">
             Glory Star Hardware
           </h3>
+          <button
+            onClick={() => setActiveModal('inventory')}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            title="How to read this chart"
+          >
+            <FiInfo className="w-5 h-5 text-gray-500" />
+          </button>
         </div>
-        <DashboardBarChart data={chartData} />
+        <DashboardBarChart data={chartData} CustomTooltip={CustomTooltip} />
+      </div>
+
+      {/* Inventory Turnover Chart */}
+      <div className="bg-white rounded-xl shadow-sm mb-6 p-4 sm:p-5 border border-gray-100">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="text-lg sm:text-xl text-gray-800 font-semibold">
+            Inventory Turnover
+          </h3>
+          <button
+            onClick={() => setActiveModal('turnover')}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            title="How to read this chart"
+          >
+            <FiInfo className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <div className="h-[300px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart
+              data={turnoverData}
+              margin={{ top: 20, right: 20, left: 10, bottom: 20 }}
+            >
+              <defs>
+                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f1f1" />
+              <XAxis
+                dataKey="name"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: '#888', fontSize: 11 }}
+              />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: '#888', fontSize: 11 }}
+                domain={[0, 'auto']}
+              />
+              <Tooltip content={TurnoverTooltip} />
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke="#3b82f6"
+                fillOpacity={1}
+                fill="url(#colorValue)"
+                strokeWidth={2}
+                dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }}
+                activeDot={{
+                  r: 6,
+                  fill: '#3b82f6',
+                  strokeWidth: 2,
+                  stroke: '#fff',
+                }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* Stock Movement Log */}
       <div className="bg-white rounded-xl shadow-sm p-4 sm:p-5 border border-gray-100">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
-          <h3 className="text-lg sm:text-xl font-semibold text-gray-800">
-            Stock Log
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg sm:text-xl font-semibold text-gray-800">
+              Stock Log
+            </h3>
+            <button
+              onClick={() => setActiveModal('stockLog')}
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              title="About the stock log"
+            >
+              <FiInfo className="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
           <div className="relative w-full sm:w-auto">
             <select
               className="w-full sm:w-auto appearance-none bg-white border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 text-sm"
@@ -224,6 +408,26 @@ const IMDashboard = () => {
           </table>
         </div>
       </div>
+
+      {/* Info Modals */}
+      <InfoModal
+        isOpen={activeModal === 'inventory'}
+        onClose={() => setActiveModal(null)}
+        title={chartInfo.inventory.title}
+        content={chartInfo.inventory.content}
+      />
+      <InfoModal
+        isOpen={activeModal === 'turnover'}
+        onClose={() => setActiveModal(null)}
+        title={chartInfo.turnover.title}
+        content={chartInfo.turnover.content}
+      />
+      <InfoModal
+        isOpen={activeModal === 'stockLog'}
+        onClose={() => setActiveModal(null)}
+        title={chartInfo.stockLog.title}
+        content={chartInfo.stockLog.content}
+      />
     </div>
   );
 };

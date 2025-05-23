@@ -8,6 +8,7 @@ import {
 } from 'react-router-dom';
 import { useAuth, AuthProvider } from './features/auth/services/FirebaseAuth';
 import { ServicesProvider } from './services/firebase/ProductServices';
+import { AnalyticsService } from './services/firebase/AnalyticsService';
 
 // Auth
 import Login from './auth/Login';
@@ -289,14 +290,29 @@ const AppRoutes = () => {
   );
 };
 
-const App = () => (
-  <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-    <AuthProvider>
-      <ServicesProvider>
-        <AppRoutes />
-      </ServicesProvider>
-    </AuthProvider>
-  </Router>
-);
+const App = () => {
+  useEffect(() => {
+    // Check and create daily analytics records when app starts
+    const checkDailyAnalytics = async () => {
+      try {
+        await AnalyticsService.checkAndCreateDailyRecords();
+      } catch (error) {
+        console.error('Error checking daily analytics:', error);
+      }
+    };
+
+    checkDailyAnalytics();
+  }, []); // Run once when app starts
+
+  return (
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <AuthProvider>
+        <ServicesProvider>
+          <AppRoutes />
+        </ServicesProvider>
+      </AuthProvider>
+    </Router>
+  );
+};
 
 export default App;

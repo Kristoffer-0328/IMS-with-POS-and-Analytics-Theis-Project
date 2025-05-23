@@ -28,8 +28,7 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-
-const DashboardBarChart = ({ data }) => {
+const DashboardBarChart = ({ data, CustomTooltip }) => {
   return (
     <div className="w-full h-[280px] relative">
       {/* Background Effects */}
@@ -70,7 +69,7 @@ const DashboardBarChart = ({ data }) => {
             dx={-5}
           />
           <Tooltip
-            content={<CustomTooltip />}
+            content={CustomTooltip}
             position={{ y: 0 }} // disable cursor following
             cursor={{ fill: 'rgba(0, 0, 0, 0.04)' }}
             wrapperStyle={{ pointerEvents: 'none' }} // make sure it doesn't interfere with hover
