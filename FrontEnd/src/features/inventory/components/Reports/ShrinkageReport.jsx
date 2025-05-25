@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { FiFileText } from 'react-icons/fi';
 
-const ShrinkageReport = ({ onBack }) => {
-  return (
-    <div className="w-full">
+const ShrinkageReportModalContent = ({ onClose }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+    <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full p-6 relative">
+      <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+      {/* Original Shrinkage Report UI */}
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">
@@ -14,13 +16,11 @@ const ShrinkageReport = ({ onBack }) => {
           </p>
         </div>
         <button
-          onClick={onBack}
+          onClick={onClose}
           className="px-4 py-2 bg-white border border-gray-200 rounded-md text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 transition-colors flex items-center gap-2">
           Back to Reports
         </button>
       </div>
-
-      {/* Placeholder for Shrinkage & Adjustment report content */}
       <div className="bg-white rounded-lg shadow-sm p-8 border border-gray-100 text-center">
         <FiFileText size={64} className="mx-auto mb-4 text-indigo-500" />
         <h2 className="text-xl font-semibold mb-2">
@@ -32,6 +32,26 @@ const ShrinkageReport = ({ onBack }) => {
         </button>
       </div>
     </div>
+  </div>
+);
+
+const ShrinkageReport = () => {
+  const [showModal, setShowModal] = useState(false);
+  return (
+    <>
+      <div className='w-full flex justify-center items-center' style={{ minHeight: '200px' }}>
+        <h1 className='text-2xl font-bold text-gray-800'>Not implemented yet</h1>
+      </div>
+      <div className="fixed bottom-20 right-4 z-50">
+        <button
+          onClick={() => setShowModal(true)}
+          className="px-4 py-2 bg-blue-600 text-white rounded-md shadow-lg hover:bg-blue-700 transition-colors"
+        >
+          Show UI Preview
+        </button>
+      </div>
+      {showModal && <ShrinkageReportModalContent onClose={() => setShowModal(false)} />}
+    </>
   );
 };
 

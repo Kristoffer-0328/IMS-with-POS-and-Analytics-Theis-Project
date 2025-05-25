@@ -28,16 +28,10 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
     const [specifications, setSpecifications] = useState('');
     const [storageType, setStorageType] = useState('Goods');
     const [maximumStockLevel, setMaximumStockLevel] = useState('');
-    const [selectedSupplier, setSelectedSupplier] = useState(null);
     const [size, setSize] = useState('');
-    const [supplier, setSupplier] = useState({
-        name: '',
-        code: '',
-        address: '',
-        contactPerson: '',
-        phone: '',
-        email: ''
-    });
+    const [supplierName, setSupplierName] = useState('');
+    const [supplierCode, setSupplierCode] = useState('');
+
     
     useEffect(() => {
         if (selectedCategory?.name) {
@@ -140,37 +134,50 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
     };
 
     const handleAddProduct = async () => {
+        // Validate required fields
+        if (!productName || !brand || !quantity || !unitPrice) {
+            alert('Please fill in all required fields: Product Name, Brand, Quantity, and Unit Price');
+            return;
+        }
+
         const productData = {
-            name: productName,
-            quantity: Number(quantity),
-            unitPrice: Number(unitPrice),
-            category: selectedCategory,
-            location,
-            unit,
-            brand,
-            size: size || 'default',
-            specifications,
-            storageType,
-            maximumStockLevel: Number(maximumStockLevel),
-            restockLevel: Number(restockLevel),
+            name: productName.trim(),
+            quantity: Number(quantity) || 0,
+            unitPrice: Number(unitPrice) || 0,
+            category: selectedCategory.name,
+            location: location || 'STR A1',
+            unit: unit || 'pcs',
+            brand: brand.trim(),
+            size: size?.trim() || 'default',
+            specifications: specifications?.trim() || '',
+            storageType: storageType || 'Goods',
+            maximumStockLevel: Number(maximumStockLevel) || 0,
+            restockLevel: Number(restockLevel) || 0,
             dateStocked: dateStocked || new Date().toISOString().split('T')[0],
-            imageUrl: productImage,
-            categoryValues: categoryValues,
-            supplierId: selectedSupplier?.id,
-            supplierCode: selectedSupplier?.code,
-            supplier: supplier,
+            imageUrl: productImage || null,
+            categoryValues: categoryValues || {},
+            supplier: {
+                name: supplierName?.trim() || 'Unknown',
+                code: supplierCode?.trim() || ''
+            },
             customFields: additionalFields.reduce((acc, field) => ({
                 ...acc,
-                [field.name]: field.value
-            }), {})
+                [field.name]: field.value || ''
+            }), {}),
+            createdAt: new Date().toISOString(),
+            lastUpdated: new Date().toISOString()
         };
 
         try {
             const db = getFirestore(app);
             const newProduct = ProductFactory.createProduct(productData);
-            const productId = ProductFactory.generateProductId(newProduct.name, selectedCategory.name, brand);
+            const productId = ProductFactory.generateProductId(productData.name, selectedCategory.name, productData.brand);
+            
+            // Remove any undefined values
+            const cleanProduct = JSON.parse(JSON.stringify(newProduct));
+
             const productRef = doc(db, 'Products', selectedCategory.name, 'Items', productId);
-            await setDoc(productRef, newProduct);
+            await setDoc(productRef, cleanProduct);
 
             alert('Product added successfully!');
             onClose();
@@ -450,35 +457,28 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
 
                     <div className="space-y-2 md:col-span-2">
                         <h3 className="font-medium text-gray-900">Supplier Information</h3>
-                        <SupplierSelector
-                            onSelect={handleSupplierSelect}
-                            selectedSupplierId={selectedSupplier?.id}
-                        />
-                        
-                        {selectedSupplier && (
-                            <div className="mt-4 bg-gray-50 p-4 rounded-lg">
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                    <div>
-                                        <span className="font-medium">Name:</span> {selectedSupplier.name}
-                                    </div>
-                                    <div>
-                                        <span className="font-medium">Code:</span> {selectedSupplier.code}
-                                    </div>
-                                    <div>
-                                        <span className="font-medium">Contact:</span> {selectedSupplier.contactPerson}
-                                    </div>
-                                    <div>
-                                        <span className="font-medium">Phone:</span> {selectedSupplier.phone}
-                                    </div>
-                                    <div>
-                                        <span className="font-medium">Email:</span> {selectedSupplier.email}
-                                    </div>
-                                    <div className="col-span-2">
-                                        <span className="font-medium">Address:</span> {selectedSupplier.address}
-                                    </div>
-                                </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">Supplier Name</label>
+                                <input
+                                    type="text"
+                                    value={supplierName}
+                                    onChange={(e) => setSupplierName(e.target.value)}
+                                    placeholder="Enter supplier name"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
                             </div>
-                        )}
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">Supplier Code</label>
+                                <input
+                                    type="text"
+                                    value={supplierCode}
+                                    onChange={(e) => setSupplierCode(e.target.value)}
+                                    placeholder="Enter supplier code"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                            </div>
+                        </div>
                     </div>
                 </div>
 

@@ -2,12 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { getFirestore, collection, getDocs } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
 
-const SupplierSelector = ({ onSelect, selectedSupplierId }) => {
+const SupplierSelector = ({ onSelect, selectedSupplierId, suppliers: propSuppliers }) => {
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const db = getFirestore(app);
 
   useEffect(() => {
+    if (propSuppliers && Array.isArray(propSuppliers)) {
+      setSuppliers(propSuppliers);
+      setLoading(false);
+      return;
+    }
     const fetchSuppliers = async () => {
       try {
         const suppliersRef = collection(db, 'suppliers');
@@ -29,7 +34,7 @@ const SupplierSelector = ({ onSelect, selectedSupplierId }) => {
     };
 
     fetchSuppliers();
-  }, []);
+  }, [propSuppliers]);
 
   const handleSupplierChange = (e) => {
     const selectedSupplier = suppliers.find(s => s.id === e.target.value);
@@ -37,8 +42,8 @@ const SupplierSelector = ({ onSelect, selectedSupplierId }) => {
       // Ensure the supplier object has all necessary fields
       const enhancedSupplier = {
         ...selectedSupplier,
-        // If code is missing, use ID as fallback
-        code: selectedSupplier.code || selectedSupplier.id,
+        // If primaryCode is missing, use code as fallback, then ID
+        primaryCode: selectedSupplier.primaryCode || selectedSupplier.code || selectedSupplier.id,
         // Ensure other required fields exist
         name: selectedSupplier.name || 'Unknown Supplier',
         address: selectedSupplier.address || '',
@@ -71,7 +76,7 @@ const SupplierSelector = ({ onSelect, selectedSupplierId }) => {
       <option value="">-- Select Supplier --</option>
       {suppliers.map(supplier => (
         <option key={supplier.id} value={supplier.id}>
-          {supplier.name} ({supplier.code})
+          {supplier.name} ({supplier.primaryCode || supplier.code})
         </option>
       ))}
     </select>

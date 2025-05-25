@@ -8,6 +8,9 @@ import {
   runTransaction,
   serverTimestamp,
   getDoc,
+  query,
+  where,
+  getDocs,
 } from 'firebase/firestore';
 import app from  '../../../FirebaseConfig';
 import { useAuth } from '../../auth/services/FirebaseAuth';
@@ -412,15 +415,22 @@ useEffect(() => {
         return;
     }
 
-    // Check if product has multiple unit options
-    const uniqueUnits = new Set(productGroup.variants.map(v => v.unit));
+    // Check if variants have different sizes/units (ignoring brand differences)
+    const uniqueSizeUnits = new Set(productGroup.variants.map(v => `${v.size || ''}|${v.unit || ''}`));
+    const hasSizeOrUnitVariants = uniqueSizeUnits.size > 1;
     
-    if (uniqueUnits.size > 1) {
-        // Show unit conversion modal if multiple units available
-        setSelectedProductForUnitModal(productGroup);
-        setUnitConversionModalOpen(true);
-    } else if (productGroup.hasVariants && productGroup.variants.length > 1) {
-        // Show variant selection modal if multiple variants but same unit
+    // Check if variants have different brands
+    const uniqueBrands = new Set(productGroup.variants.map(v => v.brand));
+    const hasBrandVariants = uniqueBrands.size > 1;
+
+    if (hasSizeOrUnitVariants) {
+        // Show variant selection modal if there are different sizes/units
+        setQuantity(1);
+        setSelectedProductForModal(productGroup);
+        setActiveVariantIndex(0);
+        setVariantModalOpen(true);
+    } else if (hasBrandVariants) {
+        // Show variant selection modal for different brands
         setQuantity(1);
         setSelectedProductForModal(productGroup);
         setActiveVariantIndex(0);
@@ -438,7 +448,7 @@ useEffect(() => {
         // Show quick quantity modal for single variant products
         setSelectedProductForQuantity({
             ...productGroup,
-            maxAvailableQty: availableQty // Add this property
+            maxAvailableQty: availableQty
         });
         setQuickQuantityModalOpen(true);
     }
@@ -680,61 +690,124 @@ useEffect(() => {
                 });
 
                 if (restockLevel > 0 && newQuantity <= restockLevel) {
-                    const timestamp = Date.now();
-                    // Create document references using doc()
-                    const notificationRef = doc(db, 'Notifications', `Notify-${item.category}-${item.baseProductId}-${timestamp}`);
-                    const restockRequestRef = doc(db, 'RestockRequests', `Restock-${item.category}-${item.baseProductId}-${timestamp}`);
+                    // Create a deterministic restock request ID for the product
+                    const restockRequestId = `Restock-${item.category}-${item.baseProductId}-active`;
+                    const restockRequestRef = doc(db, 'RestockRequests', restockRequestId);
+                    
+                    // Get the existing restock request document
+                    const existingRestockDoc = await transaction.get(restockRequestRef);
 
-                    // Get supplier information from product data
-                    const supplier = productData.supplier || productData.variants?.[variantIndex]?.supplier;
-                    const supplierCode = productData.supplierCode || productData.variants?.[variantIndex]?.supplierCode;
+                    // Only create new restock request if none exists or if existing one is not pending
+                    if (!existingRestockDoc.exists() || existingRestockDoc.data().status !== 'pending') {
+                        const timestamp = Date.now();
+                        // Create notification reference
+                        const notificationRef = doc(db, 'Notifications', `Notify-${item.category}-${item.baseProductId}-${timestamp}`);
+                        
+                        // Get the supplier reference from the product
+                        const productSupplierRef = productData.supplier?.code;
+                        let supplierData = null;
 
-                    const notificationData = {
-                        message: `Low stock alert for ${item.name}`,
-                        productId: item.baseProductId,
-                        variantId: item.variantId,
-                        currentQuantity: newQuantity,
-                        restockLevel: restockLevel,
-                        maximumStockLevel: maximumStockLevel,
-                        category: item.category,
-                        productName: item.name,
-                        status: 'pending',
-                        timestamp: serverTimestamp(),
-                        type: 'restock_alert',
-                        createdAt: new Date().toISOString(),
-                        // Add supplier information
-                        supplier: supplier || null,
-                        supplierCode: supplierCode || null
-                    };
+                        // Only try to fetch supplier if we have a reference
+                        if (productSupplierRef) {
+                            try {
+                                // Get all suppliers first since we need to check supplierCodes array
+                                const suppliersRef = collection(db, 'suppliers');
+                                const allSuppliersSnapshot = await getDocs(suppliersRef);
+                                
+                                // Look for a supplier that has this code in their supplierCodes array
+                                const matchingSupplier = allSuppliersSnapshot.docs.find(doc => {
+                                    const data = doc.data();
+                                    return data.supplierCodes?.some(sc => sc.code === productSupplierRef);
+                                });
 
-                    notificationWrites.push({
-                        ref: notificationRef,
-                        data: notificationData
-                    });
-
-                    restockWrites.push({
-                        ref: restockRequestRef,
-                        data: {
-                            ...notificationData,
-                            requestedQuantity: maximumStockLevel - newQuantity,
-                            type: 'restock_request',
-                            productId: item.baseProductId,
-                            // Ensure supplier information is included
-                            supplier: supplier || null,
-                            supplierCode: supplierCode || null
+                                if (matchingSupplier) {
+                                    supplierData = {
+                                        id: matchingSupplier.id,
+                                        ...matchingSupplier.data()
+                                    };
+                                    console.log('Found supplier by product code:', {
+                                        productName: item.name,
+                                        supplierName: supplierData.name,
+                                        matchedCode: productSupplierRef,
+                                        matchedSupplierCode: matchingSupplier.data().supplierCodes.find(sc => sc.code === productSupplierRef)
+                                    });
+                                } else {
+                                    console.warn('Supplier not found:', {
+                                        productId: item.baseProductId,
+                                        productName: item.name,
+                                        searchedCode: productSupplierRef
+                                    });
+                                }
+                            } catch (error) {
+                                console.error('Error fetching supplier:', error);
+                            }
+                        } else {
+                            console.warn('No supplier reference in product:', {
+                                productId: item.baseProductId,
+                                productName: item.name
+                            });
                         }
-                    });
 
-                    // Debug log
-                    console.log('Created Restock Request:', {
-                        productName: item.name,
-                        currentQuantity: newQuantity,
-                        restockLevel,
-                        maximumStockLevel,
-                        requestedQuantity: maximumStockLevel - newQuantity,
-                        supplier,
-                        supplierCode
-                    });
+                        if (!supplierData) {
+                            console.error('Failed to find supplier for product:', {
+                                productName: item.name,
+                                searchedCode: productSupplierRef
+                            });
+                            // Don't proceed with restock request if we can't find the supplier
+                            continue;
+                        }
+
+                        const notificationData = {
+                            message: `Low stock alert for ${item.name}`,
+                            productId: item.baseProductId,
+                            variantId: item.variantId,
+                            currentQuantity: newQuantity,
+                            restockLevel: restockLevel,
+                            maximumStockLevel: maximumStockLevel,
+                            category: item.category,
+                            productName: item.name,
+                            status: 'pending',
+                            timestamp: serverTimestamp(),
+                            type: 'restock_alert',
+                            createdAt: new Date().toISOString(),
+                            // Add supplier information - use primaryCode or code as fallback
+                            supplierName: supplierData.name,
+                            supplierCode: supplierData.primaryCode || supplierData.code,
+                            // Add the product-specific supplier code as well
+                            productSupplierCode: productSupplierRef
+                        };
+
+                        notificationWrites.push({
+                            ref: notificationRef,
+                            data: notificationData
+                        });
+
+                        restockWrites.push({
+                            ref: restockRequestRef,
+                            data: {
+                                ...notificationData,
+                                requestedQuantity: maximumStockLevel - newQuantity,
+                                type: 'restock_request',
+                                productId: item.baseProductId,
+                                supplier: {
+                                    ...supplierData,
+                                    // Ensure we include both the primary code and the product-specific code
+                                    primaryCode: supplierData.primaryCode || supplierData.code,
+                                    productCode: productSupplierRef
+                                },
+                                variantId: item.variantId
+                            }
+                        });
+
+                        // Debug log
+                        console.log('Creating restock request:', {
+                            productName: item.name,
+                            supplier: supplierData,
+                            requestedQuantity: maximumStockLevel - newQuantity
+                        });
+                    } else {
+                        console.log(`Skipping restock request creation for ${item.name} - existing pending request found`);
+                    }
                 }
             }
 

@@ -20,6 +20,7 @@ import {
 import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import DashboardBarChart from '../components/Dashboard/DashboardBarChart';
 import InfoModal from '../components/Dashboard/InfoModal';
+import InventoryTrendChart from '../components/Inventory/InventoryTrendChart';
 import { useServices } from '../../../services/firebase/ProductServices';
 
 const IMDashboard = () => {
@@ -114,11 +115,9 @@ const IMDashboard = () => {
   
   const chartData = products.map((p) => {
     let color = '#4779FF';
-    if (p.quantity <= 40) {
-      color = '#FF4D4D';
-    } else if (p.quantity <= 60) {
-      color = '#FFC554';
-    }
+    if (p.quantity < p.restockLevel) color = '#FF4D4D';
+    else if (p.quantity <= 40) color = '#FFC554';
+
     return {
       name: p.name,
       value: p.quantity,
@@ -272,48 +271,7 @@ const IMDashboard = () => {
           </button>
         </div>
         <div className="h-[300px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
-              data={turnoverData}
-              margin={{ top: 20, right: 20, left: 10, bottom: 20 }}
-            >
-              <defs>
-                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f1f1" />
-              <XAxis
-                dataKey="name"
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: '#888', fontSize: 11 }}
-              />
-              <YAxis
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: '#888', fontSize: 11 }}
-                domain={[0, 'auto']}
-              />
-              <Tooltip content={TurnoverTooltip} />
-              <Area
-                type="monotone"
-                dataKey="value"
-                stroke="#3b82f6"
-                fillOpacity={1}
-                fill="url(#colorValue)"
-                strokeWidth={2}
-                dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }}
-                activeDot={{
-                  r: 6,
-                  fill: '#3b82f6',
-                  strokeWidth: 2,
-                  stroke: '#fff',
-                }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+         <InventoryTrendChart />
         </div>
       </div>
 

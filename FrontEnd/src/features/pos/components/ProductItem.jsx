@@ -35,6 +35,12 @@ function ProductItem({ product, onAddProduct, disabled }) {
     ? `₱${minPrice.toFixed(2)}`
     : `₱${minPrice.toFixed(2)} - ₱${maxPrice.toFixed(2)}`;
 
+  // Check if variants are actually different units/sizes rather than just different brands
+  const hasUnitVariants = product.variants.some((variant, idx, arr) => {
+    if (idx === 0) return false;
+    return variant.unit !== arr[0].unit || variant.size !== arr[0].size;
+  });
+
   return (
     <div
       className={`group bg-white rounded-xl shadow-sm border border-gray-200 hover:border-orange-200 p-4 flex flex-col 
@@ -63,36 +69,41 @@ function ProductItem({ product, onAddProduct, disabled }) {
           onError={handleImageError}
           loading="lazy"
         />
-        {product.hasVariants && product.variants.length > 0 && (
+        {hasUnitVariants && (
           <div className="absolute bottom-1 right-1 bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 text-xs font-medium text-gray-600 flex items-center gap-1">
             <FiPackage size={12} />
-            {product.variants.length} options
+            {product.variants.length} sizes
           </div>
         )}
       </div>
 
       {/* Details */}
       <div className="flex-1 mb-3 space-y-2">
-        <h3 className="font-medium text-gray-800 line-clamp-2 group-hover:text-orange-600 transition-colors" 
-            title={product.name}>
-          {product.name || 'Unnamed Product'}
-        </h3>
+        <div>
+          <h3 className="font-medium text-gray-800 line-clamp-2 group-hover:text-orange-600 transition-colors" 
+              title={product.name}>
+            {product.name || 'Unnamed Product'}
+          </h3>
+          {product.brand && (
+            <p className="text-sm text-gray-500">{product.brand}</p>
+          )}
+        </div>
         
         <div className="flex items-baseline gap-2">
           <p className={`text-lg font-bold ${minPrice > 0 ? 'text-green-600' : 'text-gray-400'}`}>
             {minPrice > 0 ? priceDisplay : 'N/A'}
           </p>
-          {minPrice !== maxPrice && (
-            <span className="text-xs text-gray-400">Multiple prices</span>
+          {minPrice !== maxPrice && hasUnitVariants && (
+            <span className="text-xs text-gray-400">Multiple sizes</span>
           )}
         </div>
 
         <p className={`text-sm flex items-center gap-1.5 
           ${isOutOfStock ? 'text-red-500' : totalStock <= 5 ? 'text-amber-600' : 'text-gray-500'}`}
         >
-          <span className="inline-block w-2 h-2 rounded-full 
-            ${isOutOfStock ? 'bg-red-500' : totalStock <= 5 ? 'bg-amber-500' : 'bg-green-500'}"
-          />
+          <span className={`inline-block w-2 h-2 rounded-full ${
+            isOutOfStock ? 'bg-red-500' : totalStock <= 5 ? 'bg-amber-500' : 'bg-green-500'
+          }`} />
           {isOutOfStock ? 'Out of stock' : `${totalStock} in stock`}
         </p>
       </div>
@@ -110,9 +121,7 @@ function ProductItem({ product, onAddProduct, disabled }) {
       >
         <FiShoppingCart size={16} />
         <span>
-          {product.hasVariants && product.variants.length > 0 
-            ? 'Select Options' 
-            : 'Add to Cart'}
+          {hasUnitVariants ? 'Select Size' : 'Add to Cart'}
         </span>
       </button>
     </div>

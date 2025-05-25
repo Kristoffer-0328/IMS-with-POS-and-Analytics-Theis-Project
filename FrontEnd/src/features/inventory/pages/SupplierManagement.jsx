@@ -11,7 +11,7 @@ const SupplierManagement = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showProductsModal, setShowProductsModal] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
-  const [viewMode, setViewMode] = useState('table'); // 'table' or 'card'
+  const [viewMode, setViewMode] = useState('card'); // 'table' or 'card'
 
   useEffect(() => {
     loadSuppliers();
@@ -74,7 +74,7 @@ const SupplierManagement = () => {
         <thead className="bg-gray-50">
           <tr>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Primary Code</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact Person</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
@@ -86,7 +86,7 @@ const SupplierManagement = () => {
           {suppliers.map((supplier) => (
             <tr key={supplier.id} className="hover:bg-gray-50">
               <td className="px-6 py-4 text-sm text-gray-900">{supplier.name}</td>
-              <td className="px-6 py-4 text-sm text-gray-500">{supplier.code}</td>
+              <td className="px-6 py-4 text-sm text-gray-500">{supplier.primaryCode || supplier.code}</td>
               <td className="px-6 py-4 text-sm text-gray-900">{supplier.contactPerson}</td>
               <td className="px-6 py-4 text-sm text-gray-500">{supplier.phone}</td>
               <td className="px-6 py-4 text-sm text-gray-500">{supplier.email}</td>
@@ -133,8 +133,8 @@ const SupplierManagement = () => {
         <div key={supplier.id} className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">{supplier.name}</h2>
-              <p className="text-sm text-gray-500">Code: {supplier.code}</p>
+              <h4 className="text-sm font-medium inline-block px-2 py-1 bg-yellow-100 rounded-md text-gray-900">{supplier.name}</h4>
+              <p className="text-sm text-gray-500 mt-2">Primary Code: {supplier.primaryCode || supplier.code}</p>
             </div>
             <span className={`px-2 py-1 text-xs font-medium rounded-full ${
               supplier.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'

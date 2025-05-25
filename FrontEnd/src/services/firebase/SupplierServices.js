@@ -22,7 +22,7 @@ export const useSupplierServices = () => {
   const createSupplier = async (supplierData) => {
     try {
       // Validate required fields
-      const requiredFields = ['name', 'code', 'address', 'contactPerson', 'phone', 'email'];
+      const requiredFields = ['name', 'primaryCode', 'address', 'contactPerson', 'phone', 'email'];
       const missingFields = requiredFields.filter(field => !supplierData[field]);
       
       if (missingFields.length > 0) {
@@ -31,7 +31,7 @@ export const useSupplierServices = () => {
 
       const newSupplier = {
         name: supplierData.name,
-        code: supplierData.code,
+        primaryCode: supplierData.primaryCode,
         address: supplierData.address,
         contactPerson: supplierData.contactPerson,
         phone: supplierData.phone,
@@ -54,7 +54,7 @@ export const useSupplierServices = () => {
   const updateSupplier = async (supplierId, updateData) => {
     try {
       // Validate update data
-      const allowedFields = ['name', 'code', 'address', 'contactPerson', 'phone', 'email', 'status', 'supplierCodes'];
+      const allowedFields = ['name', 'primaryCode', 'address', 'contactPerson', 'phone', 'email', 'status', 'supplierCodes'];
       const invalidFields = Object.keys(updateData).filter(field => !allowedFields.includes(field));
       
       if (invalidFields.length > 0) {

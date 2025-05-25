@@ -40,7 +40,7 @@ const PurchaseOrders = () => {
   // Filter POs
   const filteredPOs = purchaseOrders.filter(po => {
     if (selectedStatus !== 'all' && po.status !== selectedStatus) return false;
-    if (selectedSupplier !== 'all' && po.supplierId !== selectedSupplier) return false;
+    if (selectedSupplier !== 'all' && (po.supplierPrimaryCode || po.supplierId) !== selectedSupplier) return false;
     if (dateRange.start && new Date(po.createdAt?.toDate()) < new Date(dateRange.start)) return false;
     if (dateRange.end && new Date(po.createdAt?.toDate()) > new Date(dateRange.end)) return false;
     return true;
@@ -48,7 +48,10 @@ const PurchaseOrders = () => {
 
   // Get unique suppliers for filter
   const suppliers = [...new Set(purchaseOrders.map(po => 
-    JSON.stringify({ id: po.supplierId, name: po.supplierName })
+    JSON.stringify({ 
+      id: po.supplierPrimaryCode || po.supplierId, 
+      name: `${po.supplierName} (${po.supplierPrimaryCode || po.supplierId})`
+    })
   ))].map(str => JSON.parse(str));
 
   // Status badge renderer
@@ -241,7 +244,7 @@ const PurchaseOrders = () => {
                       {po.poNumber}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {po.supplierName}
+                      {po.supplierName} ({po.supplierPrimaryCode || po.supplierId})
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       ₱{po.totalAmount?.toLocaleString()}

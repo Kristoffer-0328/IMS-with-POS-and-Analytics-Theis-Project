@@ -31,7 +31,7 @@ const SupplierSelector = ({ onSelect, selectedSupplierId }) => {
 
     const filteredSuppliers = suppliers.filter(supplier =>
         supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        supplier.code.toLowerCase().includes(searchTerm.toLowerCase())
+        (supplier.primaryCode || supplier.code).toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     const handleSupplierSelect = (supplier) => {
@@ -85,7 +85,7 @@ const SupplierSelector = ({ onSelect, selectedSupplierId }) => {
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <h4 className="text-sm font-medium text-gray-900">{supplier.name}</h4>
-                                        <p className="text-sm text-gray-500">Code: {supplier.code}</p>
+                                        <p className="text-sm text-gray-500">Primary Code: {supplier.primaryCode || supplier.code}</p>
                                     </div>
                                     <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                                         supplier.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'

@@ -49,12 +49,18 @@ export default function VariantSelectionModal({
     return qty === '' ? 0 : parseInt(qty);
   };
 
+  // Check if variants have different sizes/units
+  const hasSizeOrUnitVariants = new Set(product.variants.map(v => `${v.size || ''}|${v.unit || ''}`)).size > 1;
+  const hasBrandVariants = new Set(product.variants.map(v => v.brand)).size > 1;
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg w-[400px] mx-4">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
-          <h3 className="text-lg font-medium">Select Quantity</h3>
+          <h3 className="text-lg font-medium">
+            {hasSizeOrUnitVariants ? 'Select Size' : 'Select Brand'}
+          </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
             <FiX size={20} />
           </button>
@@ -65,7 +71,36 @@ export default function VariantSelectionModal({
           <div className="mb-4">
             <p className="text-gray-600 mb-1">Product:</p>
             <p className="font-medium">{product.name}</p>
-            <p className="text-gray-600 mt-1">Available Stock: {maxQty}</p>
+          </div>
+
+          {/* Variant Selection */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            {product.variants.map((variant, index) => (
+              <button
+                key={variant.variantId}
+                onClick={() => setActiveVariantIndex(index)}
+                className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-all ${
+                  activeVariantIndex === index
+                    ? 'border-orange-500 bg-orange-50'
+                    : 'border-gray-200 hover:border-orange-200'
+                }`}
+              >
+                <div className="text-center">
+                  {hasBrandVariants && (
+                    <p className="font-medium text-gray-900 mb-1">{variant.brand || 'Generic'}</p>
+                  )}
+                  {hasSizeOrUnitVariants && (
+                    <p className="text-sm text-gray-600">
+                      {variant.size && `${variant.size} `}{variant.unit || 'pcs'}
+                    </p>
+                  )}
+                  <p className="text-sm font-medium text-orange-600 mt-1">
+                    ₱{formatCurrency(variant.price)}
+                  </p>
+                  <p className="text-xs text-gray-500">Stock: {variant.quantity}</p>
+                </div>
+              </button>
+            ))}
           </div>
 
           {/* Quick Select */}
@@ -119,7 +154,14 @@ export default function VariantSelectionModal({
           </div>
 
           {/* Price Summary */}
-          <div>
+          <div className="bg-gray-50 rounded-lg p-3">
+            <div className="flex justify-between py-1">
+              <span className="text-gray-600">Selected {hasBrandVariants ? 'Brand' : 'Size'}:</span>
+              <span className="font-medium">
+                {hasBrandVariants ? activeVariant?.brand || 'Generic' : 
+                  `${activeVariant?.size || ''} ${activeVariant?.unit || 'pcs'}`.trim()}
+              </span>
+            </div>
             <div className="flex justify-between py-1">
               <span className="text-gray-600">Price per {activeVariant?.unit || 'pcs'}:</span>
               <span>₱{formatCurrency(activeVariant?.price || 0)}</span>
@@ -128,7 +170,7 @@ export default function VariantSelectionModal({
               <span className="text-gray-600">Quantity:</span>
               <span>{qty || 0} {activeVariant?.unit || 'pcs'}</span>
             </div>
-            <div className="flex justify-between py-1 text-orange-500 font-medium">
+            <div className="flex justify-between py-1 text-orange-500 font-medium mt-2 pt-2 border-t">
               <span>Total:</span>
               <span>₱{formatCurrency((activeVariant?.price || 0) * getCurrentQuantity())}</span>
             </div>

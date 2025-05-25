@@ -7,7 +7,7 @@ const EditSupplierModal = ({ supplier, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
-    code: '',
+    primaryCode: '',
     address: '',
     contactPerson: '',
     phone: '',
@@ -21,7 +21,7 @@ const EditSupplierModal = ({ supplier, onClose }) => {
     if (supplier) {
       setFormData({
         name: supplier.name || '',
-        code: supplier.code || '',
+        primaryCode: supplier.primaryCode || supplier.code || '',
         address: supplier.address || '',
         contactPerson: supplier.contactPerson || '',
         phone: supplier.phone || '',
@@ -139,8 +139,8 @@ const EditSupplierModal = ({ supplier, onClose }) => {
               </label>
               <input
                 type="text"
-                name="code"
-                value={formData.code}
+                name="primaryCode"
+                value={formData.primaryCode}
                 onChange={handleChange}
                 required
                 className="w-full border rounded-lg px-3 py-2"

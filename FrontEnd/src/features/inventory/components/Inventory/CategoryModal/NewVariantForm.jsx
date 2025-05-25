@@ -29,15 +29,8 @@ const NewVariantForm = ({ selectedCategory, onBack }) => {
     // Add new state for variant-specific information
     const [specifications, setSpecifications] = useState('');
     const [storageType, setStorageType] = useState('Goods');
-    const [selectedSupplier, setSelectedSupplier] = useState(null);
-    const [supplier, setSupplier] = useState({
-        name: '',
-        code: '',
-        address: '',
-        contactPerson: '',
-        phone: '',
-        email: ''
-    });
+    const [supplierName, setSupplierName] = useState('');
+    const [supplierCode, setSupplierCode] = useState('');
 
     const { listenToProducts } = useServices();
     const db = getFirestore(app);
@@ -166,9 +159,10 @@ const NewVariantForm = ({ selectedCategory, onBack }) => {
                 type: variantValue.type || 'standard',
                 specifications: specifications || '',
                 storageType: storageType || 'Goods',
-                supplierId: selectedSupplier?.id || null,
-                supplierCode: selectedSupplier?.code || null,
-                supplier: supplier || null,
+                supplier: {
+                    name: supplierName,
+                    code: supplierCode
+                },
                 categoryValues: filteredCategoryValues || {},
                 customFields: additionalVariantFields.reduce((acc, field) => ({
                     ...acc,
@@ -354,35 +348,32 @@ const NewVariantForm = ({ selectedCategory, onBack }) => {
                     {/* Supplier Information */}
                     <div className="bg-white rounded-lg border border-gray-200 p-4">
                         <h3 className="text-lg font-medium text-gray-900 mb-4">Supplier Information</h3>
-                        <SupplierSelector
-                            onSelect={handleSupplierSelect}
-                            selectedSupplierId={selectedSupplier?.id}
-                        />
-                        
-                        {selectedSupplier && (
-                            <div className="mt-4 bg-gray-50 p-4 rounded-lg">
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                    <div>
-                                        <span className="font-medium">Name:</span> {selectedSupplier.name}
-                                    </div>
-                                    <div>
-                                        <span className="font-medium">Code:</span> {selectedSupplier.code}
-                                    </div>
-                                    <div>
-                                        <span className="font-medium">Contact:</span> {selectedSupplier.contactPerson}
-                                    </div>
-                                    <div>
-                                        <span className="font-medium">Phone:</span> {selectedSupplier.phone}
-                                    </div>
-                                    <div>
-                                        <span className="font-medium">Email:</span> {selectedSupplier.email}
-                                    </div>
-                                    <div className="col-span-2">
-                                        <span className="font-medium">Address:</span> {selectedSupplier.address}
-                                    </div>
-                                </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Supplier Name
+                                </label>
+                                <input
+                                    type="text"
+                                    value={supplierName}
+                                    onChange={(e) => setSupplierName(e.target.value)}
+                                    placeholder="Enter supplier name"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                />
                             </div>
-                        )}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Supplier Code
+                                </label>
+                                <input
+                                    type="text"
+                                    value={supplierCode}
+                                    onChange={(e) => setSupplierCode(e.target.value)}
+                                    placeholder="Enter supplier code"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </div>
+                        </div>
                     </div>
 
                     {/* Custom Fields */}
