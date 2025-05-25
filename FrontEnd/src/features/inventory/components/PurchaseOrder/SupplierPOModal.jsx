@@ -301,16 +301,21 @@ const SupplierPOModal = ({ onClose, onSuccess }) => {
         supplierId: selectedSupplier.id,
         supplierPrimaryCode: selectedSupplier.primaryCode,
         supplierName: selectedSupplier.name,
-        items: items.map(item => ({
-          productId: item.productId,
-          productName: item.productName,
-          quantity: Number(item.quantity),
-          unitPrice: Number(item.unitPrice),
-          total: calculateItemTotal(item),
-          restockRequestId: item.restockRequestId,
-          supplierPrimaryCode: item.supplierPrimaryCode,
-          productSupplierCode: item.productSupplierCode
-        })),
+        items: items.map(item => {
+          // Extract category from product ID (e.g., "Electrical-Philips-LED_Bulb" -> "Electrical")
+          const category = item.productId.split('-')[0];
+          return {
+            productId: item.productId,
+            productName: item.productName,
+            category: category, // Add category information
+            quantity: Number(item.quantity),
+            unitPrice: Number(item.unitPrice),
+            total: calculateItemTotal(item),
+            restockRequestId: item.restockRequestId,
+            supplierPrimaryCode: item.supplierPrimaryCode,
+            productSupplierCode: item.productSupplierCode
+          };
+        }),
         totalAmount: totalAmount,
         deliveryDate,
         paymentTerms,

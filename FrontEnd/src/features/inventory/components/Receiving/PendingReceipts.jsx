@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FiEye, FiCheckCircle, FiXCircle } from 'react-icons/fi';
 import { usePurchaseOrderServices } from '../../../../services/firebase/PurchaseOrderServices';
 import { AnalyticsService } from '../../../../services/firebase/AnalyticsService';
+import { useAuth } from '../../../auth/services/FirebaseAuth';
 import ViewPOModal from '../PurchaseOrder/ViewPOModal';
 import ProcessReceiptModal from './ProcessReceiptModal';
 import RejectReceiptModal from './RejectReceiptModal';
@@ -15,6 +16,7 @@ const PendingReceipts = () => {
   const [showRejectModal, setShowRejectModal] = useState(false);
   
   const poServices = usePurchaseOrderServices();
+  const { currentUser } = useAuth();
 
   useEffect(() => {
     const fetchPendingPOs = async () => {
@@ -47,11 +49,28 @@ const PendingReceipts = () => {
     try {
       setLoading(true);
       
+      // Prepare items with all necessary information
+      const itemsToProcess = receivedItems.map(item => ({
+        ...item,
+        productId: item.productId,
+        category: item.category,
+        variantId: item.variantId || null,  // Add variant ID if it exists
+        brand: item.brand || null,          // Add brand information
+        receivedBy: {
+          id: currentUser.uid,
+          name: currentUser.name
+        }
+      }));
+      
       // First, process the receiving in PO service
-      await poServices.processReceiving(po.id, receivedItems);
+      const result = await poServices.processReceiving(po.id, itemsToProcess);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to process receiving');
+      }
       
       // Then, update the inventory snapshot
-      await AnalyticsService.updateInventorySnapshotAfterReceiving(receivedItems);
+      await AnalyticsService.updateInventorySnapshotAfterReceiving(itemsToProcess);
       
       // Close modal and refresh data
       setSelectedPO(null);
@@ -61,7 +80,7 @@ const PendingReceipts = () => {
       alert('Items received successfully and inventory updated!');
     } catch (error) {
       console.error('Error receiving items:', error);
-      alert('Error receiving items. Please try again.');
+      alert('Error receiving items: ' + error.message);
     } finally {
       setLoading(false);
     }

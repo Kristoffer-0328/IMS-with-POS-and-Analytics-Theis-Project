@@ -1,21 +1,29 @@
 import React, { useState } from 'react';
 import { FiX } from 'react-icons/fi';
+import { getFirestore, doc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import app from '../../../../FirebaseConfig';
+
+const db = getFirestore(app);
 
 const ProcessReceiptModal = ({ po, onClose, onProcess }) => {
   const [receivedItems, setReceivedItems] = useState(
     po.items.map(item => ({
       ...item,
       receivedQuantity: 0,
-      notes: ''
+      notes: '',
+      variantId: item.variantId || null,
+      brand: item.brand || null,
+      category: item.category || item.productId.split('-')[0]
     }))
   );
   const [loading, setLoading] = useState(false);
 
   const handleQuantityChange = (index, value) => {
     const newItems = [...receivedItems];
+    const numValue = value === '' ? '' : Math.max(0, parseInt(value) || 0);
     newItems[index] = {
       ...newItems[index],
-      receivedQuantity: parseInt(value) || 0
+      receivedQuantity: numValue
     };
     setReceivedItems(newItems);
   };
@@ -27,6 +35,35 @@ const ProcessReceiptModal = ({ po, onClose, onProcess }) => {
       notes: value
     };
     setReceivedItems(newItems);
+  };
+
+  const updateRestockRequestStatus = async (productId) => {
+    try {
+      // Query for restock requests matching this product
+      const restockRequestsRef = collection(db, 'RestockRequests');
+      const q = query(
+        restockRequestsRef,
+        where('productId', '==', productId),
+        where('status', 'in', ['pending', 'approved', 'processing'])
+      );
+      
+      const querySnapshot = await getDocs(q);
+      
+      // Update each matching restock request
+      const updatePromises = querySnapshot.docs.map(async (docSnapshot) => {
+        const requestRef = doc(db, 'RestockRequests', docSnapshot.id);
+        await updateDoc(requestRef, {
+          status: 'completed',
+          completedAt: new Date(),
+          notes: `Completed via PO: ${po.poNumber || 'N/A'}`
+        });
+      });
+      
+      await Promise.all(updatePromises);
+      console.log(`Updated restock request status for product: ${productId}`);
+    } catch (error) {
+      console.error('Error updating restock request status:', error);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -42,12 +79,20 @@ const ProcessReceiptModal = ({ po, onClose, onProcess }) => {
         return;
       }
 
+      // Update restock request status for each processed item
+      const updatePromises = itemsToProcess.map(item => 
+        updateRestockRequestStatus(item.productId)
+      );
+
+      // Wait for all status updates to complete
+      await Promise.all(updatePromises);
+
       // Process the receipt
       await onProcess(po, itemsToProcess);
       onClose();
     } catch (error) {
       console.error('Error processing receipt:', error);
-      alert('Error processing receipt. Please try again.');
+      alert('Error processing receipt: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -75,6 +120,9 @@ const ProcessReceiptModal = ({ po, onClose, onProcess }) => {
                     Product
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Brand
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Ordered Qty
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -89,12 +137,10 @@ const ProcessReceiptModal = ({ po, onClose, onProcess }) => {
                 {receivedItems.map((item, index) => (
                   <tr key={index}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {item.name}
-                      {item.variant && (
-                        <span className="text-gray-500 ml-1">
-                          ({item.variant})
-                        </span>
-                      )}
+                      {item.productName || item.name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {item.brand || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {item.quantity}

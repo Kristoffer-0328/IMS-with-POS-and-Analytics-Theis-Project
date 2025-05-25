@@ -66,16 +66,15 @@ function InventoryTurnoverReport({
   // Helper function to get concise paragraph-style performance analysis
 const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
     const rate = turnoverRate.toFixed(2);
-  
     
     if (turnoverRate >= 3) {
-      return `With a turnover rate of ${rate}x, the store demonstrates excellent inventory efficiency and strong sales momentum. Inventory is well-aligned with demand, minimizing excess stock while avoiding shortages. To sustain this, consider expanding high-performing product lines, using safety stock for popular items, and leveraging volume to negotiate supplier terms. Be mindful of the risk of stockouts and rising logistics costs due to frequent restocking.`;
+      return `Your inventory is showing excellent performance with a turnover rate of ${rate}x. This indicates that your products are moving quickly through your store and your stock levels are perfectly aligned with customer demand. You're doing a great job at managing your inventory - keep monitoring your best-selling items and maintain healthy stock levels of popular products to continue this strong performance.`;
     } else if (turnoverRate >= 2) {
-      return `The store shows good performance with a turnover rate of ${rate}x, reflecting balanced inventory and solid demand. There's room to optimize stock levels and refine product offerings. Opportunities include bulk purchasing for margin improvement and expanding successful categories. Watch for seasonal fluctuations and ensure supplier reliability to maintain momentum.`;
+      return `With a turnover rate of ${rate}x, your inventory is performing well. Your store has achieved a good balance between stock levels and sales. To maintain this positive trend, consider focusing on your most successful product categories and explore opportunities for bulk purchasing. Your current approach to inventory management is effective, and with some fine-tuning, you can make it even better.`;
     } else if (turnoverRate >= 1) {
-      return `A turnover rate of ${rate}x indicates moderate performance, with potential for improvement in stock efficiency. Inventory is moving, but not at an ideal pace. Focus on clearing slow-moving items, optimizing order sizes, and reducing holding costs. There's upside through better marketing and stock control, but risks include tied-up capital and rising storage expenses.`;
+      return `Your current turnover rate of ${rate}x indicates that while your inventory is moving, there's potential for improvement. We've noticed that some products could sell faster. Consider reviewing which items are moving slower than others and think about adjusting your pricing or running targeted promotions. Small improvements in how you manage your stock levels could make a significant difference in your overall performance.`;
     } else {
-      return `The low turnover rate of ${rate}x signals poor inventory performance and overstocking. Sales aren't keeping pace with inventory levels, affecting cash flow and profitability. Immediate steps include inventory audits, clearance sales, and revised purchasing practices. While risks are high - such as obsolescence and excess holding costs - targeted actions can reverse the trend and restore efficiency.`;
+      return `Currently, your inventory turnover rate is ${rate}x, which suggests your stock is moving slower than ideal. However, this is something we can work on improving. A good start would be running a clearance sale for older stock and adjusting your pricing strategy. Consider ordering smaller quantities in future purchases and focus on promoting your faster-moving products. These adjustments will help improve your stock flow and business performance.`;
     }
   };
   

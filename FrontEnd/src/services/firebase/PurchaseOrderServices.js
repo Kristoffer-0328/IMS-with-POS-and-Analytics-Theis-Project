@@ -459,6 +459,99 @@ export const usePurchaseOrderServices = () => {
     }
   };
 
+  // Process receiving items for a purchase order
+  const processReceiving = async (poId, receivedItems) => {
+    try {
+      if (!poId) throw new Error('Purchase Order ID is required');
+      if (!Array.isArray(receivedItems) || receivedItems.length === 0) {
+        throw new Error('Received items are required');
+      }
+
+      const batch = writeBatch(db);
+      const poRef = doc(db, 'purchase_orders', poId);
+      const poDoc = await getDoc(poRef);
+
+      if (!poDoc.exists()) throw new Error('Purchase order not found');
+      const poData = poDoc.data();
+
+      if (poData.status !== 'approved') {
+        throw new Error('Only approved purchase orders can be received');
+      }
+
+      // Validate received quantities
+      receivedItems.forEach(item => {
+        const poItem = poData.items.find(i => i.productId === item.productId);
+        if (!poItem) throw new Error(`Product ${item.productId} not found in PO`);
+        if (item.receivedQuantity > poItem.quantity) {
+          throw new Error(`Cannot receive more than ordered quantity for ${poItem.productName}`);
+        }
+      });
+
+      // Update stock levels and create receipt entries
+      for (const item of receivedItems) {
+        // Create product reference using category and productId
+        const productRef = doc(db, 'Products', item.category, 'Items', item.productId);
+        const productDoc = await getDoc(productRef);
+        
+        if (!productDoc.exists()) {
+          throw new Error(`Product ${item.productId} not found in inventory`);
+        }
+
+        const productData = productDoc.data();
+        
+        // Update product quantity
+        const currentQty = Number(productData.quantity) || 0;
+        const newQty = currentQty + Number(item.receivedQuantity);
+        
+        batch.update(productRef, {
+          quantity: newQty
+        });
+
+        // Create receipt entry
+        const receiptRef = doc(collection(db, 'stock_receipts'));
+        batch.set(receiptRef, {
+          poId,
+          productId: item.productId,
+          category: item.category,
+          productName: item.productName,
+          quantity: item.receivedQuantity,
+          receivedAt: serverTimestamp(),
+          receivedBy: item.receivedBy,
+          notes: item.notes || ''
+        });
+      }
+
+      // Update PO receiving status
+      const allItemsReceived = poData.items.every(item => {
+        const receivedItem = receivedItems.find(ri => ri.productId === item.productId);
+        const previouslyReceived = item.receivedQuantity || 0;
+        const newlyReceived = receivedItem ? receivedItem.receivedQuantity : 0;
+        return (previouslyReceived + newlyReceived) >= item.quantity;
+      });
+
+      batch.update(poRef, {
+        receivingStatus: allItemsReceived ? 'completed' : 'partial',
+        updatedAt: serverTimestamp(),
+        items: poData.items.map(item => {
+          const receivedItem = receivedItems.find(ri => ri.productId === item.productId);
+          if (receivedItem) {
+            return {
+              ...item,
+              receivedQuantity: (item.receivedQuantity || 0) + receivedItem.receivedQuantity
+            };
+          }
+          return item;
+        })
+      });
+
+      await batch.commit();
+      return { success: true };
+    } catch (error) {
+      console.error('Error processing receiving:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
   // Analytics
   const getAnalytics = async (startDate, endDate) => {
     try {
@@ -559,6 +652,7 @@ export const usePurchaseOrderServices = () => {
     submitPOForApproval,
     processApprovalStep,
     receivePurchaseOrder,
+    processReceiving,
     getAnalytics
   };
 }; 

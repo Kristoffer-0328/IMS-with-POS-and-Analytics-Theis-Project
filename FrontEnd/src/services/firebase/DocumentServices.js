@@ -11,13 +11,13 @@ import {
   serverTimestamp,
   getFirestore
 } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import app from '../../FirebaseConfig';
+import storage, { getStorageOptions } from './StorageConfig';
 
 const db = getFirestore(app);
-const storage = getStorage(app);
 
 export const useDocumentServices = () => {
   // Generate PDF for Purchase Order
@@ -263,8 +263,9 @@ export const useDocumentServices = () => {
   const uploadDocument = async (file, path) => {
     try {
       const storageRef = ref(storage, path);
-      const snapshot = await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(snapshot.ref);
+      const options = getStorageOptions();
+      const result = await uploadBytes(storageRef, file, options);
+      const downloadURL = await getDownloadURL(result.ref);
       return { success: true, url: downloadURL };
     } catch (error) {
       console.error('Error uploading document:', error);
