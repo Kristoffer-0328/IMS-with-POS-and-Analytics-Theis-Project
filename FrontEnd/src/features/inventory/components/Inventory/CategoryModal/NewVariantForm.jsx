@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useServices } from "../../../../../services/firebase/ProductServices";
-import { getFirestore, doc, updateDoc, arrayUnion } from "firebase/firestore";
+import { getFirestore, doc, updateDoc, arrayUnion, getDoc, collection, getDocs } from "firebase/firestore";
 import app from "../../../../../FirebaseConfig";
 import { getCategorySpecificFields } from "./Utils";
 import ProductFactory from "../../Factory/productFactory";
 import SupplierSelector from '../../Supplier/SupplierSelector';
 
-const NewVariantForm = ({ selectedCategory, onBack }) => {
+const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier }) => {
     const [existingProducts, setExistingProducts] = useState([]);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [variantValue, setVariantValue] = useState({
@@ -28,12 +28,31 @@ const NewVariantForm = ({ selectedCategory, onBack }) => {
     
     // Add new state for variant-specific information
     const [specifications, setSpecifications] = useState('');
-    const [storageType, setStorageType] = useState('Goods');
-    const [supplierName, setSupplierName] = useState('');
-    const [supplierCode, setSupplierCode] = useState('');
+    const [selectedSupplier, setSelectedSupplier] = useState(null);
 
-    const { listenToProducts } = useServices();
+    const { listenToProducts, linkProductToSupplier } = useServices();
     const db = getFirestore(app);
+
+    // Handle preSelectedProduct and supplier props
+    useEffect(() => {
+        if (preSelectedProduct) {
+            setSelectedProduct(preSelectedProduct);
+            setUnit(preSelectedProduct.measurements?.defaultUnit || 'pcs');
+            setRestockLevel(preSelectedProduct.quantity || '');
+            setStorageLocation(preSelectedProduct.location || 'STR A1');
+            setVariantValue(prev => ({
+                ...prev,
+                unitPrice: preSelectedProduct.unitPrice || 
+                    (preSelectedProduct.variants && preSelectedProduct.variants[0]?.unitPrice) || ''
+            }));
+        }
+    }, [preSelectedProduct]);
+
+    useEffect(() => {
+        if (supplier) {
+            setSelectedSupplier(supplier);
+        }
+    }, [supplier]);
 
     useEffect(() => {
         if (!selectedCategory?.name) {
@@ -122,14 +141,6 @@ const NewVariantForm = ({ selectedCategory, onBack }) => {
 
     const handleSupplierSelect = (supplierData) => {
         setSelectedSupplier(supplierData);
-        setSupplier({
-            name: supplierData.name,
-            code: supplierData.code,
-            address: supplierData.address,
-            contactPerson: supplierData.contactPerson,
-            phone: supplierData.phone,
-            email: supplierData.email
-        });
     };
 
     const handleAddVariant = async () => {
@@ -158,11 +169,11 @@ const NewVariantForm = ({ selectedCategory, onBack }) => {
                 size: variantValue.size || 'default',
                 type: variantValue.type || 'standard',
                 specifications: specifications || '',
-                storageType: storageType || 'Goods',
-                supplier: {
-                    name: supplierName,
-                    code: supplierCode
-                },
+                supplier: selectedSupplier ? {
+                    name: selectedSupplier.name,
+                    code: selectedSupplier.primaryCode || selectedSupplier.code,
+                    id: selectedSupplier.id
+                } : null,
                 categoryValues: filteredCategoryValues || {},
                 customFields: additionalVariantFields.reduce((acc, field) => ({
                     ...acc,
@@ -193,9 +204,57 @@ const NewVariantForm = ({ selectedCategory, onBack }) => {
                 lastUpdated: new Date().toISOString()
             };
 
-            // Update the document
-            const productRef = doc(db, 'Products', selectedCategory.name, 'Items', selectedProduct.id);
+            // Update the document - first verify it exists
+            let productRef = doc(db, 'Products', selectedCategory.name, 'Items', selectedProduct.id);
+            let docSnap = await getDoc(productRef);
+            
+            // If document not found with category name, try to find it by searching through all categories
+            if (!docSnap.exists()) {
+                const categoriesRef = collection(db, 'Products');
+                const categoriesSnapshot = await getDocs(categoriesRef);
+                let foundCategory = null;
+                
+                for (const categoryDoc of categoriesSnapshot.docs) {
+                    const categoryName = categoryDoc.id;
+                    const testProductRef = doc(db, 'Products', categoryName, 'Items', selectedProduct.id);
+                    const testDocSnap = await getDoc(testProductRef);
+                    
+                    if (testDocSnap.exists()) {
+                        foundCategory = categoryName;
+                        productRef = testProductRef;
+                        docSnap = testDocSnap;
+                        break;
+                    }
+                }
+                
+                if (!foundCategory) {
+                    throw new Error(`Product document not found in any category. Product ID: ${selectedProduct.id}`);
+                }
+            }
             await updateDoc(productRef, updateData);
+
+            // If supplier is provided (from SupplierProducts), automatically link the variant
+            const currentSupplier = supplier || selectedSupplier;
+            if (currentSupplier) {
+                try {
+                    // Create a unique variant ID for supplier linking
+                    const variantProductId = `${selectedProduct.id}_variant_${variantData.id}`;
+                    
+                    await linkProductToSupplier(variantProductId, currentSupplier.id, {
+                        supplierPrice: Number(variantValue.unitPrice) || 0,
+                        supplierSKU: variantData.id,
+                        isVariant: true,
+                        parentProductId: selectedProduct.id,
+                        variantIndex: updatedVariants.length - 1,
+                        lastUpdated: new Date().toISOString()
+                    });
+                    
+
+                } catch (linkError) {
+                    console.error('Error linking variant to supplier:', linkError);
+                    // Don't fail the whole operation if linking fails
+                }
+            }
 
             alert('Variant added successfully!');
             onBack();
@@ -236,24 +295,35 @@ const NewVariantForm = ({ selectedCategory, onBack }) => {
                 </div>
             </div>
 
-            {/* Product Selection */}
-            <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Base Product
-                </label>
-                <select
-                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    onChange={(e) => handleProductSelect(e.target.value)}
-                    value={selectedProduct?.id || ''}
-                >
-                    <option value="">-- Select a Product --</option>
-                    {existingProducts.map(product => (
-                        <option key={product.id} value={product.id}>
-                            {product.name || product.ProductName}
-                        </option>
-                    ))}
-                </select>
-            </div>
+            {/* Product Selection - Only show if no preSelectedProduct */}
+            {!preSelectedProduct && (
+                <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Select Base Product
+                    </label>
+                    <select
+                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        onChange={(e) => handleProductSelect(e.target.value)}
+                        value={selectedProduct?.id || ''}
+                    >
+                        <option value="">-- Select a Product --</option>
+                        {existingProducts.map(product => (
+                            <option key={product.id} value={product.id}>
+                                {product.name || product.ProductName}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
+            {/* Show selected product info when preSelected */}
+            {preSelectedProduct && (
+                <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <h3 className="text-sm font-medium text-blue-900 mb-2">Adding variant to:</h3>
+                    <p className="text-lg font-semibold text-blue-800">{preSelectedProduct.name}</p>
+                    <p className="text-sm text-blue-600">Category: {preSelectedProduct.category}</p>
+                </div>
+            )}
 
             {selectedProduct && (
                 <div className="space-y-6">
@@ -285,21 +355,35 @@ const NewVariantForm = ({ selectedCategory, onBack }) => {
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                                 />
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Storage Type
-                                </label>
-                                <select
-                                    value={storageType}
-                                    onChange={(e) => setStorageType(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                >
-                                    <option value="Goods">Goods</option>
-                                    <option value="Raw Materials">Raw Materials</option>
-                                    <option value="Finished Products">Finished Products</option>
-                                </select>
-                            </div>
+
                         </div>
+                    </div>
+
+                    {/* Supplier Information */}
+                    <div className="bg-white rounded-lg border border-gray-200 p-4">
+                        <h3 className="text-lg font-medium text-gray-900 mb-4">Supplier Information</h3>
+                        {supplier ? (
+                            <div className="p-3 bg-blue-50 rounded border border-blue-200">
+                                <p className="text-sm text-blue-600">
+                                    <span className="font-medium">Supplier:</span> {supplier.name} ({supplier.primaryCode || supplier.code})
+                                </p>
+                                <p className="text-xs text-blue-500 mt-1">This variant will be automatically linked to this supplier</p>
+                            </div>
+                        ) : (
+                            <>
+                                <SupplierSelector 
+                                    onSelect={handleSupplierSelect}
+                                    selectedSupplierId={selectedSupplier?.id}
+                                />
+                                {selectedSupplier && (
+                                    <div className="mt-3 p-3 bg-gray-50 rounded border">
+                                        <p className="text-sm text-gray-600">
+                                            <span className="font-medium">Selected:</span> {selectedSupplier.name} ({selectedSupplier.primaryCode || selectedSupplier.code})
+                                        </p>
+                                    </div>
+                                )}
+                            </>
+                        )}
                     </div>
 
                     {/* Stock Information */}
@@ -345,36 +429,7 @@ const NewVariantForm = ({ selectedCategory, onBack }) => {
                         </div>
                     </div>
 
-                    {/* Supplier Information */}
-                    <div className="bg-white rounded-lg border border-gray-200 p-4">
-                        <h3 className="text-lg font-medium text-gray-900 mb-4">Supplier Information</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Supplier Name
-                                </label>
-                                <input
-                                    type="text"
-                                    value={supplierName}
-                                    onChange={(e) => setSupplierName(e.target.value)}
-                                    placeholder="Enter supplier name"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Supplier Code
-                                </label>
-                                <input
-                                    type="text"
-                                    value={supplierCode}
-                                    onChange={(e) => setSupplierCode(e.target.value)}
-                                    placeholder="Enter supplier code"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                />
-                            </div>
-                        </div>
-                    </div>
+
 
                     {/* Custom Fields */}
                     <div className="bg-white rounded-lg border border-gray-200 p-4">

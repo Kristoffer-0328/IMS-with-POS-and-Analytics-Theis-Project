@@ -213,28 +213,6 @@ const Inventory = () => {
     <div className="flex flex-col w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-6 bg-gray-50 min-h-screen">
       <DashboardHeader />
 
-      {/* Enhanced Header Section */}
-      <div className="bg-gradient-to-r from-orange-100/80 to-amber-100/30 rounded-xl p-6 mb-6 shadow-sm border border-orange-100">
-        <div className="flex flex-col md:flex-row justify-between gap-6">
-          <div className="space-y-1">
-            <h2 className="text-2xl font-bold text-gray-800">Inventory Management</h2>
-            <p className="text-gray-600">View & Update Stock Levels</p>
-          </div>
-          <div className="w-full md:w-auto">
-            <InventoryFilters
-              currentFilter={currentFilter}
-              setCurrentFilter={setCurrentFilter}
-              selectedCategory={selectedCategory}
-              setSelectedCategory={setSelectedCategory}
-              selectedStorageRoom={selectedStorageRoom}
-              setSelectedStorageRoom={setSelectedStorageRoom}
-              selectedChart={selectedChart}
-              setSelectedChart={setSelectedChart}
-            />
-          </div>
-        </div>
-      </div>
-
       {/* Enhanced Overview Card */}
       <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 mb-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -295,6 +273,16 @@ const Inventory = () => {
               />
               <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             </div>
+            <InventoryFilters
+              currentFilter={currentFilter}
+              setCurrentFilter={setCurrentFilter}
+              selectedCategory={selectedCategory}
+              setSelectedCategory={setSelectedCategory}
+              selectedStorageRoom={selectedStorageRoom}
+              setSelectedStorageRoom={setSelectedStorageRoom}
+              selectedChart={selectedChart}
+              setSelectedChart={setSelectedChart}
+            />
 
             {/* View Toggle Button */}
             <button
@@ -313,22 +301,7 @@ const Inventory = () => {
                 </>
               )}
             </button>
-
-            {/* Action Buttons */}
-            <button
-              onClick={() => setImportIsModalOpen(true)}
-              className="px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 flex items-center gap-2 whitespace-nowrap hover:shadow-md"
-            >
-              <FiUpload size={18} />
-              <span>Import Excel</span>
-            </button>
-            <button
-              onClick={() => setcategorymodal(true)}
-              className="px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 flex items-center gap-2 whitespace-nowrap hover:shadow-md"
-            >
-              <FiPlusCircle size={18} />
-              <span>Add Product</span>
-            </button>
+            
           </div>
         </div>
 

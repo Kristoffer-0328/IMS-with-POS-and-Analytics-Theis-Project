@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { FiX, FiPlus, FiTrash2 } from 'react-icons/fi';
+import { FiX, FiPlus } from 'react-icons/fi';
 import { useSupplierServices } from '../../../../services/firebase/SupplierServices';
+import CategoryModalIndex from '../Inventory/CategoryModal/CategoryModalIndex';
 
 const EditSupplierModal = ({ supplier, onClose }) => {
   const supplierServices = useSupplierServices();
   const [loading, setLoading] = useState(false);
+  const [showProductsModal, setShowProductsModal] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     primaryCode: '',
@@ -12,8 +14,7 @@ const EditSupplierModal = ({ supplier, onClose }) => {
     contactPerson: '',
     phone: '',
     email: '',
-    status: 'active',
-    supplierCodes: []
+    status: 'active'
   });
   const [newCode, setNewCode] = useState({ code: '', description: '' });
 
@@ -32,8 +33,33 @@ const EditSupplierModal = ({ supplier, onClose }) => {
     }
   }, [supplier]);
 
+  const [primaryCodeError, setPrimaryCodeError] = useState('');
+  
+  // Function to check if all required fields are filled
+  const isFormValid = () => {
+    return (
+      formData.name?.trim() !== '' &&
+      formData.primaryCode?.trim() !== '' &&
+      formData.address?.trim() !== '' &&
+      formData.contactPerson?.trim() !== '' &&
+      formData.phone?.trim() !== '' &&
+      formData.email?.trim() !== '' &&
+      !primaryCodeError // Also ensure there are no validation errors
+    );
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
+    
+    // Clear error when primary code field is modified
+    if (name === 'primaryCode') {
+      setPrimaryCodeError('');
+      // Validate format in real-time
+      if (value && !validatePrimaryCode(value)) {
+        setPrimaryCodeError('Primary code should only contain letters, numbers, and hyphens');
+      }
+    }
+
     setFormData(prev => ({
       ...prev,
       [name]: value
@@ -74,19 +100,35 @@ const EditSupplierModal = ({ supplier, onClose }) => {
     }));
   };
 
+  const validatePrimaryCode = (code) => {
+    if (!code) return false;
+    // Primary code should be alphanumeric and may include hyphens
+    const codeRegex = /^[A-Za-z0-9-]+$/;
+    return codeRegex.test(code.toString());
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Validate primary code format
+    if (!validatePrimaryCode(formData.primaryCode)) {
+      alert('Primary code should only contain letters, numbers, and hyphens');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      let result;
-      if (supplier) {
-        // Update existing supplier
-        result = await supplierServices.updateSupplier(supplier.id, formData);
-      } else {
-        // Create new supplier
-        result = await supplierServices.createSupplier(formData);
-      }
+      // Create new supplier
+      const result = await supplierServices.createSupplier({
+        name: formData.name,
+        primaryCode: formData.primaryCode,
+        address: formData.address,
+        contactPerson: formData.contactPerson,
+        phone: formData.phone,
+        email: formData.email,
+        status: 'active'
+      });
 
       if (result.success) {
         onClose();
@@ -106,7 +148,7 @@ const EditSupplierModal = ({ supplier, onClose }) => {
       <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center p-6 border-b sticky top-0 bg-white">
           <h2 className="text-xl font-semibold">
-            {supplier ? 'Edit Supplier' : 'Add New Supplier'}
+            Add New Supplier
           </h2>
           <button
             onClick={onClose}
@@ -137,15 +179,25 @@ const EditSupplierModal = ({ supplier, onClose }) => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Primary Code
               </label>
-              <input
-                type="text"
-                name="primaryCode"
-                value={formData.primaryCode}
-                onChange={handleChange}
-                required
-                className="w-full border rounded-lg px-3 py-2"
-                placeholder="Enter primary supplier code"
-              />
+              <div>
+                <input
+                  type="text"
+                  name="primaryCode"
+                  value={formData.primaryCode}
+                  onChange={handleChange}
+                  required
+                  className={`w-full border rounded-lg px-3 py-2 ${
+                    primaryCodeError ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                  placeholder="Enter primary supplier code"
+                />
+                {primaryCodeError && (
+                  <p className="mt-1 text-sm text-red-500">{primaryCodeError}</p>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  This code will be used to link products to this supplier
+                </p>
+              </div>
             </div>
 
             <div className="col-span-2">
@@ -225,80 +277,26 @@ const EditSupplierModal = ({ supplier, onClose }) => {
 
             <div className="col-span-2 mt-4">
               <div className="border rounded-lg p-4">
-                <h3 className="text-lg font-medium mb-4">Product Supplier Codes</h3>
-                
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Supplier Code
-                    </label>
-                    <input
-                      type="text"
-                      name="code"
-                      value={newCode.code}
-                      onChange={handleNewCodeChange}
-                      className="w-full border rounded-lg px-3 py-2"
-                      placeholder="Enter supplier code"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Description
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        name="description"
-                        value={newCode.description}
-                        onChange={handleNewCodeChange}
-                        className="w-full border rounded-lg px-3 py-2"
-                        placeholder="Enter code description"
-                      />
-                      <button
-                        type="button"
-                        onClick={addSupplierCode}
-                        className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-                      >
-                        <FiPlus size={20} />
-                      </button>
-                    </div>
-                  </div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium">Supplier Products</h3>
+                  <button
+                    type="button"
+                    onClick={() => setShowProductsModal(true)}
+                    disabled={!isFormValid()}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                      isFormValid()
+                        ? 'bg-blue-500 text-white hover:bg-blue-600'
+                        : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                    }`}
+                    title={!isFormValid() ? 'Please fill in all supplier information first' : ''}
+                  >
+                    <FiPlus size={20} />
+                    <span>Add New Product</span>
+                  </button>
                 </div>
-
-                {formData.supplierCodes.length > 0 ? (
-                  <div className="mt-4">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {formData.supplierCodes.map((code, index) => (
-                          <tr key={index}>
-                            <td className="px-3 py-2 whitespace-nowrap text-sm">{code.code}</td>
-                            <td className="px-3 py-2 text-sm">{code.description}</td>
-                            <td className="px-3 py-2 text-right">
-                              <button
-                                type="button"
-                                onClick={() => removeSupplierCode(code.code)}
-                                className="text-red-600 hover:text-red-800"
-                              >
-                                <FiTrash2 size={18} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="text-center py-4 text-gray-500 text-sm">
-                    No supplier codes added yet
-                  </div>
-                )}
+                <p className="text-sm text-gray-500">
+                  Click the button above to add new products to this supplier. Products will be automatically linked using the primary code.
+                </p>
               </div>
             </div>
           </div>
@@ -316,10 +314,19 @@ const EditSupplierModal = ({ supplier, onClose }) => {
               disabled={loading}
               className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
             >
-              {loading ? 'Saving...' : supplier ? 'Update Supplier' : 'Add Supplier'}
+              {loading ? 'Adding...' : 'Add Supplier'}
             </button>
           </div>
         </form>
+
+        {/* Add Product Modal */}
+        {showProductsModal && (
+          <CategoryModalIndex
+            CategoryOpen={showProductsModal}
+            CategoryClose={() => setShowProductsModal(false)}
+            supplier={formData} // Pass current supplier data
+          />
+        )}
       </div>
     </div>
   );

@@ -4,8 +4,10 @@ import { getFirestore, doc, setDoc } from 'firebase/firestore';
 import app from '../../../../../FirebaseConfig';
 import { validateProduct, getStorageOptions, getCategorySpecificFields, updateFieldOptions } from './Utils';
 import SupplierSelector from '../../Supplier/SupplierSelector';
+import { useServices } from '../../../../../services/firebase/ProductServices';
 
-const NewProductForm = ({ selectedCategory, onClose }) => {
+const NewProductForm = ({ selectedCategory, onClose, supplier }) => {
+    const { linkProductToSupplier } = useServices();
     const [productName, setProductName] = useState('');
     const [quantity, setQuantity] = useState('');
     const [unitPrice, setUnitPrice] = useState('');
@@ -26,13 +28,12 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
     // Add new state for supplier information
     const [brand, setBrand] = useState('');
     const [specifications, setSpecifications] = useState('');
-    const [storageType, setStorageType] = useState('Goods');
     const [maximumStockLevel, setMaximumStockLevel] = useState('');
     const [size, setSize] = useState('');
     const [supplierName, setSupplierName] = useState('');
     const [supplierCode, setSupplierCode] = useState('');
+    const [selectedSupplier, setSelectedSupplier] = useState(null);
 
-    
     useEffect(() => {
         if (selectedCategory?.name) {
             const fields = getCategorySpecificFields(selectedCategory.name);
@@ -44,6 +45,29 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
             setCategoryValues(initialValues);
         }
     }, [selectedCategory]);
+
+    // When supplier is provided, we don't need supplier state variables
+    useEffect(() => {
+        if (supplier) {
+            // Automatically use the supplier's information
+            setSupplierName(supplier.name);
+            setSupplierCode(supplier.primaryCode || supplier.code);
+            setSelectedSupplier(supplier);
+        }
+    }, [supplier]);
+
+    // Handle supplier selection from SupplierSelector
+    const handleSupplierSelect = (supplierData) => {
+        if (supplierData) {
+            setSelectedSupplier(supplierData);
+            setSupplierName(supplierData.name);
+            setSupplierCode(supplierData.primaryCode || supplierData.code);
+        } else {
+            setSelectedSupplier(null);
+            setSupplierName('');
+            setSupplierCode('');
+        }
+    };
 
     useEffect(() => {
         if (selectedCategory?.name) {
@@ -120,19 +144,6 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
         document.getElementById("productImage").value = "";
     };
 
-    const handleSupplierSelect = (supplier) => {
-        setSelectedSupplier(supplier);
-        // Update the supplier state with the selected supplier's data
-        setSupplier({
-            name: supplier.name,
-            code: supplier.code,
-            address: supplier.address,
-            contactPerson: supplier.contactPerson,
-            phone: supplier.phone,
-            email: supplier.email
-        });
-    };
-
     const handleAddProduct = async () => {
         // Validate required fields
         if (!productName || !brand || !quantity || !unitPrice) {
@@ -150,15 +161,19 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
             brand: brand.trim(),
             size: size?.trim() || 'default',
             specifications: specifications?.trim() || '',
-            storageType: storageType || 'Goods',
             maximumStockLevel: Number(maximumStockLevel) || 0,
             restockLevel: Number(restockLevel) || 0,
             dateStocked: dateStocked || new Date().toISOString().split('T')[0],
             imageUrl: productImage || null,
             categoryValues: categoryValues || {},
-            supplier: {
+            supplier: supplier ? {
+                name: supplier.name,
+                code: supplier.primaryCode || supplier.code,
+                primaryCode: supplier.primaryCode || supplier.code
+            } : {
                 name: supplierName?.trim() || 'Unknown',
-                code: supplierCode?.trim() || ''
+                code: supplierCode?.trim() || '',
+                primaryCode: supplierCode?.trim() || ''
             },
             customFields: additionalFields.reduce((acc, field) => ({
                 ...acc,
@@ -170,14 +185,38 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
 
         try {
             const db = getFirestore(app);
+            
+            // Generate the ID FIRST, before creating the product
+            const currentSupplier = supplier || selectedSupplier;
+            const productId = currentSupplier 
+                ? ProductFactory.generateSupplierProductId(productData.name, selectedCategory.name, currentSupplier.primaryCode || currentSupplier.code)
+                : ProductFactory.generateProductId(productData.name, selectedCategory.name, productData.brand);
+            
+            // Create product with the correct ID
             const newProduct = ProductFactory.createProduct(productData);
-            const productId = ProductFactory.generateProductId(productData.name, selectedCategory.name, productData.brand);
+            
+            // Override the product ID to match our generated ID
+            newProduct.id = productId;
             
             // Remove any undefined values
             const cleanProduct = JSON.parse(JSON.stringify(newProduct));
 
             const productRef = doc(db, 'Products', selectedCategory.name, 'Items', productId);
             await setDoc(productRef, cleanProduct);
+
+            // If supplier is provided, automatically link the product
+            if (currentSupplier) {
+                try {
+                    await linkProductToSupplier(productId, currentSupplier.id, {
+                        supplierPrice: Number(unitPrice) || 0,
+                        supplierSKU: productId,
+                        lastUpdated: new Date().toISOString()
+                    });
+                } catch (error) {
+                    console.error('Error linking product to supplier:', error);
+                    alert('Product created but failed to link to supplier: ' + error.message);
+                }
+            }
 
             alert('Product added successfully!');
             onClose();
@@ -320,16 +359,38 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
                         </div>
                     ))}
 
+                    {!supplier && (
+                        <div className="space-y-2 md:col-span-2">
+                            <h3 className="font-medium text-gray-900">Supplier Information</h3>
+                            <div className="bg-gray-50 p-4 rounded-lg">
+                                <SupplierSelector 
+                                    onSelect={handleSupplierSelect}
+                                    selectedSupplierId={selectedSupplier?.id}
+                                />
+                                {selectedSupplier && (
+                                    <div className="mt-3 p-3 bg-white rounded border">
+                                        <p className="text-sm text-gray-600">
+                                            <span className="font-medium">Selected:</span> {selectedSupplier.name} ({selectedSupplier.primaryCode || selectedSupplier.code})
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                    
                     <div className="space-y-2 md:col-span-2">
                         <h3 className="font-medium text-gray-900">Product Information</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">Product Name</label>
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Product Name
+                                    <span className="text-xs text-gray-500 ml-1">(Required)</span>
+                                </label>
                                 <input
                                     type="text"
                                     value={productName}
                                     onChange={(e) => setProductName(e.target.value)}
-                                    placeholder="Enter product name"
+                                    placeholder="e.g. Phillips Head Screwdriver, LED Bulb 10W"
                                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                                 />
                             </div>
@@ -367,18 +428,7 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
                                 />
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">Storage Type</label>
-                                <select
-                                    value={storageType}
-                                    onChange={(e) => setStorageType(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                                >
-                                    <option value="Goods">Goods</option>
-                                    <option value="Raw Materials">Raw Materials</option>
-                                    <option value="Finished Products">Finished Products</option>
-                                </select>
-                            </div>
+
                         </div>
                     </div>
 
@@ -386,36 +436,74 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
                         <h3 className="font-medium text-gray-900">Stock Information</h3>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">Quantity</label>
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Initial Stock Quantity
+                                    <span className="text-xs text-gray-500 ml-1">(Required)</span>
+                                </label>
                                 <input
                                     type="number"
+                                    min="0"
+                                    step="1"
                                     value={quantity}
-                                    onChange={(e) => setQuantity(e.target.value)}
-                                    placeholder="Enter quantity"
+                                    onChange={(e) => setQuantity(Math.max(0, parseInt(e.target.value) || 0))}
+                                    placeholder="Enter initial stock quantity"
                                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                                 />
                             </div>
 
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">Unit</label>
-                                <input
-                                    type="text"
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Unit
+                                    <span className="text-xs text-gray-500 ml-1">(Select measurement unit)</span>
+                                </label>
+                                <select
                                     value={unit}
                                     onChange={(e) => setUnit(e.target.value)}
-                                    placeholder="e.g. pcs, kg"
                                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                                />
+                                >
+                                    <option value="">Select Unit</option>
+                                    <optgroup label="Count">
+                                        <option value="pcs">Pieces (pcs)</option>
+                                        <option value="box">Box</option>
+                                        <option value="set">Set</option>
+                                        <option value="pack">Pack</option>
+                                    </optgroup>
+                                    <optgroup label="Weight">
+                                        <option value="kg">Kilogram (kg)</option>
+                                        <option value="g">Gram (g)</option>
+                                        <option value="lbs">Pounds (lbs)</option>
+                                    </optgroup>
+                                    <optgroup label="Length">
+                                        <option value="m">Meter (m)</option>
+                                        <option value="cm">Centimeter (cm)</option>
+                                        <option value="ft">Feet (ft)</option>
+                                        <option value="in">Inch (in)</option>
+                                    </optgroup>
+                                    <optgroup label="Volume">
+                                        <option value="L">Liter (L)</option>
+                                        <option value="mL">Milliliter (mL)</option>
+                                        <option value="gal">Gallon (gal)</option>
+                                    </optgroup>
+                                </select>
                             </div>
 
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">Unit Price (₱)</label>
-                                <input
-                                    type="number"
-                                    value={unitPrice}
-                                    onChange={(e) => setUnitPrice(e.target.value)}
-                                    placeholder="0.00"
-                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                                />
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Unit Price (₱)
+                                    <span className="text-xs text-gray-500 ml-1">(Required)</span>
+                                </label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₱</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={unitPrice}
+                                        onChange={(e) => setUnitPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                                        placeholder="0.00"
+                                        className="w-full pl-8 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                    />
+                                </div>
                             </div>
 
                             <div className="space-y-2">
@@ -451,32 +539,6 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
                                         <option key={option} value={option}>{option}</option>
                                     ))}
                                 </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="space-y-2 md:col-span-2">
-                        <h3 className="font-medium text-gray-900">Supplier Information</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">Supplier Name</label>
-                                <input
-                                    type="text"
-                                    value={supplierName}
-                                    onChange={(e) => setSupplierName(e.target.value)}
-                                    placeholder="Enter supplier name"
-                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-700">Supplier Code</label>
-                                <input
-                                    type="text"
-                                    value={supplierCode}
-                                    onChange={(e) => setSupplierCode(e.target.value)}
-                                    placeholder="Enter supplier code"
-                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                                />
                             </div>
                         </div>
                     </div>
@@ -550,5 +612,3 @@ const NewProductForm = ({ selectedCategory, onClose }) => {
 };
 
 export default NewProductForm;
-
-

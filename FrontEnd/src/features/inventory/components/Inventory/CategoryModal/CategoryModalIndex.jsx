@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { getFirestore, collection, getDocs, doc, setDoc } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, doc, setDoc, query, where } from 'firebase/firestore';
 import NewProductForm from './NewProductForm';
 import NewVariantForm from './NewVariantForm';
+import ProductList from './ProductList';
 import app from '../../../../../FirebaseConfig';
+import { useServices } from '../../../../../services/firebase/ProductServices';
 
-const CategoryModalIndex = ({ CategoryOpen, CategoryClose }) => {
+const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
+    const { linkProductToSupplier } = useServices();
     const [categories, setCategories] = useState([]);
     const [selectedCategory, setSelectedCategory] = useState(null);
     const [showAddProductModal, setShowAddProductModal] = useState(false);
@@ -35,6 +38,9 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose }) => {
     const handleCategoryClick = (category) => {
         setSelectedCategory(category);
         setShowAddProductModal(true);
+        if (supplier) {
+            setActiveForm('product'); // Automatically go to product form when supplier is provided
+        }
     };
 
     const handleClose = () => {
@@ -162,7 +168,7 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose }) => {
                             <>
                                 <div className="text-center mb-8">
                                     <h3 className="text-xl font-semibold text-gray-800">
-                                        Add New Item
+                                        {supplier ? 'Add Product to Supplier' : 'Add New Item'}
                                         <span className="block text-blue-600 text-sm mt-1">{selectedCategory?.name}</span>
                                     </h3>
                                 </div>
@@ -174,21 +180,30 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose }) => {
                                         <span className="text-lg font-medium text-gray-800 group-hover:text-blue-600">New Product</span>
                                         <p className="text-sm text-gray-500 mt-1">Add a completely new product to inventory</p>
                                     </button>
-                                    <button
-                                        onClick={() => setActiveForm('variant')}
-                                        className="w-full p-6 text-left border border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 group"
-                                    >
-                                        <span className="text-lg font-medium text-gray-800 group-hover:text-blue-600">Add Variant</span>
-                                        <p className="text-sm text-gray-500 mt-1">Add a variation to existing product</p>
-                                    </button>
+                                    {!supplier && (
+                                        <button
+                                            onClick={() => setActiveForm('variant')}
+                                            className="w-full p-6 text-left border border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 group"
+                                        >
+                                            <span className="text-lg font-medium text-gray-800 group-hover:text-blue-600">Add Variant</span>
+                                            <p className="text-sm text-gray-500 mt-1">Add a variation to existing product</p>
+                                        </button>
+                                    )}
                                 </div>
                             </>
                         ) : (
                             <>
+                                <button
+                                    onClick={handleBack}
+                                    className="mb-4 px-4 py-2 text-gray-600 hover:text-gray-800 flex items-center gap-2"
+                                >
+                                    <span>← Back</span>
+                                </button>
                                 {activeForm === 'product' ? (
                                     <NewProductForm
                                         selectedCategory={selectedCategory}
                                         onClose={handleClose}
+                                        supplier={supplier}
                                     />
                                 ) : (
                                     <NewVariantForm

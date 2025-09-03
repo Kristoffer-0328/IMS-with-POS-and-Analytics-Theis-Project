@@ -33,7 +33,21 @@ const SupplierManagement = () => {
   };
 
   const handleEdit = (supplier) => {
-    setSelectedSupplier(supplier);
+    // If supplier is null, it means we're adding a new supplier
+    if (!supplier) {
+      setSelectedSupplier({
+        name: '',
+        primaryCode: '',
+        code: '',
+        contactPerson: '',
+        phone: '',
+        email: '',
+        address: '',
+        status: 'active'
+      });
+    } else {
+      setSelectedSupplier(supplier);
+    }
     setShowEditModal(true);
   };
 

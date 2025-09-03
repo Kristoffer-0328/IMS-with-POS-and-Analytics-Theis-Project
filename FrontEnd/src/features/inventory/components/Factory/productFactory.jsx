@@ -1,4 +1,11 @@
 export const ProductFactory = {
+    generateSupplierProductId(productName, category, supplierCode) {
+        const timestamp = new Date().getTime().toString().slice(-4);
+        const cleanName = productName.split('(')[0].trim().replace(/[^a-zA-Z0-9]/g, '_');
+        const cleanCategory = category.replace(/[^a-zA-Z0-9]/g, '_');
+        return `${supplierCode}-${cleanCategory}-${cleanName}-${timestamp}`;
+    },
+
     generateProductId(productName, category, brand) {
         const cleanName = productName.split('(')[0].trim().replace(/[^a-zA-Z0-9]/g, '_');
         const cleanCategory = category.replace(/[^a-zA-Z0-9]/g, '_');

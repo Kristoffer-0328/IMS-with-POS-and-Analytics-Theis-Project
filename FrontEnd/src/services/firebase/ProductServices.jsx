@@ -1,6 +1,6 @@
 // ProductServices.jsx
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import { getFirestore, collection, onSnapshot, query, getDocs, orderBy } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, query, getDocs, orderBy, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import app from './config';
 import { ProductFactory } from '../../features/inventory/components/Factory/productFactory';
 
@@ -151,10 +151,73 @@ export const ServicesProvider = ({ children }) => {
   );
 };
 
+// Functions for managing supplier-product relationships
+export const linkProductToSupplier = async (productId, supplierId, supplierData) => {
+  try {
+    const supplierProductRef = doc(db, 'supplier_products', supplierId, 'products', productId);
+    await setDoc(supplierProductRef, {
+      productId,
+      supplierPrice: supplierData.supplierPrice || 0,
+      supplierSKU: supplierData.supplierSKU || '',
+      lastUpdated: new Date().toISOString(),
+    });
+    return { success: true };
+  } catch (error) {
+    console.error('Error linking product to supplier:', error);
+    return { success: false, error };
+  }
+};
+
+export const unlinkProductFromSupplier = async (productId, supplierId) => {
+  try {
+    const supplierProductRef = doc(db, 'supplier_products', supplierId, 'products', productId);
+    await deleteDoc(supplierProductRef);
+    return { success: true };
+  } catch (error) {
+    console.error('Error unlinking product from supplier:', error);
+    return { success: false, error };
+  }
+};
+
+export const updateSupplierProductDetails = async (productId, supplierId, updates) => {
+  try {
+    const supplierProductRef = doc(db, 'supplier_products', supplierId, 'products', productId);
+    await updateDoc(supplierProductRef, {
+      ...updates,
+      lastUpdated: new Date().toISOString()
+    });
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating supplier product details:', error);
+    return { success: false, error };
+  }
+};
+
+export const getSupplierProducts = async (supplierId) => {
+  try {
+    const supplierProductsRef = collection(db, 'supplier_products', supplierId, 'products');
+    const snapshot = await getDocs(supplierProductsRef);
+    const products = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    return { success: true, products };
+  } catch (error) {
+    console.error('Error fetching supplier products:', error);
+    return { success: false, error };
+  }
+};
+
 export const useServices = () => {
   const context = useContext(ServicesContext);
   if (!context) {
     throw new Error('useServices must be used within a ServicesProvider');
   }
-  return context;
+  return {
+    ...context,
+    linkProductToSupplier,
+    unlinkProductFromSupplier,
+    updateSupplierProductDetails,
+    getSupplierProducts
+  };
 };
