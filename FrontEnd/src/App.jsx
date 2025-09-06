@@ -6,38 +6,42 @@ import {
   Route,
   Navigate,
 } from 'react-router-dom';
-import { useAuth, AuthProvider } from './FirebaseBackEndQuerry/FirebaseAuth';
-import { ServicesProvider } from './FirebaseBackEndQuerry/ProductServices';
+import { useAuth, AuthProvider } from './features/auth/services/FirebaseAuth';
+import { ServicesProvider } from './services/firebase/ProductServices';
+import { AnalyticsService } from './services/firebase/AnalyticsService';
 
 // Auth
-import Login from './pages/auth/Login';
-import Logout from './admin_interface/Logout';
+import Login from './auth/Login';
+import Logout from './features/auth/services/Logout';
 
 // Admin Interface
-import ProductsStock from './admin_interface/Products_stock';
-import Audit_trail from './admin_interface/Audit_trail';
-import SystemLogs from './admin_interface/System_log';
-import Team from './admin_interface/Team';
-import AdminSidebar from './admin_interface/AdminSidebar';
+import ProductsStock from './features/admin/pages/Products_stock';
+import Audit_trail from './features/admin/pages/Audit_trail';
+import SystemLogs from './features/admin/pages/System_log';
+import Team from './features/admin/pages/Team';
+import AdminSidebar from './features/admin/pages/AdminSidebar';
+import AdminPurchaseOrders from './features/admin/pages/AdminPurchaseOrders';
 
 // IM Interface
-import IMDashboard from './im_interface/pages/IMDashboard';
-import Inventory from './im_interface/pages/Inventory';
-import StockTransfer from './im_interface/pages/StockTransfer';
-import RestockingRequest from './im_interface/pages/RestockingRequest';
-import ReportsAndLogs from './im_interface/pages/ReportsAndLogs';
-import Settings from './im_interface/pages/Settings';
-import IMSidebar from './im_interface/pages/IMSidebar';
-import LoadingScreen from './im_interface/components/LoadingScreen';
-
+import IMDashboard from './features/inventory/pages/IMDashboard';
+import Inventory from './features/inventory/pages/Inventory';
+import StockTransfer from './features/inventory/pages/StockTransfer';
+import RestockingRequest from './features/inventory/pages/RestockingRequest';
+import ReportsAndLogs from './features/inventory/pages/ReportsAndLogs';
+import Settings from './features/inventory/pages/Settings';
+import IMSidebar from './features/inventory/pages/IMSidebar';
+import LoadingScreen from './features/inventory/components/LoadingScreen';
+import PurchaseOrders from './features/inventory/pages/PurchaseOrders';
+import ReceivingManagement from './features/inventory/pages/ReceivingManagement';
+import SupplierManagement from './features/inventory/pages/SupplierManagement';
 
 // POS cashier Interface
 
-import Pos_Sidebar from './cashier_pos_interface/pos_pages/pos_Sidebar';
-import Pos_NewSale from './cashier_pos_interface/pos_pages/Pos_NewSale';
-import Pos_SalesReport from './cashier_pos_interface/pos_pages/Pos_SalesReport';
-import Pos_Settings from './cashier_pos_interface/pos_pages/pos_Settings';
-import Pos_Transaction_History from './cashier_pos_interface/pos_pages/Pos_TransactionHistory';
+import Pos_Sidebar from './features/pos/pages/Pos_Sidebar';
+import Pos_NewSale from './features/pos/pages/Pos_NewSale';
+import Pos_SalesReport from './features/pos/pages/Pos_SalesReport';
+import Pos_Settings from './features/pos/pages/pos_Settings';
+import Pos_Transaction_History from './features/pos/pages/Pos_TransactionHistory';
 // Layouts
 const AdminLayout = ({ children }) => (
   <div className="flex min-h-screen w-full bg-gray-50">
@@ -88,12 +92,19 @@ const pos_CashierLayout = ({ children }) => {
 // Access Control Wrapper
 const ProtectedRoute = ({ allowedRole, layout: Layout, children }) => {
   const { currentUser, loading } = useAuth();
-  // if (!currentUser || currentUser.role !== allowedRole) return <Navigate to="/unauthorized" />;
- 
- if(loading) return <LoadingScreen/>;
- return <Layout>{children}</Layout>;  
-
   
+  if (loading) return <LoadingScreen/>;
+  
+  // Check if user is logged in and has the correct role
+  if (!currentUser || currentUser.role !== allowedRole) {
+    console.log('Access denied:', { 
+      userRole: currentUser?.role, 
+      requiredRole: allowedRole 
+    });
+    return <Navigate to="/unauthorized" />;
+  }
+  
+  return <Layout>{children}</Layout>;
 };
 
 // Unauthorized page
@@ -156,15 +167,21 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/admin/purchase-orders"
+        element={
+          <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
+            <AdminPurchaseOrders />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Inventory Manager */}
       <Route
         path="/im"
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
-            <ServicesProvider>
-              <IMDashboard />
-            </ServicesProvider>
+            <IMDashboard />
           </ProtectedRoute>
         }
       />
@@ -172,9 +189,23 @@ const AppRoutes = () => {
         path="/im/inventory"
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
-            <ServicesProvider>
-              <Inventory />
-            </ServicesProvider>
+            <Inventory />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/im/receiving"
+        element={
+          <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
+            <ReceivingManagement />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/im/purchase-orders"
+        element={
+          <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
+            <PurchaseOrders />
           </ProtectedRoute>
         }
       />
@@ -182,9 +213,7 @@ const AppRoutes = () => {
         path="/im/stock-transfer"
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
-            <ServicesProvider>
-              <StockTransfer />
-            </ServicesProvider>
+            <StockTransfer />
           </ProtectedRoute>
         }
       />
@@ -192,20 +221,16 @@ const AppRoutes = () => {
         path="/im/restocking-request"
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
-            <ServicesProvider>
-              <RestockingRequest />
-            </ServicesProvider>
+            <RestockingRequest />
           </ProtectedRoute>
         }
       />
       
       <Route
-        path="/im/team"
+        path="/im/suppliers"
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
-            <ServicesProvider>
-              <Team />
-            </ServicesProvider>
+            <SupplierManagement/>
           </ProtectedRoute>
         }
       />
@@ -213,10 +238,7 @@ const AppRoutes = () => {
         path="/im/reports"
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
-            <ServicesProvider>
             <ReportsAndLogs />
-            </ServicesProvider>
-            
           </ProtectedRoute>
         }
       />
@@ -224,9 +246,7 @@ const AppRoutes = () => {
         path="/im/settings"
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
-            <ServicesProvider>
             <Settings />
-            </ServicesProvider>
           </ProtectedRoute>
         }
       />
@@ -235,10 +255,7 @@ const AppRoutes = () => {
         path='/pos/newsale'
         element={
           <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
-            <ServicesProvider>
-               <Pos_NewSale/>
-            </ServicesProvider>
-           
+            <Pos_NewSale/>
           </ProtectedRoute>
         }
         />
@@ -246,10 +263,7 @@ const AppRoutes = () => {
         path='/pos/salesreport'
         element={
           <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
-            <ServicesProvider>
-               <Pos_SalesReport/>
-            </ServicesProvider>
-           
+            <Pos_SalesReport/>
           </ProtectedRoute>
         }
         />
@@ -257,10 +271,7 @@ const AppRoutes = () => {
         path='/pos/THistory'
         element={
           <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
-            <ServicesProvider>
-              <Pos_Transaction_History/>
-            </ServicesProvider>
-            
+            <Pos_Transaction_History/>
           </ProtectedRoute>
         }
         />
@@ -268,10 +279,7 @@ const AppRoutes = () => {
         path='/pos/settings'
         element={
           <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
-            <ServicesProvider>
-              <Pos_Settings/>
-            </ServicesProvider>
-            
+            <Pos_Settings/>
           </ProtectedRoute>
         }
         />
@@ -282,12 +290,29 @@ const AppRoutes = () => {
   );
 };
 
-const App = () => (
-  <AuthProvider>
-    <Router>
-      <AppRoutes />
+const App = () => {
+  useEffect(() => {
+    // Check and create daily analytics records when app starts
+    const checkDailyAnalytics = async () => {
+      try {
+        await AnalyticsService.checkAndCreateDailyRecords();
+      } catch (error) {
+        console.error('Error checking daily analytics:', error);
+      }
+    };
+
+    checkDailyAnalytics();
+  }, []); // Run once when app starts
+
+  return (
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <AuthProvider>
+        <ServicesProvider>
+          <AppRoutes />
+        </ServicesProvider>
+      </AuthProvider>
     </Router>
-  </AuthProvider>
-);
+  );
+};
 
 export default App;

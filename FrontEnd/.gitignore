@@ -26,3 +26,14 @@ dist-ssr
 # .gitignore
 .env
 .env.local
+
+# Excel files
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.xltx
+*.xltm
+
+# CSV files
+*.csv
