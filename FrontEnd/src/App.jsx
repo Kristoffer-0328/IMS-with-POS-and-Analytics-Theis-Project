@@ -40,7 +40,7 @@ import SupplierManagement from './features/inventory/pages/SupplierManagement';
 import Pos_Sidebar from './features/pos/pages/Pos_Sidebar';
 import Pos_NewSale from './features/pos/pages/Pos_NewSale';
 import Pos_SalesReport from './features/pos/pages/Pos_SalesReport';
-import Pos_Settings from './features/pos/pages/pos_Settings';
+import Pos_Settings from './features/pos/pages/Pos_Settings';
 import Pos_Transaction_History from './features/pos/pages/Pos_TransactionHistory';
 // Layouts
 const AdminLayout = ({ children }) => (
