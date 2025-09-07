@@ -153,11 +153,24 @@ const POSPage = () => {
                     <button
                       key={product.id}
                       onClick={() => addToCart(product)}
-                      className="p-4 border rounded-lg hover:shadow-md transition-shadow text-left"
+                      disabled={product.quantity <= 0}
+                      className={`p-4 border rounded-lg hover:shadow-md transition-shadow text-left ${
+                        product.quantity <= 0 ? 'opacity-50 cursor-not-allowed bg-gray-100' : 'hover:bg-gray-50'
+                      }`}
                     >
                       <div className="text-sm font-medium">{product.name}</div>
                       <div className="text-xs text-gray-500">{product.category}</div>
-                      <div className="text-sm text-gray-600 mt-1">${product.price}</div>
+                      {product.isVariant && (product.size || product.specifications) && (
+                        <div className="text-xs text-blue-600 mt-1">
+                          {product.size && `Size: ${product.size}`}
+                          {product.size && product.specifications && ' • '}
+                          {product.specifications && `Spec: ${product.specifications}`}
+                        </div>
+                      )}
+                      <div className="text-sm text-gray-600 mt-1">₱{product.price?.toFixed(2) || '0.00'}</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        Stock: {product.quantity} {product.unit}
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -179,9 +192,16 @@ const POSPage = () => {
                 <div className="space-y-4">
                   {cart.map(item => (
                     <div key={item.id} className="flex items-center justify-between">
-                      <div>
+                      <div className="flex-1">
                         <div className="font-medium">{item.name}</div>
-                        <div className="text-sm text-gray-600">${item.price}</div>
+                        {item.isVariant && (item.size || item.specifications) && (
+                          <div className="text-xs text-blue-600">
+                            {item.size && `Size: ${item.size}`}
+                            {item.size && item.specifications && ' • '}
+                            {item.specifications && `Spec: ${item.specifications}`}
+                          </div>
+                        )}
+                        <div className="text-sm text-gray-600">₱{item.price?.toFixed(2) || '0.00'}</div>
                       </div>
                       <div className="flex items-center gap-2">
                         <button
@@ -209,7 +229,7 @@ const POSPage = () => {
                   <div className="pt-4 border-t">
                     <div className="flex justify-between font-semibold">
                       <span>Total:</span>
-                      <span>${calculateTotal().toFixed(2)}</span>
+                      <span>₱{calculateTotal().toFixed(2)}</span>
                     </div>
                   </div>
                   <button

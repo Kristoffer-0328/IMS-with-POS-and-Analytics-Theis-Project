@@ -29,6 +29,7 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
     // Add new state for variant-specific information
     const [specifications, setSpecifications] = useState('');
     const [selectedSupplier, setSelectedSupplier] = useState(null);
+    const [supplierPrice, setSupplierPrice] = useState('');
 
     const { listenToProducts, linkProductToSupplier } = useServices();
     const db = getFirestore(app);
@@ -150,6 +151,10 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
         }
 
         try {
+            console.log('=== ADD VARIANT DEBUG START ===');
+            console.log('Selected Product:', selectedProduct);
+            console.log('Selected Category:', selectedCategory);
+
             // Filter out weight and type from category values and ensure no undefined values
             const filteredCategoryValues = localCategoryFields.reduce((acc, field) => {
                 const value = variantValue[field.name];
@@ -159,9 +164,8 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                 return acc;
             }, {});
 
-            // Create variant data with enhanced fields
+            // Create variant data with enhanced fields (keeping all new attributes)
             const variantData = {
-                id: `${selectedProduct.id}_variant_${Date.now()}`,
                 quantity: Number(variantValue.quantity) || 0,
                 unitPrice: Number(variantValue.unitPrice) || 0,
                 unit: variantValue.unit || unit || 'pcs',
@@ -169,50 +173,50 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                 size: variantValue.size || 'default',
                 type: variantValue.type || 'standard',
                 specifications: specifications || '',
-                supplier: selectedSupplier ? {
-                    name: selectedSupplier.name,
-                    code: selectedSupplier.primaryCode || selectedSupplier.code,
-                    id: selectedSupplier.id
-                } : null,
+                // Add supplier information if available
+                ...(supplier || selectedSupplier ? {
+                    supplier: {
+                        name: (supplier || selectedSupplier).name,
+                        code: (supplier || selectedSupplier).primaryCode || (supplier || selectedSupplier).code,
+                        id: (supplier || selectedSupplier).id,
+                        price: Number(supplierPrice) || Number(variantValue.unitPrice) || 0
+                    }
+                } : {}),
                 categoryValues: filteredCategoryValues || {},
-                customFields: additionalVariantFields.reduce((acc, field) => ({
-                    ...acc,
-                    [field.name]: field.value || ''
-                }), {}),
-                imageUrl: variantImage || null,
-                createdAt: new Date().toISOString(),
-                lastUpdated: new Date().toISOString(),
-                isVariant: true,
-                parentProduct: selectedProduct.id
+                ...(additionalVariantFields.length > 0 && {
+                    customFields: additionalVariantFields.reduce((acc, field) => ({
+                        ...acc,
+                        [field.name]: field.value || ''
+                    }), {})
+                }),
+                imageUrl: variantImage || null
             };
 
-            // Get existing variants and ensure it's an array
-            const existingVariants = Array.isArray(selectedProduct.variants) ? selectedProduct.variants : [];
+            console.log('Variant Data to Add:', variantData);
+
+            // Find the correct product document first
+            let productRef = null;
+            let docSnap = null;
+            let foundCategory = null;
+
+            // First try with the provided category
+            if (selectedCategory?.name) {
+                const testProductRef = doc(db, 'Products', selectedCategory.name, 'Items', selectedProduct.id);
+                const testDocSnap = await getDoc(testProductRef);
+                
+                if (testDocSnap.exists()) {
+                    productRef = testProductRef;
+                    docSnap = testDocSnap;
+                    foundCategory = selectedCategory.name;
+                    console.log('Found product in expected category:', selectedCategory.name);
+                }
+            }
             
-            // Add to variants array
-            const updatedVariants = [...existingVariants, variantData];
-
-            // Calculate new total quantity, ensuring numeric values
-            const totalQuantity = updatedVariants.reduce((sum, variant) => 
-                sum + (Number(variant.quantity) || 0), 0
-            );
-
-            // Create the update object with only defined values
-            const updateData = {
-                variants: updatedVariants,
-                quantity: totalQuantity,
-                lastUpdated: new Date().toISOString()
-            };
-
-            // Update the document - first verify it exists
-            let productRef = doc(db, 'Products', selectedCategory.name, 'Items', selectedProduct.id);
-            let docSnap = await getDoc(productRef);
-            
-            // If document not found with category name, try to find it by searching through all categories
-            if (!docSnap.exists()) {
+            // If not found, search through all categories
+            if (!productRef) {
+                console.log('Product not found in expected category, searching all categories...');
                 const categoriesRef = collection(db, 'Products');
                 const categoriesSnapshot = await getDocs(categoriesRef);
-                let foundCategory = null;
                 
                 for (const categoryDoc of categoriesSnapshot.docs) {
                     const categoryName = categoryDoc.id;
@@ -223,38 +227,105 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                         foundCategory = categoryName;
                         productRef = testProductRef;
                         docSnap = testDocSnap;
+                        console.log('Found product in category:', categoryName);
                         break;
                     }
                 }
-                
-                if (!foundCategory) {
-                    throw new Error(`Product document not found in any category. Product ID: ${selectedProduct.id}`);
-                }
             }
+            
+            if (!productRef || !docSnap.exists()) {
+                throw new Error(`Product document not found in any category. Product ID: ${selectedProduct.id}`);
+            }
+
+            // Get the current document data
+            const currentData = docSnap.data();
+            console.log('Current Product Data:', currentData);
+
+            // Get existing variants and ensure it's an array - CRITICAL FIX
+            const existingVariants = Array.isArray(currentData.variants) ? [...currentData.variants] : [];
+            console.log('Existing Variants:', existingVariants);
+            
+            // Create new variant with unique ID
+            const newVariant = {
+                id: `${selectedProduct.id}_variant_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                parentProductId: selectedProduct.id,
+                name: selectedProduct.name,
+                brand: selectedProduct.brand || currentData.brand || 'Generic',
+                category: foundCategory,
+                subCategory: selectedProduct.subCategory || currentData.subCategory || foundCategory,
+                quantity: Number(variantData.quantity || 0),
+                unitPrice: Number(variantData.unitPrice || 0),
+                unit: variantData.unit || currentData.unit || 'pcs',
+                location: variantData.location || 'STR A1',
+                storageType: variantData.storageType || currentData.storageType || 'Goods',
+                size: variantData.size || 'default',
+                specifications: variantData.specifications || '',
+                supplier: variantData.supplier || currentData.supplier,
+                customFields: variantData.customFields || {},
+                categoryValues: variantData.categoryValues || {},
+                imageUrl: variantData.imageUrl || null,
+                createdAt: new Date().toISOString(),
+                lastUpdated: new Date().toISOString(),
+                isVariant: true
+            };
+            
+            console.log('New Variant to Add:', newVariant);
+            
+            // Add to variants array
+            const updatedVariants = [...existingVariants, newVariant];
+            console.log('Updated Variants Array:', updatedVariants);
+
+            // Calculate new total quantity (existing base quantity + all variant quantities)
+            const variantQuantityTotal = updatedVariants.reduce((sum, variant) => 
+                sum + (Number(variant.quantity) || 0), 0
+            );
+            
+            // Preserve the original product's base quantity and add variant quantities
+            const originalBaseQuantity = Number(currentData.quantity) || 0;
+            const totalQuantity = originalBaseQuantity + variantQuantityTotal;
+            
+            console.log('Quantity Calculation:', {
+                originalBaseQuantity,
+                variantQuantityTotal,
+                totalQuantity
+            });
+
+            // CRITICAL: Only update variants and quantity, preserve all other fields
+            const updateData = {
+                variants: updatedVariants,
+                quantity: totalQuantity,
+                lastUpdated: new Date().toISOString()
+            };
+            
+            console.log('Update Data to Firebase:', updateData);
+
+            // Update the document with only the necessary fields
             await updateDoc(productRef, updateData);
 
-            // If supplier is provided (from SupplierProducts), automatically link the variant
+            console.log('Product updated successfully in Firebase');
+
+            // If supplier is provided, also create a supplier-product relationship record for the variant
             const currentSupplier = supplier || selectedSupplier;
             if (currentSupplier) {
                 try {
-                    // Create a unique variant ID for supplier linking
-                    const variantProductId = `${selectedProduct.id}_variant_${variantData.id}`;
-                    
+                    console.log('Creating supplier-product link for variant...');
+                    const variantProductId = newVariant.id; // Use the unique variant ID
                     await linkProductToSupplier(variantProductId, currentSupplier.id, {
-                        supplierPrice: Number(variantValue.unitPrice) || 0,
-                        supplierSKU: variantData.id,
+                        supplierPrice: Number(supplierPrice) || Number(variantValue.unitPrice) || 0,
+                        supplierSKU: newVariant.id,
                         isVariant: true,
                         parentProductId: selectedProduct.id,
                         variantIndex: updatedVariants.length - 1,
                         lastUpdated: new Date().toISOString()
                     });
-                    
-
+                    console.log('Supplier-product link created successfully');
                 } catch (linkError) {
                     console.error('Error linking variant to supplier:', linkError);
                     // Don't fail the whole operation if linking fails
                 }
             }
+
+            console.log('=== ADD VARIANT DEBUG END ===');
 
             alert('Variant added successfully!');
             onBack();
@@ -422,6 +493,18 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                                     type="number"
                                     value={variantValue.unitPrice}
                                     onChange={(e) => setVariantValue(prev => ({...prev, unitPrice: e.target.value}))}
+                                    placeholder="0.00"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Supplier Price (₱)
+                                </label>
+                                <input
+                                    type="number"
+                                    value={supplierPrice}
+                                    onChange={(e) => setSupplierPrice(e.target.value)}
                                     placeholder="0.00"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                                 />

@@ -12,10 +12,10 @@ const NewProductForm = ({ selectedCategory, onClose, supplier }) => {
     const [quantity, setQuantity] = useState('');
     const [unitPrice, setUnitPrice] = useState('');
     const [location, setLocation] = useState('STR A1');
-    const [attribute, setAttribute] = useState('');
+
     const [restockLevel, setRestockLevel] = useState('');
     const [productImage, setProductImage] = useState(null);
-    const [dateStocked, setDateStocked] = useState('');
+
     const [additionalFields, setAdditionalFields] = useState([]);
     const [newFieldName, setNewFieldName] = useState("");
     const [unit, setUnit] = useState('pcs');
@@ -33,6 +33,8 @@ const NewProductForm = ({ selectedCategory, onClose, supplier }) => {
     const [supplierName, setSupplierName] = useState('');
     const [supplierCode, setSupplierCode] = useState('');
     const [selectedSupplier, setSelectedSupplier] = useState(null);
+    const [supplierPrice, setSupplierPrice] = useState('');
+    const [dateStocked, setDateStocked] = useState(new Date().toISOString().split('T')[0]);
 
     useEffect(() => {
         if (selectedCategory?.name) {
@@ -145,6 +147,15 @@ const NewProductForm = ({ selectedCategory, onClose, supplier }) => {
     };
 
     const handleAddProduct = async () => {
+        console.log('Starting product creation...', {
+            productName,
+            brand,
+            quantity,
+            unitPrice,
+            selectedCategory: selectedCategory?.name,
+            supplier: supplier?.name
+        });
+
         // Validate required fields
         if (!productName || !brand || !quantity || !unitPrice) {
             alert('Please fill in all required fields: Product Name, Brand, Quantity, and Unit Price');
@@ -192,6 +203,9 @@ const NewProductForm = ({ selectedCategory, onClose, supplier }) => {
                 ? ProductFactory.generateSupplierProductId(productData.name, selectedCategory.name, currentSupplier.primaryCode || currentSupplier.code)
                 : ProductFactory.generateProductId(productData.name, selectedCategory.name, productData.brand);
             
+            console.log('Generated product ID:', productId);
+            console.log('Current supplier:', currentSupplier);
+            
             // Create product with the correct ID
             const newProduct = ProductFactory.createProduct(productData);
             
@@ -201,17 +215,33 @@ const NewProductForm = ({ selectedCategory, onClose, supplier }) => {
             // Remove any undefined values
             const cleanProduct = JSON.parse(JSON.stringify(newProduct));
 
+            console.log('Creating product in database...', {
+                category: selectedCategory.name,
+                productId,
+                productData: cleanProduct
+            });
+
             const productRef = doc(db, 'Products', selectedCategory.name, 'Items', productId);
             await setDoc(productRef, cleanProduct);
+            
+            console.log('Product created successfully in database');
 
             // If supplier is provided, automatically link the product
             if (currentSupplier) {
                 try {
-                    await linkProductToSupplier(productId, currentSupplier.id, {
-                        supplierPrice: Number(unitPrice) || 0,
+                    console.log('Linking product to supplier...', {
+                        productId,
+                        supplierId: currentSupplier.id,
+                        supplierPrice: Number(supplierPrice) || Number(unitPrice) || 0
+                    });
+                    
+                    const linkResult = await linkProductToSupplier(productId, currentSupplier.id, {
+                        supplierPrice: Number(supplierPrice) || Number(unitPrice) || 0,
                         supplierSKU: productId,
                         lastUpdated: new Date().toISOString()
                     });
+                    
+                    console.log('Link result:', linkResult);
                 } catch (error) {
                     console.error('Error linking product to supplier:', error);
                     alert('Product created but failed to link to supplier: ' + error.message);
@@ -500,6 +530,25 @@ const NewProductForm = ({ selectedCategory, onClose, supplier }) => {
                                         step="0.01"
                                         value={unitPrice}
                                         onChange={(e) => setUnitPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                                        placeholder="0.00"
+                                        className="w-full pl-8 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Supplier Price (₱)
+                                    <span className="text-xs text-gray-500 ml-1">(Optional)</span>
+                                </label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₱</span>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={supplierPrice}
+                                        onChange={(e) => setSupplierPrice(Math.max(0, parseFloat(e.target.value) || 0))}
                                         placeholder="0.00"
                                         className="w-full pl-8 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                                     />

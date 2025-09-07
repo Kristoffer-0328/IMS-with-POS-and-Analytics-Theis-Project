@@ -18,13 +18,66 @@ export function usePOSOperations() {
     try {
       setIsLoading(true);
       const fetchedProducts = await getProducts();
-      setProducts(fetchedProducts);
+      
+      // Process products to expand variants for POS display
+      const processedProducts = processProductsForPOS(fetchedProducts);
+      setProducts(processedProducts);
     } catch (error) {
       toast.error('Failed to load products');
       console.error('Error loading products:', error);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Process products to expand variants for POS display
+  const processProductsForPOS = (products) => {
+    const processedProducts = [];
+    
+    products.forEach(product => {
+      // Check if product has variants
+      if (product.variants && Array.isArray(product.variants) && product.variants.length > 0) {
+        // Create separate entries for each variant
+        product.variants.forEach((variant, index) => {
+          processedProducts.push({
+            id: `${product.id}_variant_${index}`,
+            name: product.name,
+            category: product.category,
+            brand: product.brand,
+            price: variant.unitPrice || 0,
+            quantity: variant.quantity || 0,
+            unit: variant.unit || 'pcs',
+            size: variant.size || '',
+            specifications: variant.specifications || '',
+            location: variant.location || product.location,
+            image: variant.imageUrl || product.imageUrl,
+            // Keep reference to parent product and variant info
+            parentProductId: product.id,
+            variantIndex: index,
+            isVariant: true,
+            variantId: variant.id || `${product.id}_variant_${index}`
+          });
+        });
+      } else {
+        // Single product without variants
+        processedProducts.push({
+          id: product.id,
+          name: product.name,
+          category: product.category,
+          brand: product.brand,
+          price: product.unitPrice || 0,
+          quantity: product.quantity || 0,
+          unit: product.unit || 'pcs',
+          size: product.size || '',
+          specifications: product.specifications || '',
+          location: product.location,
+          image: product.imageUrl,
+          isVariant: false
+        });
+      }
+    });
+    
+    return processedProducts;
   };
 
   // Handle a new sale transaction

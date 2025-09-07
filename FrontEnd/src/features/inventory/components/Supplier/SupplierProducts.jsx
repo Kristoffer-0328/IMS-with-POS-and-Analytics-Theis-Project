@@ -13,10 +13,10 @@ const SupplierProducts = ({ supplier, onClose }) => {
   const [variantModal, setVariantModal] = useState(false);
   const [selectedProductForVariant, setSelectedProductForVariant] = useState(null);
   const [editingProduct, setEditingProduct] = useState(null);
-  const [editData, setEditData] = useState({ supplierPrice: '', supplierSKU: '' });
+  const [editData, setEditData] = useState({ supplierPrice: '', supplierSKU: '', unitPrice: '' });
   const [expandedProducts, setExpandedProducts] = useState(new Set());
   const [editingVariant, setEditingVariant] = useState(null);
-  const [variantEditData, setVariantEditData] = useState({ supplierPrice: '', supplierSKU: '' });
+  const [variantEditData, setVariantEditData] = useState({ supplierPrice: '', supplierSKU: '', unitPrice: '' });
   const db = getFirestore(app);
   const { updateSupplierProductDetails } = useServices();
 
@@ -31,8 +31,6 @@ const SupplierProducts = ({ supplier, onClose }) => {
       const productsData = await Promise.all(
         supplierProductsSnapshot.docs.map(async (docSnapshot) => {
           const productData = docSnapshot.data();
-          
-
           
           try {
             // We need to search through all categories to find the product
@@ -59,29 +57,86 @@ const SupplierProducts = ({ supplier, onClose }) => {
               }
             }
 
-          return {
-            id: productData.productId,
-            ...mainProductData,
-              supplierPrice: productData.supplierPrice || 0,
+            return {
+              id: productData.productId,
+              ...mainProductData,
+              // Map database fields correctly:
+              // Database stores supplierPrice directly, not in unitPrice field
+              supplierPrice: productData.supplierPrice || 0, // This is the actual supplier price from database
               supplierSKU: productData.supplierSKU || '',
               lastUpdated: productData.lastUpdated,
               // Use the exact category where the product was found
-              actualCategory: foundInCategory || mainProductData.category || 'Unknown'
+              actualCategory: foundInCategory || mainProductData.category || 'Unknown',
+              // Check if this is a variant by looking at the productId structure
+              isVariant: productData.productId.includes('_variant_'),
+              // Extract base product ID for variants
+              baseProductId: productData.productId.includes('_variant_') 
+                ? productData.productId.split('_variant_')[0] 
+                : productData.productId,
+              // Include original unit price if available
+              originalUnitPrice: productData.originalUnitPrice
             };
           } catch (error) {
             console.error('Error fetching product details:', error);
             return {
               id: productData.productId,
               name: 'Product not found',
-            supplierPrice: productData.supplierPrice || 0,
-            supplierSKU: productData.supplierSKU || '',
-            lastUpdated: productData.lastUpdated
-          };
+              supplierPrice: productData.supplierPrice || 0, // This is the actual supplier price from database
+              supplierSKU: productData.supplierSKU || '',
+              lastUpdated: productData.lastUpdated,
+              isVariant: productData.productId.includes('_variant_'),
+              baseProductId: productData.productId.includes('_variant_') 
+                ? productData.productId.split('_variant_')[0] 
+                : productData.productId,
+              // Include original unit price if available
+              originalUnitPrice: productData.originalUnitPrice
+            };
           }
         })
       );
 
-      setSupplierProducts(productsData);
+      // Group variants under their parent products
+      const groupedProducts = {};
+      
+      productsData.forEach(product => {
+        if (product.isVariant) {
+          // This is a variant, group it under its base product
+          if (!groupedProducts[product.baseProductId]) {
+            // Find the base product
+            const baseProduct = productsData.find(p => p.id === product.baseProductId && !p.isVariant);
+            if (baseProduct) {
+              groupedProducts[product.baseProductId] = {
+                ...baseProduct,
+                variants: []
+              };
+            }
+          }
+          
+          if (groupedProducts[product.baseProductId]) {
+            groupedProducts[product.baseProductId].variants.push({
+              ...product,
+              id: product.id,
+              name: product.name,
+              supplierPrice: product.supplierPrice,
+              supplierSKU: product.supplierSKU,
+              specifications: product.specifications || product.size || '',
+              size: product.size || ''
+            });
+          }
+        } else {
+          // This is a base product
+          if (!groupedProducts[product.id]) {
+            groupedProducts[product.id] = {
+              ...product,
+              variants: []
+            };
+          }
+        }
+      });
+
+      // Convert grouped products back to array
+      const finalProducts = Object.values(groupedProducts);
+      setSupplierProducts(finalProducts);
     } catch (error) {
       console.error('Error fetching supplier products:', error);
     } finally {
@@ -96,14 +151,24 @@ const SupplierProducts = ({ supplier, onClose }) => {
   const handleEdit = (product) => {
     setEditingProduct(product.id);
     setEditData({
-      supplierPrice: product.supplierPrice,
-      supplierSKU: product.supplierSKU
+      supplierPrice: product.supplierPrice, // This is the actual supplier price from database
+      supplierSKU: product.supplierSKU,
+      unitPrice: product.originalUnitPrice || product.unitPrice // Use originalUnitPrice if available, otherwise use unitPrice
     });
   };
 
   const handleSave = async (productId) => {
     try {
-      await updateSupplierProductDetails(productId, supplier.id, editData);
+      // Map UI data to database structure
+      // Database stores supplierPrice directly, not in unitPrice field
+      const updateData = {
+        supplierPrice: editData.supplierPrice, // UI "Supplier Price" maps to database "supplierPrice"
+        supplierSKU: editData.supplierSKU,
+        // Store unit price as a separate field for reference
+        originalUnitPrice: editData.unitPrice
+      };
+      
+      await updateSupplierProductDetails(productId, supplier.id, updateData);
       setEditingProduct(null);
       await fetchSupplierProducts(); // Refresh the list
     } catch (error) {
@@ -148,17 +213,27 @@ const SupplierProducts = ({ supplier, onClose }) => {
     const variantKey = `${productId}-${variantIndex}`;
     setEditingVariant(variantKey);
     setVariantEditData({
-      supplierPrice: variant.supplierPrice || variant.unitPrice || '',
-      supplierSKU: variant.supplier?.code || variant.supplierSKU || ''
+      supplierPrice: variant.supplierPrice || '', // This is the actual supplier price from database
+      supplierSKU: variant.supplier?.code || variant.supplierSKU || '',
+      unitPrice: variant.originalUnitPrice || variant.unitPrice || '' // Use originalUnitPrice if available, otherwise use unitPrice
     });
   };
 
   const handleVariantSave = async (productId, variantIndex) => {
     try {
+      // Map UI data to database structure for variants
+      // Database stores supplierPrice directly, not in unitPrice field
+      const updateData = {
+        supplierPrice: variantEditData.supplierPrice, // UI "Supplier Price" maps to database "supplierPrice"
+        supplierSKU: variantEditData.supplierSKU,
+        // Store unit price as a separate field for reference
+        originalUnitPrice: variantEditData.unitPrice
+      };
+      
       // Here you would implement variant-specific supplier data update
       // For now, this is a placeholder - you might want to store variant-supplier relationships
       // in a separate collection or as part of the product document
-      console.log('Saving variant data:', { productId, variantIndex, variantEditData });
+      console.log('Saving variant data:', { productId, variantIndex, updateData });
       
       setEditingVariant(null);
       await fetchSupplierProducts(); // Refresh the list
@@ -241,11 +316,11 @@ const SupplierProducts = ({ supplier, onClose }) => {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                      <th className="px-4 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/4">
+                      <th className="px-4 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">
                       Product Name
                     </th>
-                      <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
-                      Supplier SKU
+                      <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/3">
+                      Product Details
                     </th>
                       <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
                       Category
@@ -256,7 +331,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
                       <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
                       Unit Price
                     </th>
-                      <th className="px-4 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-1/4">
+                      <th className="px-4 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
                       Actions
                     </th>
                   </tr>
@@ -304,16 +379,61 @@ const SupplierProducts = ({ supplier, onClose }) => {
                             </div>
                           </div>
                       </td>
-                        <td className="px-3 py-4 whitespace-nowrap">
+                        <td className="px-3 py-4">
                         {editingProduct === product.id ? (
-                          <input
-                            type="text"
-                            value={editData.supplierSKU}
-                            onChange={(e) => setEditData({ ...editData, supplierSKU: e.target.value })}
-                              className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                          />
+                          <div className="space-y-2">
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Supplier SKU</label>
+                              <input
+                                type="text"
+                                value={editData.supplierSKU}
+                                onChange={(e) => setEditData({ ...editData, supplierSKU: e.target.value })}
+                                className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                placeholder="Enter supplier SKU"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Supplier Price (₱)</label>
+                              <input
+                                type="number"
+                                value={editData.supplierPrice}
+                                onChange={(e) => setEditData({ ...editData, supplierPrice: parseFloat(e.target.value) })}
+                                className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                placeholder="Enter supplier price"
+                                step="0.01"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Unit Price (₱)</label>
+                              <input
+                                type="number"
+                                value={editData.unitPrice}
+                                onChange={(e) => setEditData({ ...editData, unitPrice: parseFloat(e.target.value) })}
+                                className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                placeholder="Enter unit price"
+                                step="0.01"
+                              />
+                            </div>
+                          </div>
                         ) : (
-                            <div className="text-sm text-gray-900">{product.supplierSKU || '-'}</div>
+                            <div className="text-sm text-gray-900 break-words max-w-xs">
+                              <div className="font-medium text-gray-700">SKU: {product.supplierSKU || 'Not set'}</div>
+                              {product.specifications && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Specs: {product.specifications}
+                                </div>
+                              )}
+                              {product.brand && (
+                                <div className="text-xs text-gray-500">
+                                  Brand: {product.brand}
+                                </div>
+                              )}
+                              {product.storageType && (
+                                <div className="text-xs text-gray-500">
+                                  Storage: {product.storageType}
+                                </div>
+                              )}
+                            </div>
                         )}
                       </td>
                         <td className="px-3 py-4 whitespace-nowrap">
@@ -413,17 +533,60 @@ const SupplierProducts = ({ supplier, onClose }) => {
                                 </div>
                               </div>
                             </td>
-                            <td className="px-3 py-3 whitespace-nowrap">
+                            <td className="px-3 py-3">
                               {editingVariant === `${product.id}-${variantIndex}` ? (
-                                <input
-                                  type="text"
-                                  value={variantEditData.supplierSKU}
-                                  onChange={(e) => setVariantEditData({ ...variantEditData, supplierSKU: e.target.value })}
-                                  className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                />
+                                <div className="space-y-2">
+                                  <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Supplier SKU</label>
+                                    <input
+                                      type="text"
+                                      value={variantEditData.supplierSKU}
+                                      onChange={(e) => setVariantEditData({ ...variantEditData, supplierSKU: e.target.value })}
+                                      className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                      placeholder="Enter supplier SKU"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Supplier Price (₱)</label>
+                                    <input
+                                      type="number"
+                                      value={variantEditData.supplierPrice}
+                                      onChange={(e) => setVariantEditData({ ...variantEditData, supplierPrice: parseFloat(e.target.value) })}
+                                      className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                      placeholder="Enter supplier price"
+                                      step="0.01"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Unit Price (₱)</label>
+                                    <input
+                                      type="number"
+                                      value={variantEditData.unitPrice}
+                                      onChange={(e) => setVariantEditData({ ...variantEditData, unitPrice: parseFloat(e.target.value) })}
+                                      className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                      placeholder="Enter unit price"
+                                      step="0.01"
+                                    />
+                                  </div>
+                                </div>
                               ) : (
-                                <div className="text-sm text-gray-600">
-                                  {variant.supplier?.code || variant.supplierSKU || '-'}
+                                <div className="text-sm text-gray-600 break-words max-w-xs">
+                                  <div className="font-medium text-gray-700">SKU: {variant.supplier?.code || variant.supplierSKU || 'Not set'}</div>
+                                  {variant.specifications && (
+                                    <div className="text-xs text-gray-500 mt-1">
+                                      Specs: {variant.specifications}
+                                    </div>
+                                  )}
+                                  {variant.size && (
+                                    <div className="text-xs text-gray-500">
+                                      Size: {variant.size}
+                                    </div>
+                                  )}
+                                  {variant.storageType && (
+                                    <div className="text-xs text-gray-500">
+                                      Storage: {variant.storageType}
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </td>
