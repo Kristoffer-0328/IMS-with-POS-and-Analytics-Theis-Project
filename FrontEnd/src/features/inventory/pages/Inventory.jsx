@@ -151,22 +151,51 @@ const Inventory = () => {
 
     // Map the products to include the correct price field and status
     filtered = filtered.map(item => {
-        const quantity = item.quantity || 0;
-        const restockLevel = item.restockLevel || 0;
+        // Check if product has variants
+        const hasVariants = item.variants && Array.isArray(item.variants) && item.variants.length > 0;
+        
+        let totalQuantity = 0;
+        let totalValue = 0;
+        let averageUnitPrice = 0;
         let status = 'in-stock';
+        
+        if (hasVariants) {
+            // Calculate totals from all variants
+            totalQuantity = item.variants.reduce((sum, variant) => sum + (Number(variant.quantity) || 0), 0);
+            totalValue = item.variants.reduce((sum, variant) => {
+                const variantQuantity = Number(variant.quantity) || 0;
+                const variantPrice = Number(variant.unitPrice) || 0;
+                return sum + (variantQuantity * variantPrice);
+            }, 0);
+            
+            // Calculate average unit price across variants
+            if (totalQuantity > 0) {
+                averageUnitPrice = totalValue / totalQuantity;
+            }
+        } else {
+            // Single product without variants
+            totalQuantity = item.quantity || 0;
+            const unitPrice = item.unitPrice || 0;
+            totalValue = totalQuantity * unitPrice;
+            averageUnitPrice = unitPrice;
+        }
 
-        // Calculate status based on quantity and restock level
-        if (quantity <= 0) {
+        // Calculate status based on total quantity and restock level
+        const restockLevel = item.restockLevel || 0;
+        if (totalQuantity <= 0) {
             status = 'out-of-stock';
-        } else if (quantity < restockLevel ) {
+        } else if (totalQuantity < restockLevel) {
             status = 'low-stock';
         }
 
         return {
             ...item,
-            unitPrice: item.unitPrice || (item.variants && item.variants[0]?.unitPrice) || 0,
-            totalvalue: (quantity) * (item.unitPrice || (item.variants && item.variants[0]?.unitPrice) || 0),
-            status: status // Add calculated status
+            quantity: totalQuantity, // Use aggregated quantity
+            unitPrice: averageUnitPrice, // Use average unit price
+            totalvalue: totalValue, // Use calculated total value
+            status: status,
+            hasVariants: hasVariants,
+            variantCount: hasVariants ? item.variants.length : 0
         };
     });
 
@@ -343,9 +372,17 @@ const Inventory = () => {
                 <div className="space-y-1.5 mb-3">
                   <p className="text-sm">
                     <span className="font-medium">Quantity:</span> {product.quantity} {product.unit}
+                    {product.hasVariants && (
+                      <span className="ml-2 text-xs text-gray-500">
+                        ({product.variantCount} variant{product.variantCount !== 1 ? 's' : ''})
+                      </span>
+                    )}
                   </p>
                   <p className="text-sm">
                     <span className="font-medium">Unit Price:</span> ₱{product.unitPrice?.toLocaleString()}
+                    {product.hasVariants && (
+                      <span className="ml-2 text-xs text-gray-500">(avg)</span>
+                    )}
                   </p>
                   <p className="text-sm">
                     <span className="font-medium">Location:</span> {product.location}

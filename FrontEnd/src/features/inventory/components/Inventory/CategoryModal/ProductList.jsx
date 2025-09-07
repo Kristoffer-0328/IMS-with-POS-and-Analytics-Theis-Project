@@ -64,7 +64,11 @@ const ProductList = ({ category, supplier, onClose, linkProductToSupplier }) => 
         try {
             await Promise.all(
                 selectedProducts.map(productId =>
-                    linkProductToSupplier(productId, supplier.id, supplierData[productId])
+                    linkProductToSupplier(productId, supplier.id, {
+                        ...supplierData[productId],
+                        supplierName: supplier.name,
+                        supplierCode: supplier.primaryCode || supplier.code
+                    })
                 )
             );
             onClose();

@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { FiX, FiPlus } from 'react-icons/fi';
+import { FiX, FiTrash2 } from 'react-icons/fi';
 import { useSupplierServices } from '../../../../services/firebase/SupplierServices';
-import CategoryModalIndex from '../Inventory/CategoryModal/CategoryModalIndex';
 
 const EditSupplierModal = ({ supplier, onClose }) => {
   const supplierServices = useSupplierServices();
   const [loading, setLoading] = useState(false);
-  const [showProductsModal, setShowProductsModal] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     primaryCode: '',
@@ -16,7 +14,10 @@ const EditSupplierModal = ({ supplier, onClose }) => {
     email: '',
     status: 'active'
   });
-  const [newCode, setNewCode] = useState({ code: '', description: '' });
+  
+  // Determine if we're creating a new supplier or editing an existing one
+  // If supplier is null or has no meaningful id, we're creating
+  const isCreating = !supplier || !supplier.id || supplier.id === '';
 
   useEffect(() => {
     if (supplier) {
@@ -66,45 +67,34 @@ const EditSupplierModal = ({ supplier, onClose }) => {
     }));
   };
 
-  const handleNewCodeChange = (e) => {
-    const { name, value } = e.target;
-    setNewCode(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
-
-  const addSupplierCode = () => {
-    if (!newCode.code || !newCode.description) {
-      alert('Please enter both code and description');
-      return;
-    }
-
-    // Check for duplicate codes
-    if (formData.supplierCodes.some(code => code.code === newCode.code)) {
-      alert('This supplier code already exists');
-      return;
-    }
-
-    setFormData(prev => ({
-      ...prev,
-      supplierCodes: [...prev.supplierCodes, { ...newCode }]
-    }));
-    setNewCode({ code: '', description: '' });
-  };
-
-  const removeSupplierCode = (codeToRemove) => {
-    setFormData(prev => ({
-      ...prev,
-      supplierCodes: prev.supplierCodes.filter(code => code.code !== codeToRemove)
-    }));
-  };
 
   const validatePrimaryCode = (code) => {
     if (!code) return false;
     // Primary code should be alphanumeric and may include hyphens
     const codeRegex = /^[A-Za-z0-9-]+$/;
     return codeRegex.test(code.toString());
+  };
+
+  const handleDelete = async () => {
+    if (!supplier || !supplier.id) return;
+    
+    const confirmMessage = `Are you sure you want to delete "${supplier.name}"? This action cannot be undone.`;
+    if (window.confirm(confirmMessage)) {
+      setLoading(true);
+      try {
+        const result = await supplierServices.deleteSupplier(supplier.id);
+        if (result.success) {
+          onClose();
+        } else {
+          alert(result.error || 'Failed to delete supplier');
+        }
+      } catch (error) {
+        console.error('Error deleting supplier:', error);
+        alert('Failed to delete supplier: ' + error.message);
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -119,16 +109,31 @@ const EditSupplierModal = ({ supplier, onClose }) => {
     setLoading(true);
 
     try {
-      // Create new supplier
-      const result = await supplierServices.createSupplier({
-        name: formData.name,
-        primaryCode: formData.primaryCode,
-        address: formData.address,
-        contactPerson: formData.contactPerson,
-        phone: formData.phone,
-        email: formData.email,
-        status: 'active'
-      });
+      let result;
+      
+      if (isCreating) {
+        // Create new supplier
+        result = await supplierServices.createSupplier({
+          name: formData.name,
+          primaryCode: formData.primaryCode,
+          address: formData.address,
+          contactPerson: formData.contactPerson,
+          phone: formData.phone,
+          email: formData.email,
+          status: formData.status
+        });
+      } else {
+        // Update existing supplier
+        result = await supplierServices.updateSupplier(supplier.id, {
+          name: formData.name,
+          primaryCode: formData.primaryCode,
+          address: formData.address,
+          contactPerson: formData.contactPerson,
+          phone: formData.phone,
+          email: formData.email,
+          status: formData.status
+        });
+      }
 
       if (result.success) {
         onClose();
@@ -148,7 +153,7 @@ const EditSupplierModal = ({ supplier, onClose }) => {
       <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center p-6 border-b sticky top-0 bg-white">
           <h2 className="text-xl font-semibold">
-            Add New Supplier
+            {isCreating ? 'Add New Supplier' : 'Edit Supplier'}
           </h2>
           <button
             onClick={onClose}
@@ -275,58 +280,45 @@ const EditSupplierModal = ({ supplier, onClose }) => {
               </select>
             </div>
 
-            <div className="col-span-2 mt-4">
-              <div className="border rounded-lg p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-medium">Supplier Products</h3>
-                  <button
-                    type="button"
-                    onClick={() => setShowProductsModal(true)}
-                    disabled={!isFormValid()}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                      isFormValid()
-                        ? 'bg-blue-500 text-white hover:bg-blue-600'
-                        : 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                    }`}
-                    title={!isFormValid() ? 'Please fill in all supplier information first' : ''}
-                  >
-                    <FiPlus size={20} />
-                    <span>Add New Product</span>
-                  </button>
-                </div>
-                <p className="text-sm text-gray-500">
-                  Click the button above to add new products to this supplier. Products will be automatically linked using the primary code.
-                </p>
-              </div>
-            </div>
           </div>
 
-          <div className="mt-6 flex justify-end gap-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-gray-600 hover:text-gray-800"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
-            >
-              {loading ? 'Adding...' : 'Add Supplier'}
-            </button>
+          <div className="mt-6 flex justify-between">
+            {/* Delete button - only show when editing existing supplier */}
+            {!isCreating && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={loading}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 flex items-center gap-2"
+              >
+                <FiTrash2 size={16} />
+                Delete Supplier
+              </button>
+            )}
+            
+            {/* Right side buttons */}
+            <div className="flex gap-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
+              >
+                {loading 
+                  ? (isCreating ? 'Adding...' : 'Updating...') 
+                  : (isCreating ? 'Add Supplier' : 'Update Supplier')
+                }
+              </button>
+            </div>
           </div>
         </form>
 
-        {/* Add Product Modal */}
-        {showProductsModal && (
-          <CategoryModalIndex
-            CategoryOpen={showProductsModal}
-            CategoryClose={() => setShowProductsModal(false)}
-            supplier={formData} // Pass current supplier data
-          />
-        )}
       </div>
     </div>
   );

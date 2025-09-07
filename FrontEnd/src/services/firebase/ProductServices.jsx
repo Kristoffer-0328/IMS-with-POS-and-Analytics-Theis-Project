@@ -154,6 +154,7 @@ export const ServicesProvider = ({ children }) => {
 // Functions for managing supplier-product relationships
 export const linkProductToSupplier = async (productId, supplierId, supplierData) => {
   try {
+    // First, create the supplier-product relationship record
     const supplierProductRef = doc(db, 'supplier_products', supplierId, 'products', productId);
     await setDoc(supplierProductRef, {
       productId,
@@ -161,6 +162,10 @@ export const linkProductToSupplier = async (productId, supplierId, supplierData)
       supplierSKU: supplierData.supplierSKU || '',
       lastUpdated: new Date().toISOString(),
     });
+
+    // Then, update the product's variant array with supplier information
+    await updateProductVariantsWithSupplier(productId, supplierId, supplierData);
+    
     return { success: true };
   } catch (error) {
     console.error('Error linking product to supplier:', error);
@@ -168,14 +173,117 @@ export const linkProductToSupplier = async (productId, supplierId, supplierData)
   }
 };
 
+// Helper function to update product variants with supplier information
+const updateProductVariantsWithSupplier = async (productId, supplierId, supplierData) => {
+  try {
+    // Find the product in all categories
+    const categoriesRef = collection(db, 'Products');
+    const categoriesSnapshot = await getDocs(categoriesRef);
+    
+    for (const categoryDoc of categoriesSnapshot.docs) {
+      const categoryName = categoryDoc.id;
+      const productRef = doc(db, 'Products', categoryName, 'Items', productId);
+      
+      try {
+        const productSnap = await getDoc(productRef);
+        if (productSnap.exists()) {
+          const productData = productSnap.data();
+          
+          // Update variants with supplier information
+          if (productData.variants && Array.isArray(productData.variants)) {
+            const updatedVariants = productData.variants.map(variant => ({
+              ...variant,
+              supplier: {
+                name: supplierData.supplierName || 'Unknown',
+                code: supplierData.supplierCode || supplierData.supplierSKU || '',
+                id: supplierId,
+                price: supplierData.supplierPrice || variant.unitPrice || 0,
+                sku: supplierData.supplierSKU || ''
+              }
+            }));
+            
+            // Update the product document with the new variants
+            await updateDoc(productRef, {
+              variants: updatedVariants,
+              lastUpdated: new Date().toISOString()
+            });
+            
+            console.log(`Updated product ${productId} in category ${categoryName} with supplier information`);
+            break; // Found and updated, no need to continue searching
+          }
+        }
+      } catch (err) {
+        // Continue to next category if this one fails
+        continue;
+      }
+    }
+  } catch (error) {
+    console.error('Error updating product variants with supplier:', error);
+    throw error;
+  }
+};
+
 export const unlinkProductFromSupplier = async (productId, supplierId) => {
   try {
+    // First, delete the supplier-product relationship record
     const supplierProductRef = doc(db, 'supplier_products', supplierId, 'products', productId);
     await deleteDoc(supplierProductRef);
+    
+    // Then, remove supplier information from the product's variant array
+    await removeSupplierFromProductVariants(productId, supplierId);
+    
     return { success: true };
   } catch (error) {
     console.error('Error unlinking product from supplier:', error);
     return { success: false, error };
+  }
+};
+
+// Helper function to remove supplier information from product variants
+const removeSupplierFromProductVariants = async (productId, supplierId) => {
+  try {
+    // Find the product in all categories
+    const categoriesRef = collection(db, 'Products');
+    const categoriesSnapshot = await getDocs(categoriesRef);
+    
+    for (const categoryDoc of categoriesSnapshot.docs) {
+      const categoryName = categoryDoc.id;
+      const productRef = doc(db, 'Products', categoryName, 'Items', productId);
+      
+      try {
+        const productSnap = await getDoc(productRef);
+        if (productSnap.exists()) {
+          const productData = productSnap.data();
+          
+          // Remove supplier information from variants
+          if (productData.variants && Array.isArray(productData.variants)) {
+            const updatedVariants = productData.variants.map(variant => {
+              // Remove supplier info if it matches the supplier being unlinked
+              if (variant.supplier && variant.supplier.id === supplierId) {
+                const { supplier, ...variantWithoutSupplier } = variant;
+                return variantWithoutSupplier;
+              }
+              return variant;
+            });
+            
+            // Update the product document with the updated variants
+            await updateDoc(productRef, {
+              variants: updatedVariants,
+              lastUpdated: new Date().toISOString()
+            });
+            
+            console.log(`Removed supplier ${supplierId} from product ${productId} in category ${categoryName}`);
+            break; // Found and updated, no need to continue searching
+          }
+        }
+      } catch (err) {
+        // Continue to next category if this one fails
+        continue;
+      }
+    }
+  } catch (error) {
+    console.error('Error removing supplier from product variants:', error);
+    throw error;
   }
 };
 
