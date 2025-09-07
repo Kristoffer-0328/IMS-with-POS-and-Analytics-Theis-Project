@@ -16,6 +16,7 @@ import {
   FiAlertCircle,
   FiUsers
 } from 'react-icons/fi';
+import GloryStarLogo from '../../../assets/Glory_Star_Logo.png';
 
 const IMSidebar = ({ collapsed, setCollapsed }) => {
   const location = useLocation();
@@ -99,8 +100,12 @@ const IMSidebar = ({ collapsed, setCollapsed }) => {
       >
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           {!collapsed && (
-            <h2 className="text-[#ff7b54] font-bold text-lg truncate">
-              Glory Star
+            <h2 className="">
+             <img
+                src={GloryStarLogo}
+                alt="Glory Star Logo"
+                className="h-15 w-15 mx-auto mb-2"
+                />
             </h2>
           )}
           <button
