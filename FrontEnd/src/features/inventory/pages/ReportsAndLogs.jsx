@@ -3,7 +3,7 @@ import { FiActivity, FiBarChart, FiFileText } from 'react-icons/fi';
 
 import ReportCard from '../components/Reports/ReportCard';
 import ReportHeader from '../components/Reports/ReportHeader';
-import InventoryTurnoverReport from '../components/Reports/InventoryTurnoverReport';
+import InventoryTurnoverReport from '../components/Reports/InventoryTurnOverReport';
 import StockMovementReport from '../components/Reports/StockMovementReport';
 import ShrinkageReport from '../components/Reports/ShrinkageReport';
 import TestDataGenerator from '../components/Reports/TestDataGenerator';
