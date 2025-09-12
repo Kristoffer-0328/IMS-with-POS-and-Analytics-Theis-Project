@@ -11,6 +11,8 @@ import ImportCVGModal from '../components/Inventory/ImportCVGModal';
 import ProductChoice from '../components/Inventory/ProductChoices';
 import CategoryMOdalIndex from '../components/Inventory/CategoryModal/CategoryModalIndex';
 import InfoModal from '../components/Dashboard/InfoModal';
+import StorageFacilityInteractiveMap from '../components/Inventory/StorageFacilityInteractiveMap';
+
 
 const Inventory = () => {
   const [currentFilter, setCurrentFilter] = useState('all');
@@ -202,7 +204,14 @@ const Inventory = () => {
     // Apply filters
     if (debouncedSearchQuery !== '') {
         filtered = filtered.filter((item) =>
-            item.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
+            item.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+            item.brand?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+            item.category?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+            item.storageLocation?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+            item.fullLocation?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+            item.shelfName?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+            item.rowName?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+            (item.supplier?.name && item.supplier.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase()))
         );
     }
 
@@ -218,7 +227,11 @@ const Inventory = () => {
     }
 
     if (selectedStorageRoom !== 'all') {
-        filtered = filtered.filter((item) => item.location === selectedStorageRoom);
+        // Filter by storage location (new nested structure)
+        filtered = filtered.filter((item) => {
+            // Check both old 'location' field and new 'storageLocation' field for compatibility
+            return item.storageLocation === selectedStorageRoom || item.location === selectedStorageRoom;
+        });
     }
 
     return filtered;
@@ -261,9 +274,12 @@ const Inventory = () => {
             </div>
           </div>
         </div>
-
-        {/* Chart Section */}
         <div className="bg-gray-50/50 rounded-xl p-4">
+          <StorageFacilityInteractiveMap/>
+        </div>
+        
+        {/* Chart Section */}
+        {/* <div className="bg-gray-50/50 rounded-xl p-4">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold text-gray-800">
               {selectedChart === 'Stock Level' ? 'Current Stock Levels' : 'Stock Level Trends'}
@@ -281,7 +297,8 @@ const Inventory = () => {
           ) : selectedChart === 'Stock Trend' ? (
             <InventoryTrendChart data={monthlyInventoryData} />
           ) : null}
-        </div>
+        </div> */}
+
       </div>
 
       {/* Enhanced Table Section */}

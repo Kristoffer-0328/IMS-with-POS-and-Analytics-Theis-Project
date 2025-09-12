@@ -20,15 +20,37 @@ const InventoryFilters = ({
 
   // Fetch Categories from Firestore
   const fetchCategories = async () => {
-    const querySnapshot = await getDocs(collection(db, "Products"));
-    const fetchedCategories = querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      name: doc.name,
-      ...doc.data(),
-    }));
-    setCategories(fetchedCategories);
-    if (fetchedCategories.length && !category) {
-      setCategory(fetchedCategories[0].name); // Default to first category
+    try {
+      // Since categories are now stored within products, we need to get unique categories from all products
+      // This is a simplified approach - in production, you might want to maintain a separate categories collection
+      const categorySet = new Set();
+      
+      // Note: This is a placeholder since getting all product categories from the nested structure
+      // would require traversing all storage locations. For now, we'll use common categories.
+      const commonCategories = [
+        'Hardware', 'Electrical', 'Plumbing', 'Paint', 'Tools', 
+        'Automotive', 'Garden', 'Safety', 'Lighting', 'Building Materials'
+      ];
+      
+      const fetchedCategories = commonCategories.map(cat => ({
+        id: cat.toLowerCase().replace(/\s+/g, '-'),
+        name: cat
+      }));
+      
+      setCategories(fetchedCategories);
+      if (fetchedCategories.length && !category) {
+        setCategory(fetchedCategories[0].name); // Default to first category
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      // Fallback to common categories
+      const fallbackCategories = [
+        'Hardware', 'Electrical', 'Plumbing', 'Paint', 'Tools'
+      ].map(cat => ({
+        id: cat.toLowerCase(),
+        name: cat
+      }));
+      setCategories(fallbackCategories);
     }
   };
 
@@ -143,23 +165,23 @@ const InventoryFilters = ({
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-gray-600 text-sm whitespace-nowrap">Storage Room:</span>
+        <span className="text-gray-600 text-sm whitespace-nowrap">Storage Location:</span>
         <div className="relative">
           <select
             className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 min-w-[120px]"
             value={selectedStorageRoom}
             onChange={(e) => setSelectedStorageRoom(e.target.value)}
           >
-            <option value="all">All Rooms</option>
-            <option value="STR A1">STR A1</option>
-            <option value="STR A2">STR A2</option>
-            <option value="STR A3">STR A3</option>
-            <option value="STR B1">STR B1</option>
-            <option value="STR B2">STR B2</option>
-            <option value="STR B3">STR B3</option>
-            <option value="STR C1">STR C1</option>
-            <option value="STR C2">STR C2</option>
-            <option value="STR C3">STR C3</option>
+            <option value="all">All Storage Units</option>
+            <option value="Unit 01">Unit 01</option>
+            <option value="Unit 02">Unit 02</option>
+            <option value="Unit 03">Unit 03</option>
+            <option value="Unit 04">Unit 04</option>
+            <option value="Unit 05">Unit 05</option>
+            <option value="Unit 06">Unit 06</option>
+            <option value="Unit 07">Unit 07</option>
+            <option value="Unit 08">Unit 08</option>
+            <option value="Unit 09">Unit 09</option>
           </select>
           <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
             <svg

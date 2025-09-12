@@ -5,6 +5,7 @@ import app from "../../../../../FirebaseConfig";
 import { getCategorySpecificFields } from "./Utils";
 import ProductFactory from "../../Factory/productFactory";
 import SupplierSelector from '../../Supplier/SupplierSelector';
+import ShelfViewModal from '../ShelfViewModal';
 
 const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier }) => {
     const [existingProducts, setExistingProducts] = useState([]);
@@ -30,9 +31,67 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
     const [specifications, setSpecifications] = useState('');
     const [selectedSupplier, setSelectedSupplier] = useState(null);
     const [supplierPrice, setSupplierPrice] = useState('');
+    
+    // Storage location modal states
+    const [isStorageModalOpen, setIsStorageModalOpen] = useState(false);
+    const [selectedStorageLocation, setSelectedStorageLocation] = useState(null);
 
     const { listenToProducts, linkProductToSupplier } = useServices();
     const db = getFirestore(app);
+    
+    // Mock storage unit data for the modal
+    const getStorageUnitData = () => {
+        const unitName = selectedCategory?.name || 'Unit 01';
+        return {
+            title: unitName,
+            type: "Storage Unit",
+            shelves: [
+                {
+                    name: "Shelf A",
+                    rows: [
+                        { name: "Row 1", items: [] },
+                        { name: "Row 2", items: [] },
+                        { name: "Row 3", items: [] },
+                        { name: "Row 4", items: [] },
+                        { name: "Row 5", items: [] },
+                        { name: "Row 6", items: [] },
+                        { name: "Row 7", items: [] },
+                        { name: "Row 8", items: [] }
+                    ]
+                },
+                {
+                    name: "Shelf B",
+                    rows: [
+                        { name: "Row 1", items: [] },
+                        { name: "Row 2", items: [] },
+                        { name: "Row 3", items: [] },
+                        { name: "Row 4", items: [] },
+                        { name: "Row 5", items: [] },
+                        { name: "Row 6", items: [] },
+                        { name: "Row 7", items: [] },
+                        { name: "Row 8", items: [] }
+                    ]
+                }
+            ]
+        };
+    };
+    
+    // Handle storage location selection
+    const handleStorageLocationSelect = (shelfName, rowName, columnIndex) => {
+        const locationString = `${selectedCategory?.name} - ${shelfName} - ${rowName} - Column ${columnIndex + 1}`;
+        setSelectedStorageLocation({
+            unit: selectedCategory?.name,
+            shelf: shelfName,
+            row: rowName,
+            column: columnIndex + 1,
+            fullLocation: locationString
+        });
+        setVariantValue(prev => ({
+            ...prev,
+            location: locationString
+        }));
+        setIsStorageModalOpen(false);
+    };
 
     // Handle preSelectedProduct and supplier props
     useEffect(() => {
@@ -149,6 +208,11 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
             alert('Please select a product first');
             return;
         }
+        
+        if (!selectedStorageLocation) {
+            alert('Please select a storage location first');
+            return;
+        }
 
         try {
             console.log('=== ADD VARIANT DEBUG START ===');
@@ -199,37 +263,45 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
             let docSnap = null;
             let foundCategory = null;
 
-            // First try with the provided category
+            // First try with the provided category - search through all storage locations
             if (selectedCategory?.name) {
-                const testProductRef = doc(db, 'Products', selectedCategory.name, 'Items', selectedProduct.id);
-                const testDocSnap = await getDoc(testProductRef);
+                console.log('Searching for product in storage locations...');
+                const storageLocationsRef = collection(db, 'Products');
+                const storageLocationsSnapshot = await getDocs(storageLocationsRef);
                 
-                if (testDocSnap.exists()) {
-                    productRef = testProductRef;
-                    docSnap = testDocSnap;
-                    foundCategory = selectedCategory.name;
-                    console.log('Found product in expected category:', selectedCategory.name);
-                }
-            }
-            
-            // If not found, search through all categories
-            if (!productRef) {
-                console.log('Product not found in expected category, searching all categories...');
-                const categoriesRef = collection(db, 'Products');
-                const categoriesSnapshot = await getDocs(categoriesRef);
-                
-                for (const categoryDoc of categoriesSnapshot.docs) {
-                    const categoryName = categoryDoc.id;
-                    const testProductRef = doc(db, 'Products', categoryName, 'Items', selectedProduct.id);
-                    const testDocSnap = await getDoc(testProductRef);
+                for (const storageDoc of storageLocationsSnapshot.docs) {
+                    const storageLocation = storageDoc.id;
+                    const shelvesRef = collection(db, 'Products', storageLocation);
+                    const shelvesSnapshot = await getDocs(shelvesRef);
                     
-                    if (testDocSnap.exists()) {
-                        foundCategory = categoryName;
-                        productRef = testProductRef;
-                        docSnap = testDocSnap;
-                        console.log('Found product in category:', categoryName);
-                        break;
+                    for (const shelfDoc of shelvesSnapshot.docs) {
+                        const shelfName = shelfDoc.id;
+                        const rowsRef = collection(db, 'Products', storageLocation, shelfName);
+                        const rowsSnapshot = await getDocs(rowsRef);
+                        
+                        for (const rowDoc of rowsSnapshot.docs) {
+                            const rowName = rowDoc.id;
+                            const columnsRef = collection(db, 'Products', storageLocation, shelfName, rowName);
+                            const columnsSnapshot = await getDocs(columnsRef);
+                            
+                            for (const columnDoc of columnsSnapshot.docs) {
+                                const columnIndex = columnDoc.id;
+                                const testProductRef = doc(db, 'Products', storageLocation, shelfName, rowName, columnIndex, selectedProduct.id);
+                                const testDocSnap = await getDoc(testProductRef);
+                                
+                                if (testDocSnap.exists()) {
+                                    productRef = testProductRef;
+                                    docSnap = testDocSnap;
+                                    foundCategory = selectedCategory.name;
+                                    console.log('Found product in:', { storageLocation, shelfName, rowName, columnIndex });
+                                    break;
+                                }
+                            }
+                            if (productRef) break;
+                        }
+                        if (productRef) break;
                     }
+                    if (productRef) break;
                 }
             }
             
@@ -510,6 +582,42 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                                 />
                             </div>
                         </div>
+                        
+                        {/* Storage Location Selection */}
+                        <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Storage Location
+                                <span className="text-xs text-red-500 ml-1">*</span>
+                            </label>
+                            <button
+                                type="button"
+                                onClick={() => setIsStorageModalOpen(true)}
+                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-left hover:bg-gray-100"
+                            >
+                                {selectedStorageLocation ? (
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-gray-900">{selectedStorageLocation.fullLocation}</span>
+                                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-gray-500">Click to select storage location</span>
+                                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </div>
+                                )}
+                            </button>
+                            {selectedStorageLocation && (
+                                <div className="mt-2 p-2 bg-blue-50 rounded-lg">
+                                    <p className="text-xs text-blue-700">
+                                        <span className="font-medium">Selected:</span> {selectedStorageLocation.unit} → {selectedStorageLocation.shelf} → {selectedStorageLocation.row} → Column {selectedStorageLocation.column}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
 
@@ -579,6 +687,14 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                     </button>
                 </div>
             )}
+            
+            {/* Storage Location Selection Modal */}
+            <ShelfViewModal 
+                isOpen={isStorageModalOpen}
+                onClose={() => setIsStorageModalOpen(false)}
+                selectedUnit={getStorageUnitData()}
+                onLocationSelect={handleStorageLocationSelect}
+            />
         </div>
     );
 };
