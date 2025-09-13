@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { FiX, FiPlus, FiTrash2 } from 'react-icons/fi';
+import { FiX, FiPlus, FiTrash2, FiPackage, FiUser } from 'react-icons/fi';
 import { usePurchaseOrderServices } from '../../../../services/firebase/PurchaseOrderServices';
 import { useServices } from '../../../../services/firebase/ProductServices';
+import { useSupplierServices } from '../../../../services/firebase/SupplierServices';
 import { useAuth } from '../../../auth/services/FirebaseAuth';
 import { getFirestore, collection, query, where, getDocs } from 'firebase/firestore';
 import app from '../../../../FirebaseConfig';
@@ -10,18 +11,23 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
   const { currentUser } = useAuth();
   const poServices = usePurchaseOrderServices();
   const { listenToProducts } = useServices();
+  const supplierServices = useSupplierServices();
   const db = getFirestore(app);
 
   // State
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState([]);
   const [restockRequests, setRestockRequests] = useState([]);
-  const [items, setItems] = useState([{ productId: '', quantity: '', unitPrice: '', total: 0 }]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [selectedSupplier, setSelectedSupplier] = useState(null);
+  const [suppliersWithRestockNeeds, setSuppliersWithRestockNeeds] = useState([]);
+  const [items, setItems] = useState([]);
   const [deliveryDate, setDeliveryDate] = useState('');
   const [paymentTerms, setPaymentTerms] = useState('');
   const [notes, setNotes] = useState('');
+  const [currentStep, setCurrentStep] = useState('supplier-selection'); // 'supplier-selection' or 'product-selection'
 
-  // Load products and restock requests
+  // Load data on component mount
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -40,13 +46,19 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
         console.log('Restock requests:', requests);
         setRestockRequests(requests);
 
+        // Load suppliers
+        const supplierResult = await supplierServices.listSuppliers();
+        if (supplierResult.success) {
+          setSuppliers(supplierResult.data);
+        }
+
         // Set up products listener
         const unsubscribeProducts = listenToProducts((fetchedProducts) => {
-          // Filter products to only those with pending restock requests
-          const productsWithRequests = fetchedProducts.filter(product => 
-            requests.some(req => req.productId === product.id)
-          );
-          setProducts(productsWithRequests);
+          setProducts(fetchedProducts);
+          
+          // Find suppliers who have products that need restocking
+          const suppliersWithNeeds = findSuppliersWithRestockNeeds(fetchedProducts, requests);
+          setSuppliersWithRestockNeeds(suppliersWithNeeds);
         });
 
         return () => unsubscribeProducts();
@@ -58,6 +70,79 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
 
     loadData();
   }, []);
+
+  // Find suppliers who have products that need restocking
+  const findSuppliersWithRestockNeeds = (products, requests) => {
+    const supplierMap = new Map();
+
+    requests.forEach(request => {
+      // Find the product for this request
+      const product = products.find(p => 
+        p.id === request.productId || 
+        p.variants?.some(v => v.id === request.productId)
+      );
+
+      if (product && product.supplier) {
+        console.log('Product supplier structure:', product.supplier);
+        
+        // Properly extract supplier name (handle both string and object cases)
+        const supplierName = typeof product.supplier.name === 'string' 
+          ? product.supplier.name 
+          : (typeof product.supplier.name === 'object' ? product.supplier.name?.name || 'Unknown Supplier' : 'Unknown Supplier');
+        
+        // Create a fallback supplier ID if both code and primaryCode are missing
+        const fallbackId = supplierName.replace(/\s+/g, '_').toLowerCase() + '_' + Date.now();
+        const supplierKey = product.supplier.primaryCode || product.supplier.code || fallbackId;
+        
+        if (!supplierMap.has(supplierKey)) {
+          supplierMap.set(supplierKey, {
+            code: product.supplier.code || fallbackId,
+            primaryCode: product.supplier.primaryCode || fallbackId,
+            name: supplierName,
+            restockCount: 0,
+            products: []
+          });
+          console.log('Created supplier map entry:', supplierMap.get(supplierKey));
+        }
+        
+        const supplierData = supplierMap.get(supplierKey);
+        supplierData.restockCount++;
+        supplierData.products.push({
+          ...product,
+          restockRequest: request
+        });
+      }
+    });
+
+    return Array.from(supplierMap.values());
+  };
+
+  // Handle supplier selection
+  const handleSupplierSelect = (supplier) => {
+    setSelectedSupplier(supplier);
+    
+    // Auto-populate items with products that need restocking from this supplier
+    const supplierProducts = supplier.products.map(product => ({
+      productId: product.id,
+      productName: product.name,
+      quantity: product.restockRequest.requestedQuantity || '',
+      unitPrice: product.unitPrice || product.variants?.[0]?.unitPrice || '',
+      total: 0,
+      restockRequestId: product.restockRequest.id,
+      currentQuantity: product.restockRequest.currentQuantity,
+      requestedQuantity: product.restockRequest.requestedQuantity
+    }));
+
+    setItems(supplierProducts.length > 0 ? supplierProducts : [{ productId: '', quantity: '', unitPrice: '', total: 0 }]);
+    setCurrentStep('product-selection');
+  };
+
+  // Go back to supplier selection
+  const handleBackToSupplierSelection = () => {
+    setSelectedSupplier(null);
+    setItems([{ productId: '', quantity: '', unitPrice: '', total: 0 }]);
+    setCurrentStep('supplier-selection');
+  };
 
   // Calculate totals
   const calculateItemTotal = (item) => {
@@ -72,27 +157,22 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
     newItems[index] = { ...newItems[index], [field]: value };
     
     if (field === 'productId') {
-      const product = products.find(p => p.id === value); 
+      const product = selectedSupplier.products.find(p => p.id === value);
       if (product) {
-        // Find the restock request for this product
-        const restockRequest = restockRequests.find(req => req.productId === value);
-        if (restockRequest) {
-          newItems[index] = {
-            ...newItems[index],
-            productName: product.name,
-            quantity: restockRequest.requestedQuantity.toString(),
-            unitPrice: product.variants[0]?.unitPrice || 0,
-            supplier: product.supplier || product.variants[0]?.supplier,
-            total: 0 // Will be calculated below
-          };
-         
-        }
+        newItems[index] = {
+          ...newItems[index],
+          productName: product.name,
+          quantity: product.restockRequest.requestedQuantity.toString(),
+          unitPrice: product.unitPrice || product.variants?.[0]?.unitPrice || 0,
+          restockRequestId: product.restockRequest.id,
+          currentQuantity: product.restockRequest.currentQuantity,
+          requestedQuantity: product.restockRequest.requestedQuantity
+        };
       }
     }
     
     newItems[index].total = calculateItemTotal(newItems[index]);
     setItems(newItems);
-    
   };
 
   // Add/Remove items
@@ -112,61 +192,47 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
     setLoading(true);
 
     try {
-      // Group items by supplier
-      const supplierGroups = items.reduce((groups, item) => {
-        const product = products.find(p => p.id === item.productId);
-        if (!product || !product.supplier) {
-          throw new Error(`No supplier found for product: ${product?.name || item.productId}`);
-        }
+      // Debug logging to see what we have
+      console.log('Selected supplier object:', selectedSupplier);
+      console.log('Selected supplier keys:', Object.keys(selectedSupplier || {}));
+      
+      // Ensure we have a valid supplier ID
+      const supplierIdToUse = selectedSupplier.primaryCode || selectedSupplier.code;
+      console.log('Supplier ID to use:', supplierIdToUse);
+      
+      if (!supplierIdToUse) {
+        console.error('No supplier ID found in:', selectedSupplier);
+        throw new Error('Supplier ID (primaryCode or code) is missing');
+      }
 
-        const supplierId = product.supplier.code;
-        if (!groups[supplierId]) {
-          groups[supplierId] = {
-            supplierId: product.supplier.code,
-            supplierName: product.supplier.name,
-            items: []
-          };
-        }
-        groups[supplierId].items.push({
+      const poData = {
+        supplierId: String(supplierIdToUse),
+        supplierName: String(selectedSupplier.name || 'Unknown Supplier'),
+        items: items.filter(item => item.productId).map(item => ({
           productId: item.productId,
-          productName: product.name,
+          productName: item.productName,
           quantity: Number(item.quantity),
           unitPrice: Number(item.unitPrice),
           total: calculateItemTotal(item),
-          restockRequestId: restockRequests.find(req => req.productId === item.productId)?.id
-        });
-        return groups;
-      }, {});
+          restockRequestId: item.restockRequestId
+        })),
+        totalAmount,
+        deliveryDate,
+        paymentTerms,
+        notes,
+        createdBy: {
+          id: currentUser?.uid || '',
+          name: currentUser?.name || '',
+          role: currentUser?.role || 'staff'
+        }
+      };
 
-      // Create a PO for each supplier
-      const poPromises = Object.values(supplierGroups).map(async group => {
-        const poData = {
-          supplierId: group.supplierId,
-          supplierName: group.supplierName,
-          items: group.items,
-          totalAmount: group.items.reduce((sum, item) => sum + item.total, 0),
-          deliveryDate,
-          paymentTerms,
-          notes,
-          createdBy: {
-            id: currentUser?.uid || '',
-            name: currentUser?.name || '',
-            role: currentUser?.role || 'staff'
-          }
-        };
-        console.log('Creating PO with data:', poData);
-        const result = await poServices.createPurchaseOrder(poData);
-        console.log('PO creation result:', result);
-        return result;
-      });
-
-      const results = await Promise.all(poPromises);
-      console.log('All PO creation results:', results);
+      console.log('Creating PO with data:', poData);
+      const result = await poServices.createPurchaseOrder(poData);
+      console.log('PO creation result:', result);
       
-      const failures = results.filter(result => !result.success);
-      if (failures.length > 0) {
-        console.error('Failed PO creations:', failures);
-        throw new Error(`Failed to create ${failures.length} purchase orders. Errors: ${failures.map(f => f.error).join(', ')}`);
+      if (!result.success) {
+        throw new Error(result.error);
       }
 
       onSuccess();
@@ -178,185 +244,248 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
     }
   };
 
+  // Render supplier selection step
+  const renderSupplierSelection = () => (
+    <div className="p-6">
+      <div className="mb-6">
+        <h3 className="text-lg font-medium mb-4">Select Supplier with Restock Needs</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          Choose a supplier who has products that need restocking:
+        </p>
+      </div>
+
+      {suppliersWithRestockNeeds.length === 0 ? (
+        <div className="text-center py-8">
+          <FiPackage className="mx-auto text-gray-300 mb-4" size={48} />
+          <p className="text-gray-500 text-lg">No suppliers with restock needs found</p>
+          <p className="text-gray-400 text-sm">All products are adequately stocked</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {suppliersWithRestockNeeds.map((supplier) => (
+            <div
+              key={supplier.primaryCode || supplier.code}
+              onClick={() => handleSupplierSelect(supplier)}
+              className="border rounded-lg p-4 hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center">
+                  <FiUser className="text-blue-500 mr-2" size={20} />
+                  <h4 className="font-medium text-gray-900">{String(supplier.name || 'Unknown Supplier')}</h4>
+                </div>
+                <span className="bg-red-100 text-red-800 px-2 py-1 rounded-full text-xs font-medium">
+                  {supplier.restockCount} items
+                </span>
+              </div>
+              <p className="text-sm text-gray-600 mb-2">Code: {String(supplier.primaryCode || supplier.code || 'N/A')}</p>
+              <p className="text-sm text-gray-500">
+                Products needing restock: {supplier.products.length}
+              </p>
+              <div className="mt-3">
+                <button className="text-blue-600 text-sm font-medium hover:text-blue-800">
+                  Create Purchase Order →
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  // Render product selection and PO creation step
+  const renderProductSelection = () => (
+    <form onSubmit={handleSubmit} className="p-6 overflow-y-auto max-h-[calc(90vh-129px)]">
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-medium">Create Purchase Order</h3>
+            <p className="text-sm text-gray-600">Supplier: {String(selectedSupplier.name || 'Unknown Supplier')} ({String(selectedSupplier.primaryCode || selectedSupplier.code || 'N/A')})</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleBackToSupplierSelection}
+            className="text-blue-600 hover:text-blue-800 text-sm"
+          >
+            ← Change Supplier
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        {/* Delivery Date */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Expected Delivery Date
+          </label>
+          <input
+            type="date"
+            required
+            value={deliveryDate}
+            onChange={(e) => setDeliveryDate(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2"
+            min={new Date().toISOString().split('T')[0]}
+          />
+        </div>
+      </div>
+
+      {/* Items */}
+      <div className="mb-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-medium">Order Items</h3>
+          <button
+            type="button"
+            onClick={addItem}
+            className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
+          >
+            <FiPlus /> Add Item
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {items.map((item, index) => {
+            const selectedProduct = selectedSupplier.products.find(p => p.id === item.productId);
+            
+            return (
+              <div key={index} className="border rounded-lg p-4 bg-gray-50">
+                <div className="grid grid-cols-12 gap-4 items-start">
+                  <div className="col-span-5">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+                    <select
+                      required
+                      value={item.productId}
+                      onChange={(e) => handleItemChange(index, 'productId', e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2"
+                    >
+                      <option value="">Select Product</option>
+                      {selectedSupplier.products.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name} (Current: {product.restockRequest.currentQuantity}, Need: {product.restockRequest.requestedQuantity})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={item.quantity}
+                      onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Unit Price</label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      step="0.01"
+                      value={item.unitPrice}
+                      onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Total</label>
+                    <div className="py-2 px-3 bg-white rounded-lg border">
+                      ₱{calculateItemTotal(item).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="col-span-1 flex items-end">
+                    {items.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeItem(index)}
+                        className="text-red-600 hover:text-red-800 p-2"
+                      >
+                        <FiTrash2 />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                
+                {selectedProduct && (
+                  <div className="mt-3 text-sm text-gray-600">
+                    <p><strong>Restock Details:</strong> Current stock: {item.currentQuantity}, Requested: {item.requestedQuantity}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex justify-end mt-4">
+          <div className="w-48 py-2 px-3 bg-green-50 rounded-lg text-right font-medium">
+            Total: ₱{totalAmount.toLocaleString()}
+          </div>
+        </div>
+      </div>
+
+      {/* Payment Terms */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Payment Terms
+        </label>
+        <textarea
+          type="text"
+          rows={3}
+          value={paymentTerms}
+          onChange={(e) => setPaymentTerms(e.target.value)}
+          placeholder="e.g., Net 30, COD"
+          className="w-full border rounded-lg px-3 py-2"
+        />
+      </div>
+
+      {/* Notes */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Notes
+        </label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Additional notes or instructions..."
+          rows={3}
+          className="w-full border rounded-lg px-3 py-2"
+        />
+      </div>
+
+      {/* Submit Button */}
+      <div className="flex justify-end gap-4">
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-4 py-2 text-gray-600 hover:text-gray-800"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={loading}
+          className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+        >
+          {loading ? 'Creating...' : 'Create Purchase Order'}
+        </button>
+      </div>
+    </form>
+  );
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden">
+      <div className="bg-white rounded-lg w-full max-w-6xl max-h-[90vh] overflow-hidden">
         <div className="flex justify-between items-center p-6 border-b">
-          <h2 className="text-xl font-semibold">Create Purchase Order</h2>
+          <h2 className="text-xl font-semibold">
+            {currentStep === 'supplier-selection' ? 'Create Purchase Order - Select Supplier' : 'Create Purchase Order'}
+          </h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
             <FiX size={24} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto max-h-[calc(90vh-129px)]">
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            {/* Delivery Date */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Expected Delivery Date
-              </label>
-              <input
-                type="date"
-                required
-                value={deliveryDate}
-                onChange={(e) => setDeliveryDate(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2"
-                min={new Date().toISOString().split('T')[0]}
-              />
-            </div>
-
-            
-          </div>
-
-          {/* Items */}
-          <div className="mb-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-medium">Order Items</h3>
-              <h3 className="text-md font-medium"></h3>
-              <h3 className="text-md font-medium"></h3>
-              <h3 className="text-md font-medium"></h3>
-              <h3 className="text-md font-medium"></h3>
-              <h3 className="text-md font-medium"></h3>
-              <h3 className="text-md font-medium"></h3>
-              <h3 className="text-md font-medium"></h3>
-              <h3 className="text-md font-medium">Quantity</h3>
-              <h3 className="text-md font-medium">Unit Price</h3>
-              
-              <h3 className="text-md font-medium">Total</h3>
-              <button
-                type="button"
-                onClick={addItem}
-                className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
-              >
-                <FiPlus /> Add Item
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {items.map((item, index) => {
-                const selectedProduct = products.find(p => p.id === item.productId);
-                const supplier = selectedProduct?.supplier || selectedProduct?.variants[0]?.supplier;
-                
-                return (
-                  <div key={index} className="space-y-2">
-                    <div className="flex gap-4 items-start">
-                      <div className="flex-1">
-                        <select
-                          required
-                          value={item.productId}
-                          onChange={(e) => handleItemChange(index, 'productId', e.target.value)}
-                          className="w-full border rounded-lg px-3 py-2"
-                        >
-                          <option value="">Select Product</option>
-                          {products.map((product) => {
-                            const request = restockRequests.find(req => req.productId === product.id);
-                            return (
-                              <option key={product.id} value={product.id}>
-                                {product.name} (Current: {request?.currentQuantity || 0}, Requested: {request?.requestedQuantity || 0})
-                              </option>
-                            );
-                          })}
-                        </select>
-                      </div>
-                      <div className="w-24">
-                        <input
-                          type="number"
-                          required
-                          min="1"
-                          placeholder="Qty"
-                          value={item.quantity}
-                          onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
-                          className="w-full border rounded-lg px-3 py-2"
-                        />
-                      </div>
-                      <div className="w-32">
-                        <input
-                          type="number"
-                          required
-                          min="0"
-                          step="0.01"
-                          placeholder="Unit Price"
-                          value={item.unitPrice}
-                          onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)}
-                          className="w-full border rounded-lg px-3 py-2"
-                        />
-                      </div>
-                      <div className="w-32 py-2 px-3 bg-gray-50 rounded-lg">
-                        ₱{calculateItemTotal(item).toLocaleString()}
-                      </div>
-                      {items.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeItem(index)}
-                          className="text-red-600 hover:text-red-800 p-2"
-                        >
-                          <FiTrash2 />
-                        </button>
-                      )}
-                    </div>
-                    {supplier && (
-                      <div className="text-sm text-gray-600 pl-2">
-                        Supplier: {supplier.name} ({supplier.code})
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="flex justify-end mt-4">
-              <div className="w-48 py-2 px-3 bg-green-50 rounded-lg text-right font-medium">
-                Total: ₱{totalAmount.toLocaleString()}
-              </div>
-            </div>
-          </div>
-          {/* Payment Terms */}
-          <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Payment Terms
-              </label>
-              <textarea
-                type="text"
-                rows={3}
-                value={paymentTerms}
-                onChange={(e) => setPaymentTerms(e.target.value)}
-                placeholder="e.g., Net 30, COD"
-                className="w-full border rounded-lg px-3 py-2"
-              />
-            </div>
-
-          {/* Notes */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Notes
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Additional notes or instructions..."
-              rows={3}
-              className="w-full border rounded-lg px-3 py-2"
-            />
-          </div>
-
-          {/* Submit Button */}
-          <div className="flex justify-end gap-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-gray-600 hover:text-gray-800"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading ? 'Creating...' : 'Create Purchase Order'}
-            </button>
-          </div>
-        </form>
+        {currentStep === 'supplier-selection' ? renderSupplierSelection() : renderProductSelection()}
       </div>
     </div>
   );

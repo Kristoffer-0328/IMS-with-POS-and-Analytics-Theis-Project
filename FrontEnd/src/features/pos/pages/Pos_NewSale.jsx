@@ -3,14 +3,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useServices } from '../../../services/firebase/ProductServices';
 import {
   getFirestore,
-  collection,
   doc,
   runTransaction,
   serverTimestamp,
   getDoc,
-  query,
-  where,
-  getDocs,
 } from 'firebase/firestore';
 import app from  '../../../FirebaseConfig';
 import { useAuth } from '../../auth/services/FirebaseAuth';
@@ -42,6 +38,21 @@ const formatCurrency = (number) => {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(number);
+};
+
+// Helper function to clean Firebase data (remove undefined values)
+const cleanFirebaseData = (obj) => {
+  const cleaned = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined && value !== null) {
+      if (typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+        cleaned[key] = cleanFirebaseData(value);
+      } else {
+        cleaned[key] = value;
+      }
+    }
+  }
+  return cleaned;
 };
 
 // Helper function to format Date/Time (can be moved to utils)
@@ -288,7 +299,13 @@ useEffect(() => {
                     unit: variant.unit || 'pcs',
                     price: Number(variant.unitPrice) || 0,
                     quantity: Number(variant.quantity) || 0,
-                    image: variant.image || product.image || null
+                    image: variant.image || product.image || null,
+                    // Add location fields from the parent product
+                    storageLocation: product.storageLocation,
+                    shelfName: product.shelfName,
+                    rowName: product.rowName,
+                    columnIndex: product.columnIndex,
+                    fullLocation: product.fullLocation
                 });
             });
     
@@ -483,7 +500,13 @@ useEffect(() => {
         qty: quantity,
         variantId: variant.variantId,
         category: selectedProductForModal.category,
-        baseProductId: variant.baseProductId
+        baseProductId: variant.baseProductId,
+        // Add location fields from variant
+        storageLocation: variant.storageLocation,
+        shelfName: variant.shelfName,
+        rowName: variant.rowName,
+        columnIndex: variant.columnIndex,
+        fullLocation: variant.fullLocation
     });
 
     setVariantModalOpen(false);
@@ -565,7 +588,15 @@ useEffect(() => {
     
     for (const item of addedProducts) {
         try {
-            const productRef = doc(db, 'Products', item.category, 'Items', item.baseProductId);
+            // Check if item has the necessary location fields
+            if (!item.storageLocation || !item.shelfName || !item.rowName || item.columnIndex === undefined) {
+                console.warn('Item missing location fields:', item);
+                invalidItems.push(`${item.name} - Missing storage location information`);
+                continue;
+            }
+
+            // Use the new nested structure path
+            const productRef = doc(db, 'Products', item.storageLocation, 'shelves', item.shelfName, 'rows', item.rowName, 'columns', item.columnIndex, 'items', item.baseProductId);
             const productDoc = await getDoc(productRef);
             
             if (!productDoc.exists()) {
@@ -618,8 +649,13 @@ useEffect(() => {
 
             // Read all product documents first
             for (const item of addedProducts) {
-                // Create document references
-                const productRef = doc(db, 'Products', item.category, 'Items', item.baseProductId);
+                // Check if item has the necessary location fields
+                if (!item.storageLocation || !item.shelfName || !item.rowName || item.columnIndex === undefined) {
+                    throw new Error(`Item ${item.name} missing storage location information`);
+                }
+
+                // Create document references using new nested structure
+                const productRef = doc(db, 'Products', item.storageLocation, 'shelves', item.shelfName, 'rows', item.rowName, 'columns', item.columnIndex, 'items', item.baseProductId);
                 
                 // Get document snapshots using transaction.get()
                 const productDoc = await transaction.get(productRef);
@@ -679,6 +715,28 @@ useEffect(() => {
                 const maximumStockLevel = Number(productData.maximumStockLevel || 0);
                 const newQuantity = currentQuantity - Number(item.qty);
 
+                // Calculate intelligent restock quantity if levels aren't properly set
+                const calculateRestockQuantity = () => {
+                    if (maximumStockLevel > 0 && newQuantity < maximumStockLevel) {
+                        return maximumStockLevel - newQuantity;
+                    } else if (restockLevel > 0) {
+                        return Math.max(restockLevel * 2, 10); // Order at least double the restock level or 10 units
+                    } else {
+                        // Fallback: order based on current stock level
+                        return Math.max(currentQuantity, 20); // Order at least what we had or 20 units
+                    }
+                };
+
+                // Determine if we should trigger restock
+                const shouldTriggerRestock = () => {
+                    if (restockLevel > 0) {
+                        return newQuantity <= restockLevel;
+                    } else {
+                        // Fallback: trigger if stock is very low (less than 5 units or less than 25% of original)
+                        return newQuantity <= 5 || newQuantity <= (currentQuantity * 0.25);
+                    }
+                };
+
                 // Debug log
                 console.log('Stock Check:', {
                     productName: item.name,
@@ -686,10 +744,11 @@ useEffect(() => {
                     newQuantity,
                     restockLevel,
                     maximumStockLevel,
-                    shouldNotify: newQuantity <= restockLevel
+                    shouldTriggerRestock: shouldTriggerRestock(),
+                    calculatedRestockQty: calculateRestockQuantity()
                 });
 
-                if (restockLevel > 0 && newQuantity <= restockLevel) {
+                if (shouldTriggerRestock()) {
                     // Create a deterministic restock request ID for the product
                     const restockRequestId = `Restock-${item.category}-${item.baseProductId}-active`;
                     const restockRequestRef = doc(db, 'RestockRequests', restockRequestId);
@@ -703,59 +762,20 @@ useEffect(() => {
                         // Create notification reference
                         const notificationRef = doc(db, 'Notifications', `Notify-${item.category}-${item.baseProductId}-${timestamp}`);
                         
-                        // Get the supplier reference from the product
-                        const productSupplierRef = productData.supplier?.code;
-                        let supplierData = null;
-
-                        // Only try to fetch supplier if we have a reference
-                        if (productSupplierRef) {
-                            try {
-                                // Get all suppliers first since we need to check supplierCodes array
-                                const suppliersRef = collection(db, 'suppliers');
-                                const allSuppliersSnapshot = await getDocs(suppliersRef);
-                                
-                                // Look for a supplier that has this code in their supplierCodes array
-                                const matchingSupplier = allSuppliersSnapshot.docs.find(doc => {
-                                    const data = doc.data();
-                                    return data.supplierCodes?.some(sc => sc.code === productSupplierRef);
-                                });
-
-                                if (matchingSupplier) {
-                                    supplierData = {
-                                        id: matchingSupplier.id,
-                                        ...matchingSupplier.data()
-                                    };
-                                    console.log('Found supplier by product code:', {
-                                        productName: item.name,
-                                        supplierName: supplierData.name,
-                                        matchedCode: productSupplierRef,
-                                        matchedSupplierCode: matchingSupplier.data().supplierCodes.find(sc => sc.code === productSupplierRef)
-                                    });
-                                } else {
-                                    console.warn('Supplier not found:', {
-                                        productId: item.baseProductId,
-                                        productName: item.name,
-                                        searchedCode: productSupplierRef
-                                    });
-                                }
-                            } catch (error) {
-                                console.error('Error fetching supplier:', error);
-                            }
-                        } else {
-                            console.warn('No supplier reference in product:', {
-                                productId: item.baseProductId,
-                                productName: item.name
-                            });
-                        }
-
-                        if (!supplierData) {
-                            console.error('Failed to find supplier for product:', {
-                                productName: item.name,
-                                searchedCode: productSupplierRef
-                            });
-                            // Don't proceed with restock request if we can't find the supplier
-                            continue;
-                        }
+                        // Get the supplier reference from the product with new structure support
+                        const productSupplierCode = productData.supplier?.primaryCode || productData.supplier?.code || productData.supplierCode || 'UNKNOWN';
+                        const productSupplierName = typeof productData.supplier?.name === 'string' 
+                            ? productData.supplier.name 
+                            : (typeof productData.supplier?.name === 'object' ? productData.supplier.name?.name : 'Unknown Supplier');
+                        
+                        console.log('Creating restock request for:', {
+                            productName: item.name,
+                            productSupplierCode,
+                            productSupplierName,
+                            currentQuantity: newQuantity,
+                            restockLevel,
+                            maximumStockLevel
+                        });
 
                         const notificationData = {
                             message: `Low stock alert for ${item.name}`,
@@ -770,40 +790,46 @@ useEffect(() => {
                             timestamp: serverTimestamp(),
                             type: 'restock_alert',
                             createdAt: new Date().toISOString(),
-                            // Add supplier information - use primaryCode or code as fallback
-                            supplierName: supplierData.name,
-                            supplierCode: supplierData.primaryCode || supplierData.code,
-                            // Add the product-specific supplier code as well
-                            productSupplierCode: productSupplierRef
+                            // Use product's supplier information directly with fallbacks (ensure strings)
+                            supplierName: String(productSupplierName),
+                            supplierCode: String(productSupplierCode),
+                            // Add storage location information for better tracking
+                            storageLocation: item.storageLocation || 'Unknown',
+                            shelfName: item.shelfName || 'Unknown',
+                            rowName: item.rowName || 'Unknown',
+                            columnIndex: item.columnIndex !== undefined ? item.columnIndex : 'Unknown',
+                            fullLocation: item.fullLocation || 'Unknown Location'
                         };
 
                         notificationWrites.push({
                             ref: notificationRef,
-                            data: notificationData
+                            data: cleanFirebaseData(notificationData)
                         });
+
+                        const restockData = {
+                            ...notificationData,
+                            requestedQuantity: calculateRestockQuantity(),
+                            type: 'restock_request',
+                            productId: item.baseProductId,
+                            supplier: {
+                                name: String(productSupplierName),
+                                code: String(productSupplierCode),
+                                primaryCode: String(productSupplierCode)  // Add primaryCode for consistency
+                            },
+                            variantId: item.variantId,
+                            priority: newQuantity <= 0 ? 'urgent' : (restockLevel > 0 && newQuantity <= (restockLevel * 0.5)) ? 'high' : 'normal'
+                        };
 
                         restockWrites.push({
                             ref: restockRequestRef,
-                            data: {
-                                ...notificationData,
-                                requestedQuantity: maximumStockLevel - newQuantity,
-                                type: 'restock_request',
-                                productId: item.baseProductId,
-                                supplier: {
-                                    ...supplierData,
-                                    // Ensure we include both the primary code and the product-specific code
-                                    primaryCode: supplierData.primaryCode || supplierData.code,
-                                    productCode: productSupplierRef
-                                },
-                                variantId: item.variantId
-                            }
+                            data: cleanFirebaseData(restockData)
                         });
 
-                        // Debug log
-                        console.log('Creating restock request:', {
+                        console.log('Restock request created:', {
                             productName: item.name,
-                            supplier: supplierData,
-                            requestedQuantity: maximumStockLevel - newQuantity
+                            requestedQuantity: restockData.requestedQuantity,
+                            priority: restockData.priority,
+                            supplier: restockData.supplier
                         });
                     } else {
                         console.log(`Skipping restock request creation for ${item.name} - existing pending request found`);
@@ -1142,7 +1168,13 @@ useEffect(() => {
                 variantId: variant.variantId,
                 unit: variant.unit,
                 category: selectedProductForQuantity.category,
-                baseProductId: variant.baseProductId
+                baseProductId: variant.baseProductId,
+                // Add location fields from variant
+                storageLocation: variant.storageLocation,
+                shelfName: variant.shelfName,
+                rowName: variant.rowName,
+                columnIndex: variant.columnIndex,
+                fullLocation: variant.fullLocation
               });
               setQuickQuantityModalOpen(false);
               setSelectedProductForQuantity(null);
