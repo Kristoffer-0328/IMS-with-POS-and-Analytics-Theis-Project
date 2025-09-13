@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ProductFactory from '../../Factory/productFactory';
-import { getFirestore, doc, setDoc, collection, addDoc, getDocs } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, collection, addDoc, getDocs, query, getDoc } from 'firebase/firestore';
 import app from '../../../../../FirebaseConfig';
 import { validateProduct, getStorageOptions, getCategorySpecificFields, updateFieldOptions } from './Utils';
 import SupplierSelector from '../../Supplier/SupplierSelector';
@@ -219,11 +219,28 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
             return;
         }
 
+        // Fetch storage unit's category from Firebase
+        const db = getFirestore(app);
+        let unitCategory = selectedCategory.name; // fallback to storage location name
+        
+        try {
+            const storageUnitRef = doc(db, "Products", selectedStorageLocation.unit);
+            const storageUnitDoc = await getDoc(storageUnitRef);
+            
+            if (storageUnitDoc.exists()) {
+                const unitData = storageUnitDoc.data();
+                unitCategory = unitData.category || selectedCategory.name;
+                console.log(`Using category "${unitCategory}" from storage unit ${selectedStorageLocation.unit}`);
+            }
+        } catch (error) {
+            console.log('Could not fetch storage unit category, using fallback:', error);
+        }
+
         const productData = {
             name: productName.trim(),
             quantity: Number(quantity) || 0,
             unitPrice: Number(unitPrice) || 0,
-            category: selectedCategory.name,
+            category: unitCategory, // Use storage unit's category instead of selectedCategory.name
             storageLocation: selectedStorageLocation.unit,
             shelfName: selectedStorageLocation.shelf,
             rowName: selectedStorageLocation.row,

@@ -27,6 +27,11 @@ export const ServicesProvider = ({ children }) => {
           const storageLocation = storageLocationDoc.id;
           console.log(`Fetching from storage location: ${storageLocation}`);
           
+          // Fetch the storage unit's category
+          const storageLocationData = storageLocationDoc.data();
+          const unitCategory = storageLocationData.category || storageLocation;
+          console.log(`Storage unit ${storageLocation} has category: ${unitCategory}`);
+          
           const shelvesRef = collection(db, "Products", storageLocation, "shelves");
           const shelvesSnapshot = await getDocs(shelvesRef);
           
@@ -57,21 +62,22 @@ export const ServicesProvider = ({ children }) => {
                         ...data,
                         id: doc.id,
                         baseProductId: doc.id.split('-')[0],
-                        category: data.category || storageLocation, // Use data.category first, fallback to storageLocation
+                        category: data.category || unitCategory, // Use data.category first, fallback to storage unit's category
                         storageLocation: storageLocation,
                         shelfName: shelfName,
                         rowName: rowName,
                         columnIndex: columnIndex,
                         fullLocation: `${storageLocation} - ${shelfName} - ${rowName} - Column ${columnIndex}`,
                         brand: data.brand || 'Generic',
-                        subCategory: data.subCategory || data.category || storageLocation,
+                        subCategory: data.subCategory || data.category || unitCategory,
                         specifications: data.specifications || '',
                         storageType: data.storageType || 'Goods',
                         unitPrice: typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice) || 0,
                         quantity: typeof data.quantity === 'number' ? data.quantity : parseInt(data.quantity) || 0,
-                        supplierCode: data.supplierCode || data.supplier?.code || '',
+                        supplierCode: data.supplierCode || data.supplier?.primaryCode || data.supplier?.code || '',
                         supplier: data.supplier || {
                           name: 'Unknown',
+                          primaryCode: '',
                           code: '',
                           address: '',
                           contactPerson: '',
@@ -87,9 +93,10 @@ export const ServicesProvider = ({ children }) => {
                           specifications: variant.specifications || data.specifications || '',
                           unitPrice: typeof variant.unitPrice === 'number' ? variant.unitPrice : parseFloat(variant.unitPrice) || 0,
                           quantity: typeof variant.quantity === 'number' ? variant.quantity : parseInt(variant.quantity) || 0,
-                          supplierCode: variant.supplierCode || data.supplierCode || '',
+                          supplierCode: variant.supplierCode || data.supplierCode || data.supplier?.primaryCode || data.supplier?.code || '',
                           supplier: variant.supplier || data.supplier || {
                             name: 'Unknown',
+                            primaryCode: '',
                             code: ''
                           }
                         })) : [],
