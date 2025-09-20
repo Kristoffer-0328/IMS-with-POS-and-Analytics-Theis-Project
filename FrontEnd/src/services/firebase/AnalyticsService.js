@@ -351,5 +351,39 @@ export const AnalyticsService = {
       console.error('Error updating inventory snapshot after receiving:', error);
       throw error;
     }
+  },
+
+  // Record sale transaction for analytics
+  async recordSale(saleData) {
+    try {
+      console.log('Recording sale analytics:', saleData);
+      
+      // Create a simplified analytics record
+      const analyticsRecord = {
+        transactionId: saleData.transactionId,
+        timestamp: serverTimestamp(),
+        totalAmount: saleData.totalAmount || 0,
+        itemCount: saleData.itemCount || 0,
+        paymentMethod: saleData.paymentMethod || 'Cash',
+        items: saleData.items || [],
+        salesPerformance: saleData.salesPerformance || {
+          hour: new Date().getHours(),
+          dayOfWeek: new Date().getDay(),
+          month: new Date().getMonth()
+        },
+        recordedAt: new Date().toISOString()
+      };
+
+      // Save to analytics collection
+      const analyticsRef = doc(db, 'salesAnalytics', saleData.transactionId);
+      await setDoc(analyticsRef, analyticsRecord);
+      
+      console.log('Sale analytics recorded successfully');
+      return true;
+    } catch (error) {
+      console.error('Error recording sale analytics:', error);
+      // Don't throw error to prevent transaction failure
+      return false;
+    }
   }
 }; 

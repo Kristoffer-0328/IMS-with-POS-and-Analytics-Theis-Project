@@ -55,17 +55,21 @@ const AdminLayout = ({ children }) => (
 const IMLayout = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
 
+  // Debug: Log when IMLayout renders
+  console.log('🏗️ IMLayout rendering at:', new Date().toISOString());
+
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
       <IMSidebar collapsed={collapsed} setCollapsed={setCollapsed} />
-      {console.log("Sidebar collapsed:", collapsed)}
       <main
         id="content"
         className={`flex-1 transition-all duration-300
           ${collapsed ? 'ml-0 sm:ml-[70px]' : 'ml-0 sm:ml-[250px]'}
         `}
       >
-        <div className="p-6">{children}</div>
+        <div className="p-6">
+          {children}
+        </div>
       </main>
     </div>
   );

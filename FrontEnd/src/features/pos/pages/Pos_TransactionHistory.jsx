@@ -46,13 +46,16 @@ const getFormattedDateTime = (timestamp) => {
 const TransactionSummary = ({ transactions }) => {
   const calculateSummary = () => {
     const today = new Date().toLocaleDateString();
-    const todayTransactions = transactions.filter(t => 
-      new Date(t.date).toLocaleDateString() === today
-    );
+    const todayTransactions = transactions.filter(t => {
+      if (t.createdAt && t.createdAt.toDate) {
+        return t.createdAt.toDate().toLocaleDateString() === today;
+      }
+      return false;
+    });
 
-    const todaySales = todayTransactions.reduce((sum, t) => sum + t.total, 0);
+    const todaySales = todayTransactions.reduce((sum, t) => sum + (t.totals?.total || 0), 0);
     const avgTransaction = transactions.length > 0 
-      ? transactions.reduce((sum, t) => sum + t.total, 0) / transactions.length 
+      ? transactions.reduce((sum, t) => sum + (t.totals?.total || 0), 0) / transactions.length 
       : 0;
 
     const paymentMethods = transactions.reduce((acc, t) => {
@@ -131,18 +134,33 @@ export default function Pos_Transaction_History() {
     const fetchTransactions = async () => {
       try {
         setLoading(true);
-        const transactionsRef = collection(db, 'Transactions');
-        let q = query(transactionsRef, orderBy('timestamp', 'desc'));
+        const transactionsRef = collection(db, 'posTransactions');
+        let q = query(transactionsRef, orderBy('createdAt', 'desc'));
 
         if (currentFilter !== 'all') {
           q = query(q, where('paymentMethod', '==', currentFilter));
         }
 
         const querySnapshot = await getDocs(q);
-        const fetchedTransactions = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const fetchedTransactions = querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: data.transactionId || doc.id,
+            transactionId: data.transactionId,
+            customerName: data.customerInfo?.name || 'Unknown',
+            total: data.totals?.total || 0,
+            paymentMethod: data.paymentMethod || 'Unknown',
+            status: data.status || 'completed',
+            createdAt: data.createdAt,
+            items: data.items || [],
+            customerInfo: data.customerInfo || {},
+            totals: data.totals || {},
+            saleDate: data.saleDate,
+            saleTime: data.saleTime,
+            cashier: data.cashier,
+            ...data
+          };
+        });
 
         setTransactions(fetchedTransactions);
       } catch (err) {
@@ -158,7 +176,7 @@ export default function Pos_Transaction_History() {
 
   // Filter transactions based on search
   const filteredTransactions = transactions.filter(transaction =>
-    transaction.id.toLowerCase().includes(searchQuery.toLowerCase())
+    (transaction.transactionId || transaction.id || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleViewDetails = useCallback((transaction) => {
@@ -234,11 +252,11 @@ export default function Pos_Transaction_History() {
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white">
                 {filteredTransactions.map((transaction) => {
-                  const { dateString, timeString } = getFormattedDateTime(transaction.timestamp);
+                  const { dateString, timeString } = getFormattedDateTime(transaction.createdAt);
                   return (
-                    <tr key={transaction.id} className="hover:bg-gray-50 transition-colors">
+                    <tr key={transaction.transactionId || transaction.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                        {transaction.id}
+                        {transaction.transactionId || transaction.id}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">
                         {`${dateString} ${timeString}`}

@@ -86,16 +86,25 @@ export default function VariantSelectionModal({
                 }`}
               >
                 <div className="text-center">
-                  {hasBrandVariants && (
-                    <p className="font-medium text-gray-900 mb-1">{variant.brand || 'Generic'}</p>
+                  {/* Always show brand if available */}
+                  {variant.brand && (
+                    <p className="font-medium text-gray-900 mb-1">{variant.brand}</p>
                   )}
-                  {hasSizeOrUnitVariants && (
+                  {/* Always show size/specifications if available */}
+                  {(variant.size || variant.variantName || variant.specifications) && (
                     <p className="text-sm text-gray-600">
-                      {variant.size && `${variant.size} `}{variant.unit || 'pcs'}
+                      {variant.size || variant.variantName || variant.specifications}
+                      {variant.unit && ` ${variant.unit}`}
+                    </p>
+                  )}
+                  {/* If no size/brand info, show variant name or a default */}
+                  {!variant.brand && !variant.size && !variant.variantName && !variant.specifications && (
+                    <p className="text-sm text-gray-600">
+                      {variant.unit || 'Standard'}
                     </p>
                   )}
                   <p className="text-sm font-medium text-orange-600 mt-1">
-                    ₱{formatCurrency(variant.price)}
+                    ₱{formatCurrency(variant.unitPrice || variant.price || 0)}
                   </p>
                   <p className="text-xs text-gray-500">Stock: {variant.quantity}</p>
                 </div>
@@ -158,13 +167,13 @@ export default function VariantSelectionModal({
             <div className="flex justify-between py-1">
               <span className="text-gray-600">Selected {hasBrandVariants ? 'Brand' : 'Size'}:</span>
               <span className="font-medium">
-                {hasBrandVariants ? activeVariant?.brand || 'Generic' : 
-                  `${activeVariant?.size || ''} ${activeVariant?.unit || 'pcs'}`.trim()}
+                {activeVariant?.brand || activeVariant?.size || activeVariant?.variantName || activeVariant?.specifications || 
+                 `${activeVariant?.unit || 'pcs'}`}
               </span>
             </div>
             <div className="flex justify-between py-1">
               <span className="text-gray-600">Price per {activeVariant?.unit || 'pcs'}:</span>
-              <span>₱{formatCurrency(activeVariant?.price || 0)}</span>
+              <span>₱{formatCurrency(activeVariant?.unitPrice || activeVariant?.price || 0)}</span>
             </div>
             <div className="flex justify-between py-1">
               <span className="text-gray-600">Quantity:</span>
@@ -172,7 +181,7 @@ export default function VariantSelectionModal({
             </div>
             <div className="flex justify-between py-1 text-orange-500 font-medium mt-2 pt-2 border-t">
               <span>Total:</span>
-              <span>₱{formatCurrency((activeVariant?.price || 0) * getCurrentQuantity())}</span>
+              <span>₱{formatCurrency((activeVariant?.unitPrice || activeVariant?.price || 0) * getCurrentQuantity())}</span>
             </div>
           </div>
 

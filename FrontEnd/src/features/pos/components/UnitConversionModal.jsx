@@ -14,7 +14,7 @@ const UnitConversionModal = ({
     if (!units.some(u => u.unit === variant.unit)) {
       units.push({
         unit: variant.unit,
-        price: variant.unitPrice,
+        price: variant.unitPrice || variant.price || 0,
         inStock: variant.quantity,
         variantId: variant.id
       });

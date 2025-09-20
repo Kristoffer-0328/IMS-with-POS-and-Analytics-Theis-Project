@@ -1,9 +1,16 @@
 import React from 'react';
 import { FiPlus, FiPackage } from 'react-icons/fi';
 
-const ProductCard = ({ product, onAddProduct, disabled }) => {
+const ProductCard = ({ 
+  product, 
+  onProductSelect, 
+  onUnitConversion, 
+  onQuickQuantity, 
+  getCartQuantity, 
+  disabled 
+}) => {
   const firstVariant = product.variants[0];
-  const lowestPrice = Math.min(...product.variants.map(v => v.price));
+  const lowestPrice = Math.min(...product.variants.map(v => v.unitPrice || v.price || 0));
   const totalStock = product.variants.reduce((sum, v) => sum + (v.quantity || 0), 0);
   const hasMultipleVariants = product.variants.length > 1;
 
@@ -47,7 +54,7 @@ const ProductCard = ({ product, onAddProduct, disabled }) => {
               <span className="font-medium text-base">
                 {hasMultipleVariants 
                   ? `From ${formatPrice(lowestPrice)}` 
-                  : formatPrice(firstVariant.price)
+                  : formatPrice(firstVariant.unitPrice || firstVariant.price || 0)
                 }
               </span>
             </div>
@@ -57,7 +64,7 @@ const ProductCard = ({ product, onAddProduct, disabled }) => {
           </div>
           
           <button
-            onClick={() => onAddProduct(product)}
+            onClick={() => onProductSelect && onProductSelect(product)}
             disabled={disabled || totalStock === 0}
             className={`p-2 rounded-lg transition-colors duration-200 ${
               totalStock === 0
@@ -73,7 +80,15 @@ const ProductCard = ({ product, onAddProduct, disabled }) => {
   );
 };
 
-const ProductGrid = ({ products, onAddProduct, loading, disabled }) => {
+const ProductGrid = ({ 
+  products, 
+  onProductSelect, 
+  onUnitConversion, 
+  onQuickQuantity, 
+  getCartQuantity, 
+  loading, 
+  disabled 
+}) => {
   if (loading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -108,7 +123,10 @@ const ProductGrid = ({ products, onAddProduct, loading, disabled }) => {
         <ProductCard
           key={product.id}
           product={product}
-          onAddProduct={onAddProduct}
+          onProductSelect={onProductSelect}
+          onUnitConversion={onUnitConversion}
+          onQuickQuantity={onQuickQuantity}
+          getCartQuantity={getCartQuantity}
           disabled={disabled}
         />
       ))}

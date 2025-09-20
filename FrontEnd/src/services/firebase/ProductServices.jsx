@@ -84,22 +84,59 @@ export const ServicesProvider = ({ children }) => {
                           phone: '',
                           email: ''
                         },
-                        variants: Array.isArray(data.variants) ? data.variants.map((variant, index) => ({
+                        variants: Array.isArray(data.variants) && data.variants.length > 0 ? data.variants.map((variant, index) => ({
                           ...variant,
                           id: `${doc.id}-${index}`,
+                          variantId: variant.variantId || `${doc.id}-${index}`,
                           baseProductId: doc.id,
                           brand: data.brand || 'Generic',
+                          size: variant.size || variant.variantName || '',
+                          variantName: variant.variantName || variant.size || '',
                           storageType: variant.storageType || data.storageType || 'Goods',
                           specifications: variant.specifications || data.specifications || '',
                           unitPrice: typeof variant.unitPrice === 'number' ? variant.unitPrice : parseFloat(variant.unitPrice) || 0,
                           quantity: typeof variant.quantity === 'number' ? variant.quantity : parseInt(variant.quantity) || 0,
+                          unit: variant.unit || 'pcs',
                           supplierCode: variant.supplierCode || data.supplierCode || data.supplier?.primaryCode || data.supplier?.code || '',
+                          // Add location fields to variants
+                          storageLocation: storageLocation,
+                          shelfName: shelfName,
+                          rowName: rowName,
+                          columnIndex: columnIndex,
+                          fullLocation: `${storageLocation} - ${shelfName} - ${rowName} - Column ${columnIndex}`,
                           supplier: variant.supplier || data.supplier || {
                             name: 'Unknown',
                             primaryCode: '',
                             code: ''
                           }
-                        })) : [],
+                        })) : [
+                          // Create a default variant if no variants exist
+                          {
+                            id: doc.id,
+                            variantId: doc.id,
+                            baseProductId: doc.id,
+                            brand: data.brand || 'Generic',
+                            size: data.size || 'Standard',
+                            variantName: 'Standard',
+                            storageType: data.storageType || 'Goods',
+                            specifications: data.specifications || '',
+                            unitPrice: typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice) || 0,
+                            quantity: typeof data.quantity === 'number' ? data.quantity : parseInt(data.quantity) || 0,
+                            unit: data.unit || 'pcs',
+                            supplierCode: data.supplierCode || data.supplier?.primaryCode || data.supplier?.code || '',
+                            // Add location fields to default variant
+                            storageLocation: storageLocation,
+                            shelfName: shelfName,
+                            rowName: rowName,
+                            columnIndex: columnIndex,
+                            fullLocation: `${storageLocation} - ${shelfName} - ${rowName} - Column ${columnIndex}`,
+                            supplier: data.supplier || {
+                              name: 'Unknown',
+                              primaryCode: '',
+                              code: ''
+                            }
+                          }
+                        ],
                         // Calculate total value for display
                         totalvalue: (typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice) || 0) * 
                                    (typeof data.quantity === 'number' ? data.quantity : parseInt(data.quantity) || 0)

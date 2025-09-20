@@ -36,6 +36,9 @@ const DashboardHeader = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Debug: Log when component renders
+  console.log('🔍 DashboardHeader rendering at:', new Date().toISOString(), 'for path:', location.pathname);
+
   useClickOutside(notificationsRef, () => setShowNotifications(false));
 
   useEffect(() => {
@@ -123,19 +126,22 @@ const DashboardHeader = () => {
         return 'Reports & Logs';
       case '/im/settings':
         return 'Settings';
+      case '/im/suppliers':
+        return 'Supplier Management';
       default:
         return 'Glory Star Hardware';
     }
   };
-    return (
-    <div className="mb-6">
-        <div className="flex justify-between items-center mb-6 bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold text-gray-800">{getPageTitle()}</h1>
-            <span className="hidden sm:inline-block px-3 py-1 bg-orange-100 text-orange-600 text-sm font-medium rounded-full">
-              Overview
-            </span>
-          </div>
+
+  return (
+    <div className="sticky top-4 z-50 mb-6">
+      <div className="flex justify-between items-center bg-white rounded-xl shadow-lg border border-gray-100 p-4 backdrop-blur-sm bg-white/95">
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold text-gray-800">{getPageTitle()}</h1>
+          <span className="hidden sm:inline-block px-3 py-1 bg-orange-100 text-orange-600 text-sm font-medium rounded-full">
+            Overview
+          </span>
+        </div>
 
           <div className="flex items-center gap-6">
             {/* Date picker button */}
@@ -219,4 +225,4 @@ const DashboardHeader = () => {
   );
 };
 
-export default DashboardHeader;
+export default React.memo(DashboardHeader);

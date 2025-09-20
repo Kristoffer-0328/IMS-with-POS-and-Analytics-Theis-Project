@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FiPlus, FiEdit2, FiTrash2, FiPackage, FiGrid, FiList, FiBell, FiCalendar } from 'react-icons/fi';
+import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import { useSupplierServices } from '../../../services/firebase/SupplierServices';
 import EditSupplierModal from '../components/Supplier/EditSupplierModal';
 import SupplierProducts from '../components/Supplier/SupplierProducts';
@@ -33,21 +34,7 @@ const SupplierManagement = () => {
   };
 
   const handleEdit = (supplier) => {
-    // If supplier is null, it means we're adding a new supplier
-    if (!supplier) {
-      setSelectedSupplier({
-        name: '',
-        primaryCode: '',
-        code: '',
-        contactPerson: '',
-        phone: '',
-        email: '',
-        address: '',
-        status: 'active'
-      });
-    } else {
-      setSelectedSupplier(supplier);
-    }
+    setSelectedSupplier(supplier);
     setShowEditModal(true);
   };
 
@@ -202,50 +189,15 @@ const SupplierManagement = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b">
-        <div className="px-6 py-4">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center space-x-8">
-              <h1 className="text-xl font-bold text-gray-900">Glory Star Hardware</h1>
-              <div className="flex space-x-4">
-                <button className="px-3 py-2 text-orange-500 border-b-2 border-orange-500 font-medium">
-                  Overview
-                </button>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-6">
-              <button className="text-gray-500 hover:text-gray-700">
-                <div className="flex items-center space-x-2">
-                  <FiCalendar size={20} />
-                  <span>Today</span>
-                </div>
-              </button>
-              <button className="text-gray-500 hover:text-gray-700 relative">
-                <FiBell size={20} />
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
-                  2
-                </span>
-              </button>
-              <div className="flex items-center space-x-3">
-                <span className="text-sm text-gray-700">I love Toff</span>
-                <div className="bg-orange-500 text-white text-sm font-medium px-2 py-1 rounded">
-                  IT
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
+      <DashboardHeader />
+      
       {/* Content */}
       <div className="p-6">
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center space-x-4">
             <button
-              onClick={() => handleEdit(null)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              onClick={() => setShowEditModal(true)}
+              className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
             >
               <FiPlus size={20} />
               <span>Add New Supplier</span>
