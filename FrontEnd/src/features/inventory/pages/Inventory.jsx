@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import InventoryChart from '../components/Inventory/InventoryChart';
 import InventoryTrendChart from '../components/Inventory/InventoryTrendChart';
 import InventoryTable from '../components/Inventory/InventoryTable';
 import InventoryFilters from '../components/Inventory/InventoryFilters';
-import DashboardHeader from '../components/Dashboard/DashboardHeader';
+
 import ViewProductModal from '../components/Inventory/ViewProductModal';
 import { useServices } from '../../../services/firebase/ProductServices';
 import { FiPlusCircle, FiUpload, FiSearch, FiInfo, FiGrid, FiList } from 'react-icons/fi';

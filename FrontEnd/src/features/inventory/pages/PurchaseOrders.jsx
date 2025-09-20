@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { FiPlus, FiFilter, FiRefreshCw, FiPieChart, FiTruck } from 'react-icons/fi';
+import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import { usePurchaseOrderServices } from '../../../services/firebase/PurchaseOrderServices';
 import { useAuth } from '../../auth/services/FirebaseAuth';
 import CreatePOModal from '../components/PurchaseOrder/CreatePOModal';
 import ViewPOModal from '../components/PurchaseOrder/ViewPOModal';
 import POAnalytics from '../components/PurchaseOrder/POAnalytics';
-import DashboardHeader from '../components/Dashboard/DashboardHeader';
 
 const PurchaseOrders = () => {
   const { currentUser } = useAuth();
@@ -101,7 +101,7 @@ const PurchaseOrders = () => {
   return (
     <div className="w-full max-w-[1600px] mx-auto p-6 bg-gray-50">
       <DashboardHeader />
-
+      
       {/* Header Section */}
       <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
         <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">

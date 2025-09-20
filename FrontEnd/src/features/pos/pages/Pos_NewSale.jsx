@@ -23,12 +23,14 @@ import ProductFilters from '../components/ProductFilters';
 import UnitConversionModal from '../components/UnitConversionModal';
 
 // Import Modals from new locations
-import BulkOrderChoiceModal from '../components/Modals/BulkOrderChoices';
-import BulkOrderDetailsModal from '../components/Modals/BulkOrderDetailsModal';
 import VariantSelectionModal from '../components/Modals/VariantSelectionModal';
 import QuickQuantityModal from '../components/QuickQuantityModal';
+import CustomerInfoModal from '../components/quotation/CustomerInfoModal';
+
 // Import utilities
 import { printReceiptContent } from '../utils/ReceiptGenerator';
+import QuotationGenerator from '../components/quotation/QuotationGenerator';
+import QuotationUtils from '../utils/quotationUtils';
 
 const db = getFirestore(app);
 
@@ -55,97 +57,112 @@ const cleanFirebaseData = (obj) => {
   return cleaned;
 };
 
-// Helper function to format Date/Time (can be moved to utils)
+// Date and Time Helper
 const getFormattedDateTime = () => {
-    const now = new Date();
-    
-    const formattedDate = now.toLocaleDateString('en-US', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
-    }).replace(/,/g, '').toUpperCase();
-
-    // Format time parts separately for better control
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
-    const seconds = now.getSeconds().toString().padStart(2, '0');
-
-    return {
-        formattedDate,
-        formattedTime: { hours, minutes, seconds }
-    };
+  const now = new Date();
+  const formattedDate = now.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+  const formattedTime = now.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+  return { formattedDate, formattedTime };
 };
 
-// First, let's create a simple CategorySelector component at the top of Pos_NewSale.jsx
-const CategorySelector = ({ categories, selectedCategory, onSelectCategory }) => {
-  return (
-    <div className="overflow-x-auto">
-      <div className="flex gap-2 p-4 min-w-max">
-        <button
-          className={`px-4 py-2 rounded-lg transition-colors ${
-            !selectedCategory 
-              ? 'bg-green-600 text-white' 
-              : 'bg-gray-50 hover:bg-gray-100 text-gray-600'
-          }`}
-          onClick={() => onSelectCategory(null)}
-        >
-          All Categories
-        </button>
-        {categories.map((category) => (
-          <button
-            key={category}
-            className={`px-4 py-2 rounded-lg transition-colors ${
-              selectedCategory === category 
-                ? 'bg-green-600 text-white' 
-                : 'bg-gray-50 hover:bg-gray-100 text-gray-600'
-            }`}
-            onClick={() => onSelectCategory(category)}
-          >
-            {category}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+// Date range preset generator
+const getDateRangePresets = () => {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  
+  return [
+    {
+      id: 'today',
+      label: 'Today',
+      start: today,
+      end: tomorrow
+    }
+  ];
 };
 
 export default function Pos_NewSale() {
-  // --- User ----
-  const { currentUser, loading: authLoading } = useAuth();
-  const [loadingUser, setLoadingUser] = useState(true);
-  // --- State Management ---
+  // Get authentication context
+  const { currentUser } = useAuth();
+  const { listenToProducts } = useServices();
 
-  const [currentDateTime, setCurrentDateTime] = useState(() => getFormattedDateTime());
+  // --- States ---
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState(null);
   const [addedProducts, setAddedProducts] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [amountPaid, setAmountPaid] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [variant, setVariant] = useState('');
+  const [quantity, setQuantity] = useState(1);
+  const [selectedUnit, setSelectedUnit] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Product State
-  const { listenToProducts } = useServices();
-  const [products, setProducts] = useState([]);
-  const [loadingProducts, setLoadingProducts] = useState(true);
-
-  // Variant Modal State
+  // --- States for Modals ---
   const [variantModalOpen, setVariantModalOpen] = useState(false);
   const [selectedProductForModal, setSelectedProductForModal] = useState(null);
   const [activeVariantIndex, setActiveVariantIndex] = useState(0);
-  const [quantity, setQuantity] = useState(0);
+  
+  // Customer Information State
+  const [customerInfo, setCustomerInfo] = useState({
+    name: '',
+    address: '',
+    phone: '',
+    email: ''
+  });
 
-  // Customer State
-  const [showBulkOrderPopup, setShowBulkOrderPopup] = useState(false);
-  const [isBulkOrder, setIsBulkOrder] = useState(null); // null, true, false
-  const [customerDetails, setCustomerDetails] = useState({ name: '', phone: '', address: '' });
-  const [walkInCounter, setWalkInCounter] = useState(0);
-  const [customerIdentifier, setCustomerIdentifier] = useState('Walk-in Customer');
-  const [customerDisplayName, setCustomerDisplayName] = useState('Walk-in Customer');
+  // Transaction Type State
+  const [transactionType, setTransactionType] = useState('walk-in'); // 'walk-in' or 'quotation'
 
-  // Filter State
-  const [selectedCategory, setSelectedCategory] = useState(null);
-  const [selectedBrand, setSelectedBrand] = useState(null);
+  // Payment State
+  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [amountPaid, setAmountPaid] = useState('');
+  const [showPaymentSection, setShowPaymentSection] = useState(false);
+  const [isPaymentProcessing, setIsPaymentProcessing] = useState(false);
 
-  // Add this memoized value to get unique categories:
+  // --- Navigation ---
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // --- Add clock timer effect ---
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    
+    return () => clearInterval(timer);
+  }, []);
+
+  // --- Products loading effect ---
+  useEffect(() => {
+    console.log('POS: Setting up product listener...');
+    setProductsLoading(true);
+    setProductsError(null);
+    
+    const unsubscribe = listenToProducts((loadedProducts) => {
+      console.log('POS: Products loaded:', loadedProducts.length);
+      setProducts(loadedProducts);
+      setProductsLoading(false);
+      setProductsError(null);
+    });
+    
+    return () => {
+      if (unsubscribe) {
+        console.log('POS: Cleaning up product listener');
+        unsubscribe();
+      }
+    };
+  }, [listenToProducts]);
+
+  // --- Categories ---
   const categories = useMemo(() => {
     return [...new Set(products.map(product => product.category))].sort();
   }, [products]);
@@ -158,6 +175,9 @@ export default function Pos_NewSale() {
   const [quickQuantityModalOpen, setQuickQuantityModalOpen] = useState(false);
   const [selectedProductForQuantity, setSelectedProductForQuantity] = useState(null);
 
+  // Add new state for quotation modal
+  const [showQuotationModal, setShowQuotationModal] = useState(false);
+
   const getCartItemQuantity = useCallback((productId, variantId) => {
     const cartItem = addedProducts.find(item => 
       item.baseProductId === productId && item.variantId === variantId
@@ -165,406 +185,292 @@ export default function Pos_NewSale() {
     return cartItem ? cartItem.qty : 0;
   }, [addedProducts]);
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        if (currentUser) {
-          // Current user is already available from AuthContext
-          setLoadingUser(false);
-        } else {
-          console.error("No user found");
-          // Optionally redirect to login
-        }
-      } catch (error) {
-        console.error("Error fetching user:", error);
-      }
-    };
-
-    fetchUser();
-  }, [currentUser]);
-  // Add clock update effect
-  useEffect(() => {
-    const updateClock = () => {
-        const time = getFormattedDateTime();
-        setCurrentDateTime(time);
-    };
-    
-    updateClock();
-    const timer = setInterval(updateClock, 1000);
-    return () => clearInterval(timer);
-}, []);
-
-useEffect(() => {
-  // Show bulk order choice modal on component mount
-  setShowBulkOrderPopup(true);
-  setIsBulkOrder(null);
-}, []); // Empty dependency array means this runs once on mount
-
-// Modal visibility debugging
-useEffect(() => {
-  console.log('Modal State:', {
-    showBulkOrderPopup,
-    isBulkOrder,
-    isModalVisible: showBulkOrderPopup && isBulkOrder === null
-  });
-}, [showBulkOrderPopup, isBulkOrder]);
-
-  // --- Data Fetching and Processing ---
-
-  // Validation function
-  const validateProductQuantities = useCallback((currentProducts, updatedProducts) => {
-    let productsNeedUpdate = false;
-    
-    const updatedProductsList = currentProducts.map(item => {
-        const product = updatedProducts.find(p => p.id === item.baseProductId);
-        if (!product) return item;
-
-        const variant = product.variants.find(v => v.id === item.variantId);
-        if (!variant) return item;
-
-        if (variant.quantity < item.qty) {
-            productsNeedUpdate = true;
-            return {
-                ...item,
-                qty: variant.quantity,
-                invalidQuantity: true
-            };
-        }
-        return item;
-    });
-
-    if (productsNeedUpdate) {
-        setAddedProducts(updatedProductsList);
-        alert("Some products have been updated due to inventory changes.");
-    }
-}, []);
-
-  // Fetch Products
-  useEffect(() => {
-    setLoadingProducts(true);
-    const unsubscribe = listenToProducts((fetchedProducts) => {
-        setProducts(prevProducts => {
-            const addedProductIds = addedProducts.map(item => item.baseProductId);
-            
-            // Check if any added products are affected by the update
-            const updatedItems = fetchedProducts.filter(p => 
-                addedProductIds.includes(p.id));
-            
-            // Validate quantities against new stock levels
-            if (updatedItems.length > 0) {
-                validateProductQuantities(addedProducts, updatedItems);
-            }
-            
-            return fetchedProducts;
-        });
-        setLoadingProducts(false);
-    });
-
-    return () => unsubscribe();
-}, [addedProducts]); // Updated dependency
-
-  // Group Products (Memoized) - Ensure correct placeholder path
-  const groupedProducts = useMemo(() => {
-    const grouped = {};
-
-    products.forEach(product => {
-        if (!product || !product.id || !product.name) {
-            console.warn("Skipping invalid product data:", product);
-            return;
-        }
-    
-        const baseProductName = product.name;
-    
-        if (!grouped[baseProductName]) {
-            grouped[baseProductName] = {
-                id: product.id, // This should be "Building-Plywood" format
-                name: product.name,
-                category: product.category,
-                brand: product.brand || 'Generic', // Add brand information
-                quantity: product.quantity || 0,
-                variants: [],
-                image: product.image || null,
-                hasVariants: false
-            };
-        }
-    
-        if (product.variants && Array.isArray(product.variants)) {
-            product.variants.forEach((variant, index) => {
-                grouped[baseProductName].variants.push({
-                    variantId: `${product.id}-${index}`, // e.g., "Building-Plywood-0"
-                    baseProductId: product.id, // This should be "Building-Plywood"
-                    category: product.category, // "Building"
-                    brand: product.brand || 'Generic', // Add brand information to variants
-                    size: variant.size || '',
-                    unit: variant.unit || 'pcs',
-                    price: Number(variant.unitPrice) || 0,
-                    quantity: Number(variant.quantity) || 0,
-                    image: variant.image || product.image || null,
-                    // Add location fields from the parent product
-                    storageLocation: product.storageLocation,
-                    shelfName: product.shelfName,
-                    rowName: product.rowName,
-                    columnIndex: product.columnIndex,
-                    fullLocation: product.fullLocation
-                });
-            });
-    
-            grouped[baseProductName].hasVariants = product.variants.length > 0;
-        }
-    });
-
-    return Object.values(grouped);
-}, [products]);
-
-  // Filter Products (Memoized)
+  // --- Filter Logic ---
   const filteredProducts = useMemo(() => {
-    let filtered = groupedProducts;
-    
-    // First filter by category if one is selected
-    if (selectedCategory) {
-      filtered = filtered.filter(p => p.category === selectedCategory);
-      console.log('After category filter:', { selectedCategory, count: filtered.length });
-    }
-    
-    // Then filter by brand if one is selected
-    if (selectedBrand) {
-      filtered = filtered.filter(p => p.brand === selectedBrand);
-      console.log('After brand filter:', { selectedBrand, count: filtered.length, products: filtered });
-    }
-    
-    // Then apply search query if exists
-    const query = searchQuery.trim().toLowerCase();
-    if (query) {
-      filtered = filtered.filter(p => 
-        p.name.toLowerCase().includes(query) ||
-        p.category.toLowerCase().includes(query) ||
-        p.brand?.toLowerCase().includes(query)
-      );
-      console.log('After search filter:', { query, count: filtered.length });
-    }
-    
-    return filtered;
-  }, [groupedProducts, selectedCategory, selectedBrand, searchQuery]);
-
-
-  // --- Product Management Logic ---
-  const addProduct = useCallback((prodToAdd) => {
-    if (!prodToAdd?.variantId || !prodToAdd?.baseProductId) {
-        console.error("Invalid product data:", prodToAdd);
-        return;
-    }
-
-    const quantity = Number(prodToAdd.qty);
-    if (isNaN(quantity) || quantity <= 0) {
-        alert("Please enter a valid quantity");
-        return;
-    }
-
-    setAddedProducts(currentProducts => {
-        const existingItem = currentProducts.find(item => item.variantId === prodToAdd.variantId);
-        
-        if (existingItem) {
-            return currentProducts.map(item => 
-                item.variantId === prodToAdd.variantId 
-                    ? { ...item, qty: item.qty + quantity }
-                    : item
-            );
-        }
-
-        return [...currentProducts, {
-            ...prodToAdd,
-            qty: quantity,
-            price: Number(prodToAdd.price)
-        }];
+    return products.filter(product => {
+      const matchesSearch = searchTerm === '' || 
+        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        product.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        product.description?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesCategory = selectedCategory === '' || product.category === selectedCategory;
+      
+      return matchesSearch && matchesCategory;
     });
-}, []);
+  }, [products, searchTerm, selectedCategory]);
 
-  const handleRemoveProduct = useCallback((indexToRemove) => {
-    setAddedProducts(currentProducts => currentProducts.filter((_, i) => i !== indexToRemove));
+  // --- Add Product Functions ---
+  const addProduct = useCallback((productData) => {
+    console.log('Adding product to cart:', {
+      name: productData.name,
+      price: productData.price,
+      qty: productData.qty,
+      unit: productData.unit
+    });
+    
+    const newItem = {
+      ...productData,
+      cartId: `${productData.id || productData.variantId}_${Date.now()}_${Math.random()}`
+    };
+
+    setAddedProducts(prevProducts => {
+      const existingIndex = prevProducts.findIndex(item => 
+        item.id === newItem.id && 
+        item.variantId === newItem.variantId &&
+        item.name === newItem.name
+      );
+
+      if (existingIndex !== -1) {
+        // Update existing item quantity
+        const updatedProducts = [...prevProducts];
+        updatedProducts[existingIndex] = {
+          ...updatedProducts[existingIndex],
+          qty: updatedProducts[existingIndex].qty + newItem.qty
+        };
+        return updatedProducts;
+      } else {
+        // Add new item
+        return [...prevProducts, newItem];
+      }
+    });
+    
+    // Reset states
+    setQuantity(1);
+    setSelectedUnit('');
+    
+    console.log('Product added successfully');
   }, []);
 
-  const handleUpdateCartQuantity = useCallback((itemIndex, newQuantity) => {
-    setAddedProducts(currentProducts => {
-      const updatedProducts = [...currentProducts];
-      const item = updatedProducts[itemIndex];
-      
-      // Find the product in the products array to check stock
-      const product = products.find(p => p.id === item.baseProductId);
-      if (!product) {
-        alert('Product not found');
-        return currentProducts;
-      }
-
-      // Find the variant
-      const variantIndex = parseInt(item.variantId.split('-').pop(), 10);
-      const variant = product.variants[variantIndex];
-      
-      if (!variant) {
-        alert('Product variant not found');
-        return currentProducts;
-      }
-
-      // Validate new quantity
-      if (newQuantity <= 0) {
-        // If quantity is 0 or negative, remove the item
-        return currentProducts.filter((_, index) => index !== itemIndex);
-      }
-
-      if (newQuantity > variant.quantity) {
-        alert(`Cannot set quantity to ${newQuantity}. Only ${variant.quantity} available in stock.`);
-        return currentProducts;
-      }
-
-      // Update the quantity
-      updatedProducts[itemIndex] = {
-        ...item,
-        qty: newQuantity
-      };
-
-      return updatedProducts;
-    });
-  }, [products]);
-
-  // --- Product Selection Logic ---
-  const handleAddProduct = useCallback((productGroup) => {
-    if (!productGroup || !productGroup.variants || isProcessing || showBulkOrderPopup) {
-        console.warn("Add product blocked:", { productGroup, isProcessing, showBulkOrderPopup });
-        return;
-    }
-
-    // Check if variants have different sizes/units (ignoring brand differences)
-    const uniqueSizeUnits = new Set(productGroup.variants.map(v => `${v.size || ''}|${v.unit || ''}`));
-    const hasSizeOrUnitVariants = uniqueSizeUnits.size > 1;
-    
-    // Check if variants have different brands
-    const uniqueBrands = new Set(productGroup.variants.map(v => v.brand));
-    const hasBrandVariants = uniqueBrands.size > 1;
-
-    if (hasSizeOrUnitVariants) {
-        // Show variant selection modal if there are different sizes/units
-        setQuantity(1);
-        setSelectedProductForModal(productGroup);
-        setActiveVariantIndex(0);
-        setVariantModalOpen(true);
-    } else if (hasBrandVariants) {
-        // Show variant selection modal for different brands
-        setQuantity(1);
-        setSelectedProductForModal(productGroup);
-        setActiveVariantIndex(0);
-        setVariantModalOpen(true);
-    } else if (productGroup.variants.length === 1) {
-        const variant = productGroup.variants[0];
-        const cartQty = getCartItemQuantity(productGroup.id, variant.variantId);
-        const availableQty = variant.quantity - cartQty;
-
-        if (availableQty <= 0) {
-            alert(`Maximum quantity already in cart for ${productGroup.name}`);
-            return;
-        }
-
-        // Show quick quantity modal for single variant products
-        setSelectedProductForQuantity({
-            ...productGroup,
-            maxAvailableQty: availableQty
-        });
-        setQuickQuantityModalOpen(true);
-    }
-}, [addProduct, isProcessing, showBulkOrderPopup, getCartItemQuantity]);
-
+  // Enhanced variant handling
   const handleAddVariant = useCallback(() => {
-    if (!selectedProductForModal?.variants?.[activeVariantIndex]) {
-        console.error("Invalid variant selection");
-        setVariantModalOpen(false);
-        return;
-    }
-
-    const variant = selectedProductForModal.variants[activeVariantIndex];
-    const cartQty = getCartItemQuantity(selectedProductForModal.id, variant.variantId);
-    const availableQty = variant.quantity - cartQty;
-
-    if (availableQty < quantity) {
-        alert(`Cannot add ${quantity} items. Only ${availableQty} available.`);
-        return;
-    }
-
-    // Create display name with size/unit
-    const displayName = variant.size || variant.unit 
-        ? `${selectedProductForModal.name} (${variant.size || ''} ${variant.unit || ''})`.trim()
-        : selectedProductForModal.name;
-
-    addProduct({
-        id: variant.variantId,
-        name: displayName,
-        baseName: selectedProductForModal.name,
-        price: variant.price,
-        qty: quantity,
-        variantId: variant.variantId,
-        category: selectedProductForModal.category,
-        baseProductId: variant.baseProductId,
-        // Add location fields from variant
-        storageLocation: variant.storageLocation,
-        shelfName: variant.shelfName,
-        rowName: variant.rowName,
-        columnIndex: variant.columnIndex,
-        fullLocation: variant.fullLocation
-    });
-
+    if (!selectedProductForModal) return;
+    
+    const activeVariant = selectedProductForModal.variants[activeVariantIndex];
+    
+    const cartItem = {
+      id: activeVariant.id,
+      variantId: activeVariant.id,
+      baseProductId: selectedProductForModal.id,
+      name: `${selectedProductForModal.name}${activeVariant.variantName ? ` - ${activeVariant.variantName}` : ''}`,
+      baseName: selectedProductForModal.name,
+      price: activeVariant.unitPrice || activeVariant.price || 0,
+      qty: parseInt(quantity) || 1,
+      unit: activeVariant.unit || 'Piece',
+      category: selectedProductForModal.category,
+      // Add location fields
+      storageLocation: activeVariant.storageLocation,
+      shelfName: activeVariant.shelfName,
+      rowName: activeVariant.rowName,
+      columnIndex: activeVariant.columnIndex,
+      fullLocation: activeVariant.fullLocation
+    };
+    
+    addProduct(cartItem);
+    
+    // Close modal
     setVariantModalOpen(false);
     setSelectedProductForModal(null);
     setActiveVariantIndex(0);
     setQuantity(1);
-}, [selectedProductForModal, activeVariantIndex, quantity, addProduct, getCartItemQuantity]);
+  }, [addProduct, quantity, selectedProductForModal, activeVariantIndex]);
 
+  // Enhanced remove function
+  const removeProduct = useCallback((cartId) => {
+    setAddedProducts(prevProducts => 
+      prevProducts.filter(item => item.cartId !== cartId)
+    );
+  }, []);
 
-  // --- Customer Logic ---
-  const handleBulkOrderChoice = useCallback((isBulk) => {
-    setIsBulkOrder(isBulk);
-    if (!isBulk) { // Walk-in selected
-        const nextCounter = walkInCounter + 1;
-        setWalkInCounter(nextCounter);
-        const newIdentifier = `WalkIn-${String(nextCounter).padStart(3, '0')}`;
-        setCustomerIdentifier(newIdentifier);
-        setCustomerDisplayName('Walk-in Customer');
-        setCustomerDetails({ name: '', phone: '', address: '' }); // Clear just in case
-        setShowBulkOrderPopup(false); // Close choice modal immediately
-    } else { // Bulk order selected
-        setCustomerDisplayName(''); // Clear display name until details entered
-        setCustomerIdentifier('');  // Clear identifier until details entered
-        setCustomerDetails({ name: '', phone: '', address: '' }); // Ensure fields are empty
-        // setShowBulkOrderPopup remains true to allow details modal to render
+  // Enhanced update quantity function
+  const updateProductQuantity = useCallback((cartId, newQty) => {
+    if (newQty <= 0) {
+      removeProduct(cartId);
+      return;
     }
-  }, [walkInCounter]); // Dependency
+    
+    setAddedProducts(prevProducts =>
+      prevProducts.map(item =>
+        item.cartId === cartId ? { ...item, qty: newQty } : item
+      )
+    );
+  }, [removeProduct]);
 
-  const handleCustomerDetailsSubmit = useCallback((e) => {
-    e.preventDefault(); // Prevent default form submission
-    if (!customerDetails.name.trim()) { // Check trimmed name
-        alert("Please enter a customer name.");
-        return;
+  // Clear cart function
+  const clearCart = useCallback(() => {
+    setAddedProducts([]);
+    setCustomerInfo({
+      name: '',
+      address: '',
+      phone: '',
+      email: ''
+    });
+    setPaymentMethod('cash');
+    setShowPaymentSection(false);
+  }, []);
+
+  // Enhanced analytics data collection
+  const collectAnalyticsData = useCallback((transactionData) => {
+    try {
+      const analyticsData = {
+        transactionId: transactionData.transactionId,
+        timestamp: new Date(),
+        totalAmount: transactionData.totalAmount,
+        itemCount: transactionData.items.length,
+        paymentMethod: transactionData.paymentMethod,
+        items: transactionData.items.map(item => ({
+          productId: item.baseProductId || item.id,
+          variantId: item.variantId || item.id,
+          productName: item.baseName || item.name,
+          variantName: item.name,
+          quantity: item.qty,
+          unitPrice: item.price,
+          totalPrice: item.price * item.qty,
+          category: item.category
+        })),
+        salesPerformance: {
+          hour: new Date().getHours(),
+          dayOfWeek: new Date().getDay(),
+          month: new Date().getMonth()
+        }
+      };
+
+      // Send to analytics service
+      AnalyticsService.recordSale(analyticsData);
+      console.log('Analytics data collected:', analyticsData);
+    } catch (error) {
+      console.error('Error collecting analytics:', error);
     }
-    // Generate a unique-ish identifier for the bulk customer
-    const identifier = customerDetails.name.trim().replace(/\s+/g, '-') + '-' + Date.now().toString().slice(-5); // Use more of timestamp
-    setCustomerIdentifier(identifier);
-    setCustomerDisplayName(customerDetails.name.trim()); // Use trimmed name
-    setShowBulkOrderPopup(false); // Close details modal upon successful submission
-  }, [customerDetails]); // Dependency
+  }, []);
 
+  // Quotation generation function
+  const handleQuotationSubmit = useCallback((customerInfo) => {
+    if (addedProducts.length === 0) {
+      alert("Cannot create quotation: Cart is empty");
+      return;
+    }
 
-   // --- Sale Reset Logic ---
-   const resetSaleState = useCallback(() => {
-       setAddedProducts([]); // This line clears the cart
-       setAmountPaid('');
-       setPaymentMethod('Cash');
-       setIsBulkOrder(null);
-       setCustomerDetails({ name: '', phone: '', address: '' });
-       setCustomerIdentifier('Walk-in Customer');
-       setCustomerDisplayName('Walk-in Customer');
-       setSearchQuery('');
-       setQuantity(1);
-       setSelectedProductForModal(null);
-       setVariantModalOpen(false);
-       setActiveVariantIndex(0);
-       setShowBulkOrderPopup(true);
-   }, []);
+    try {
+      // Create quotation data using utility
+      const quotationData = QuotationUtils.createQuotationData(
+        customerInfo,
+        addedProducts,
+        currentUser,
+        {
+          discountPercent: 0,
+          deliveryFee: 150
+        }
+      );
+
+      // Generate HTML content
+      const htmlContent = QuotationGenerator.generate(quotationData);
+
+      // Print quotation
+      QuotationGenerator.print(htmlContent);
+
+      // Close modal
+      setShowQuotationModal(false);
+      
+      console.log('Quotation generated successfully:', quotationData.quotationNumber);
+    } catch (error) {
+      console.error('Error generating quotation:', error);
+      alert('Error generating quotation. Please try again.');
+    }
+  }, [addedProducts, currentUser]);
+
+  // Keep the old function temporarily for compatibility
+  const generateQuotation = useCallback(() => {
+     if (addedProducts.length === 0) {
+       alert("Cannot create quotation: Cart is empty");
+       return;
+     }
+
+     const { formattedDate } = getFormattedDateTime();
+     const quotationNumber = `GS-Q-${Date.now()}`;
+     const validUntilDate = new Date();
+     validUntilDate.setDate(validUntilDate.getDate() + 30);
+
+     // Calculate totals
+     const subtotal = addedProducts.reduce((sum, item) => sum + (item.price * item.qty), 0);
+     const discount = 0; // Can be made dynamic
+     const tax = subtotal * 0.12; // 12% VAT
+     const deliveryFee = 150; // Can be made dynamic
+     const grandTotal = subtotal - discount + tax + deliveryFee;
+
+     // Generate HTML for quotation - simplified version
+     const quotationHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sales Quotation - Glory Star Hardware</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .company-name { font-size: 24px; font-weight: bold; color: #f97316; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f97316; color: white; }
+        .total { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="company-name">GLORY STAR HARDWARE</div>
+        <div>Construction Materials Corporation</div>
+        <h2>SALES QUOTATION</h2>
+        <p>Quote #: ${quotationNumber}</p>
+        <p>Date: ${formattedDate}</p>
+    </div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Description</th>
+                <th>Qty</th>
+                <th>Unit Price</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${addedProducts.map(item => `
+                <tr>
+                    <td>${item.name}</td>
+                    <td>${item.qty}</td>
+                    <td>₱${formatCurrency(item.price)}</td>
+                    <td>₱${formatCurrency(item.price * item.qty)}</td>
+                </tr>
+            `).join('')}
+        </tbody>
+    </table>
+    
+    <div style="text-align: right; margin-top: 20px;">
+        <p>Subtotal: ₱${formatCurrency(subtotal)}</p>
+        <p>Tax (12%): ₱${formatCurrency(tax)}</p>
+        <p>Delivery Fee: ₱${formatCurrency(deliveryFee)}</p>
+        <p class="total">Grand Total: ₱${formatCurrency(grandTotal)}</p>
+    </div>
+    
+    <div style="margin-top: 40px;">
+        <p><strong>Terms & Conditions:</strong></p>
+        <p>• This quotation is valid for 30 days</p>
+        <p>• Payment terms: 30% down payment, 70% upon delivery</p>
+        <p>• Delivery: 7-10 business days</p>
+    </div>
+</body>
+</html>
+     `;
+
+     // Create a new window to print the quotation
+     const printWindow = window.open('', '_blank');
+     printWindow.document.write(quotationHTML);
+     printWindow.document.close();
+     
+     // Auto-print after a short delay
+     setTimeout(() => {
+       printWindow.print();
+     }, 500);
+
+     setShowQuotationModal(false);
+   }, [addedProducts]);
 
 
   // --- Calculations ---
@@ -579,360 +485,147 @@ useEffect(() => {
       tax: taxCalc, 
       total: totalCalc 
     };
-  }, [addedProducts]); // Updated dependency
+  }, [addedProducts]);
 
+  // Format currency values for display
+  const formattedTotal = `₱${total.toFixed(2)}`;
+  const change = Number(amountPaid) - total;
+  const formattedChange = `₱${change.toFixed(2)}`;
 
-  // --- Transaction Logic ---
-  const validateStockBeforeTransaction = async () => {
-    const invalidItems = [];
-    
-    for (const item of addedProducts) {
-        try {
-            // Check if item has the necessary location fields
-            if (!item.storageLocation || !item.shelfName || !item.rowName || item.columnIndex === undefined) {
-                console.warn('Item missing location fields:', item);
-                invalidItems.push(`${item.name} - Missing storage location information`);
-                continue;
-            }
-
-            // Use the new nested structure path
-            const productRef = doc(db, 'Products', item.storageLocation, 'shelves', item.shelfName, 'rows', item.rowName, 'columns', item.columnIndex, 'items', item.baseProductId);
-            const productDoc = await getDoc(productRef);
-            
-            if (!productDoc.exists()) {
-            invalidItems.push(`${item.name} - Product not found`);
-            continue;
-        }
-
-            const productData = productDoc.data();
-            const variantIndex = parseInt(item.variantId.split('-').pop(), 10);
-            
-            if (!productData.variants?.[variantIndex]) {
-                invalidItems.push(`${item.name} - Variant not found`);
-                continue;
-            }
-
-            const currentVariant = productData.variants[variantIndex];
-            const currentQuantity = Number(currentVariant.quantity) || 0;
-            
-            if (currentQuantity < item.qty) {
-                invalidItems.push(`${item.name} - Insufficient stock (Available: ${currentQuantity}, Needed: ${item.qty})`);
-            }
-        } catch (error) {
-            console.error('Error validating stock for', item.name, error);
-            invalidItems.push(`${item.name} - Error checking stock`);
-        }
+  // Process transaction function
+  const processTransaction = useCallback(async () => {
+    if (addedProducts.length === 0) {
+      alert('No products added to cart');
+      return;
     }
 
-    if (invalidItems.length > 0) {
-        throw new Error(`Cannot process transaction:\n${invalidItems.join('\n')}`);
-    }
-};
-
-  const handlePrintAndSave = useCallback(async () => {
-    if (addedProducts.length === 0 || isProcessing) {
-        alert("Cannot process: Cart is empty or transaction in progress");
-        return;
+    if (!customerInfo.name.trim()) {
+      alert('Please enter customer name');
+      return;
     }
 
     setIsProcessing(true);
+    setIsPaymentProcessing(true);
 
     try {
-        await validateStockBeforeTransaction();
-        const { formattedDate, formattedTime } = getFormattedDateTime();
-        const receiptNumber = `GS-${Date.now()}`;
+      const transactionId = `TXN-${Date.now()}`;
+      const { formattedDate, formattedTime } = getFormattedDateTime();
+      
+      const transactionData = {
+        transactionId,
+        customerId: `CUST-${Date.now()}`,
+        customerInfo: cleanFirebaseData(customerInfo),
+        items: addedProducts.map(item => cleanFirebaseData({
+          productId: item.baseProductId || item.id,
+          variantId: item.variantId || item.id,
+          productName: item.baseName || item.name,
+          variantName: item.name,
+          quantity: item.qty,
+          unitPrice: item.price,
+          unit: item.unit || 'Piece',
+          totalPrice: item.price * item.qty,
+          category: item.category,
+          storageLocation: item.storageLocation,
+          shelfName: item.shelfName,
+          rowName: item.rowName,
+          columnIndex: item.columnIndex,
+          fullLocation: item.fullLocation
+        })),
+        totals: {
+          subTotal: subTotal,
+          tax: tax,
+          total: total
+        },
+        paymentMethod,
+        status: 'completed',
+        createdAt: serverTimestamp(),
+        createdBy: currentUser?.uid || 'unknown',
+        saleDate: formattedDate,
+        saleTime: formattedTime,
+        cashier: currentUser?.displayName || currentUser?.email || 'Unknown Cashier'
+      };
 
-        await runTransaction(db, async (transaction) => {
-            // 1. First, read all required documents
-            const productReads = [];
-            const restockChecks = [];
-
-            // Read all product documents first
-            for (const item of addedProducts) {
-                // Check if item has the necessary location fields
-                if (!item.storageLocation || !item.shelfName || !item.rowName || item.columnIndex === undefined) {
-                    throw new Error(`Item ${item.name} missing storage location information`);
-                }
-
-                // Create document references using new nested structure
-                const productRef = doc(db, 'Products', item.storageLocation, 'shelves', item.shelfName, 'rows', item.rowName, 'columns', item.columnIndex, 'items', item.baseProductId);
-                
-                // Get document snapshots using transaction.get()
-                const productDoc = await transaction.get(productRef);
-                
-                productReads.push({
-                    item,
-                    ref: productRef,
-                    doc: productDoc
-                });
-            }
-
-            // 2. Process reads and prepare writes
-            const productUpdates = [];
-            const notificationWrites = [];
-            const restockWrites = [];
-
-            for (const { item, ref, doc: productDoc } of productReads) {
-                if (!productDoc.exists()) {
-                    throw new Error(`Product not found: ${item.name}`);
-                }
-
-                const productData = productDoc.data();
-                const variantIndex = parseInt(item.variantId.split('-').pop(), 10);
-                
-                if (!productData.variants?.[variantIndex]) {
-                    throw new Error(`Variant not found for ${item.name}`);
-                }
-
-                const currentVariant = productData.variants[variantIndex];
-                const currentQuantity = Number(currentVariant.quantity) || 0;
-                
-                if (currentQuantity < item.qty) {
-                    throw new Error(`Insufficient stock for ${item.name}: available ${currentQuantity}`);
-                }
-
-                const newVariants = productData.variants.map((v, idx) => 
-                    idx === variantIndex 
-                        ? { ...v, quantity: currentQuantity - item.qty }
-                        : v
-                );
-
-                const newTotalQuantity = newVariants.reduce((sum, variant) => 
-                    sum + (Number(variant.quantity) || 0), 0
-                );
-
-                productUpdates.push({
-                    ref,
-                    data: {
-                        quantity: newTotalQuantity,
-                        variants: newVariants,
-                        lastUpdated: new Date().toISOString()
-                    }
-                });
-
-                // Check restock levels
-                const restockLevel = Number(productData.restockLevel || 0);
-                const maximumStockLevel = Number(productData.maximumStockLevel || 0);
-                const newQuantity = currentQuantity - Number(item.qty);
-
-                // Calculate intelligent restock quantity if levels aren't properly set
-                const calculateRestockQuantity = () => {
-                    if (maximumStockLevel > 0 && newQuantity < maximumStockLevel) {
-                        return maximumStockLevel - newQuantity;
-                    } else if (restockLevel > 0) {
-                        return Math.max(restockLevel * 2, 10); // Order at least double the restock level or 10 units
-                    } else {
-                        // Fallback: order based on current stock level
-                        return Math.max(currentQuantity, 20); // Order at least what we had or 20 units
-                    }
-                };
-
-                // Determine if we should trigger restock
-                const shouldTriggerRestock = () => {
-                    if (restockLevel > 0) {
-                        return newQuantity <= restockLevel;
-                    } else {
-                        // Fallback: trigger if stock is very low (less than 5 units or less than 25% of original)
-                        return newQuantity <= 5 || newQuantity <= (currentQuantity * 0.25);
-                    }
-                };
-
-                // Debug log
-                console.log('Stock Check:', {
-                    productName: item.name,
-                    currentQuantity,
-                    newQuantity,
-                    restockLevel,
-                    maximumStockLevel,
-                    shouldTriggerRestock: shouldTriggerRestock(),
-                    calculatedRestockQty: calculateRestockQuantity()
-                });
-
-                if (shouldTriggerRestock()) {
-                    // Create a deterministic restock request ID for the product
-                    const restockRequestId = `Restock-${item.category}-${item.baseProductId}-active`;
-                    const restockRequestRef = doc(db, 'RestockRequests', restockRequestId);
-                    
-                    // Get the existing restock request document
-                    const existingRestockDoc = await transaction.get(restockRequestRef);
-
-                    // Only create new restock request if none exists or if existing one is not pending
-                    if (!existingRestockDoc.exists() || existingRestockDoc.data().status !== 'pending') {
-                        const timestamp = Date.now();
-                        // Create notification reference
-                        const notificationRef = doc(db, 'Notifications', `Notify-${item.category}-${item.baseProductId}-${timestamp}`);
-                        
-                        // Get the supplier reference from the product with new structure support
-                        const productSupplierCode = productData.supplier?.primaryCode || productData.supplier?.code || productData.supplierCode || 'UNKNOWN';
-                        const productSupplierName = typeof productData.supplier?.name === 'string' 
-                            ? productData.supplier.name 
-                            : (typeof productData.supplier?.name === 'object' ? productData.supplier.name?.name : 'Unknown Supplier');
-                        
-                        console.log('Creating restock request for:', {
-                            productName: item.name,
-                            productSupplierCode,
-                            productSupplierName,
-                            currentQuantity: newQuantity,
-                            restockLevel,
-                            maximumStockLevel
-                        });
-
-                        const notificationData = {
-                            message: `Low stock alert for ${item.name}`,
-                            productId: item.baseProductId,
-                            variantId: item.variantId,
-                            currentQuantity: newQuantity,
-                            restockLevel: restockLevel,
-                            maximumStockLevel: maximumStockLevel,
-                            category: item.category,
-                            productName: item.name,
-                            status: 'pending',
-                            timestamp: serverTimestamp(),
-                            type: 'restock_alert',
-                            createdAt: new Date().toISOString(),
-                            // Use product's supplier information directly with fallbacks (ensure strings)
-                            supplierName: String(productSupplierName),
-                            supplierCode: String(productSupplierCode),
-                            // Add storage location information for better tracking
-                            storageLocation: item.storageLocation || 'Unknown',
-                            shelfName: item.shelfName || 'Unknown',
-                            rowName: item.rowName || 'Unknown',
-                            columnIndex: item.columnIndex !== undefined ? item.columnIndex : 'Unknown',
-                            fullLocation: item.fullLocation || 'Unknown Location'
-                        };
-
-                        notificationWrites.push({
-                            ref: notificationRef,
-                            data: cleanFirebaseData(notificationData)
-                        });
-
-                        const restockData = {
-                            ...notificationData,
-                            requestedQuantity: calculateRestockQuantity(),
-                            type: 'restock_request',
-                            productId: item.baseProductId,
-                            supplier: {
-                                name: String(productSupplierName),
-                                code: String(productSupplierCode),
-                                primaryCode: String(productSupplierCode)  // Add primaryCode for consistency
-                            },
-                            variantId: item.variantId,
-                            priority: newQuantity <= 0 ? 'urgent' : (restockLevel > 0 && newQuantity <= (restockLevel * 0.5)) ? 'high' : 'normal'
-                        };
-
-                        restockWrites.push({
-                            ref: restockRequestRef,
-                            data: cleanFirebaseData(restockData)
-                        });
-
-                        console.log('Restock request created:', {
-                            productName: item.name,
-                            requestedQuantity: restockData.requestedQuantity,
-                            priority: restockData.priority,
-                            supplier: restockData.supplier
-                        });
-                    } else {
-                        console.log(`Skipping restock request creation for ${item.name} - existing pending request found`);
-                    }
-                }
-            }
-
-            // 3. Create transaction record
-            const transactionRef = doc(db, 'Transactions', receiptNumber);
-            const transactionData = {
-                id: receiptNumber,
-                timestamp: serverTimestamp(),
-                date: formattedDate,
-                time: formattedTime,
-                items: addedProducts.map(item => ({
-                    name: item.name || '',
-                    category: item.category || '',
-                    baseProductId: item.baseProductId || '',
-                    variantId: item.variantId || '',
-                    price: Number(item.price) || 0,
-                    quantity: Number(item.qty) || 0,
-                    total: (Number(item.price) || 0) * (Number(item.qty) || 0),
-                    // Add formatted values for display
-                    formattedPrice: formatCurrency(Number(item.price) || 0),
-                    formattedTotal: formatCurrency((Number(item.price) || 0) * (Number(item.qty) || 0))
-                })),
-                subTotal: Number(subTotal) || 0,
-                tax: Number(tax) || 0,
-                total: Number(total) || 0,
-                amountPaid: Number(amountPaid) || 0,
-                change: (Number(amountPaid) || 0) - (Number(total) || 0),
-                // Add formatted values for display
-                formattedSubTotal: formatCurrency(Number(subTotal) || 0),
-                formattedTax: formatCurrency(Number(tax) || 0),
-                formattedTotal: formatCurrency(Number(total) || 0),
-                formattedAmountPaid: formatCurrency(Number(amountPaid) || 0),
-                formattedChange: formatCurrency((Number(amountPaid) || 0) - (Number(total) || 0)),
-                customerName: customerDisplayName || 'Walk-in Customer',
-                customerDetails: isBulkOrder ? {...customerDetails} : null,
-                paymentMethod: paymentMethod || 'Cash',
-                cashierId: currentUser?.uid || 'unknown',
-                cashierName: currentUser?.name || 'Unknown Cashier',
-                isBulkOrder: Boolean(isBulkOrder)
-            };
-
-            // 4. Perform all writes
-            await transaction.set(transactionRef, transactionData);
+      // Update inventory and save transaction
+      await runTransaction(db, async (transaction) => {
+        // Update inventory quantities
+        for (const item of addedProducts) {
+          const variantRef = doc(db, 'masterProducts', item.baseProductId, 'variants', item.variantId);
+          const variantDoc = await transaction.get(variantRef);
+          
+          if (variantDoc.exists()) {
+            const currentQty = variantDoc.data().quantity || 0;
+            const newQty = Math.max(0, currentQty - item.qty);
             
-            for (const { ref, data } of productUpdates) {
-                await transaction.update(ref, data);
-            }
-
-            for (const { ref, data } of notificationWrites) {
-                await transaction.set(ref, data);
-            }
-
-            for (const { ref, data } of restockWrites) {
-                await transaction.set(ref, data);
-            }
-        });
-
-        // Create analytics records after successful transaction
-        try {
-          await AnalyticsService.createInventorySnapshot();
-          await AnalyticsService.createSalesAggregation();
-        } catch (analyticsError) {
-          console.error('Error creating analytics:', analyticsError);
-          // Don't throw the error - we don't want to affect the main transaction
+            transaction.update(variantRef, {
+              quantity: newQty,
+              lastSold: serverTimestamp(),
+              totalSold: (variantDoc.data().totalSold || 0) + item.qty
+            });
+          }
         }
 
-        await printReceiptContent({
-            receiptNumber,
-            date: formattedDate,
-            time: formattedTime,
-            items: addedProducts.map(item => ({
-                name: item.name,
-                quantity: item.qty,
-                price: Number(item.price),
-                total: Number(item.price * item.qty)
-            })),
-            subTotal: Number(subTotal),
-            tax: Number(tax),
-            total: Number(total),
-            amountPaid: Number(amountPaid),
-            change: Number(amountPaid) - Number(total),
-            customerName: customerDisplayName,
-            cashierName: currentUser?.name || 'Unknown Cashier'
-        });
+        // Save transaction
+        const transactionRef = doc(db, 'posTransactions', transactionId);
+        transaction.set(transactionRef, transactionData);
+      });
 
-        resetSaleState();
-        alert("Transaction completed successfully!");
+      // Collect analytics
+      collectAnalyticsData({
+        transactionId,
+        totalAmount: total,
+        items: addedProducts,
+        paymentMethod
+      });
+
+      // Generate and print receipt
+      const receiptContent = printReceiptContent({
+        transactionId,
+        customerInfo,
+        items: addedProducts,
+        totals: { subTotal, tax, total },
+        paymentMethod,
+        date: formattedDate,
+        time: formattedTime,
+        cashier: currentUser?.displayName || currentUser?.email || 'Unknown Cashier'
+      });
+
+      // Print receipt
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(receiptContent);
+      printWindow.document.close();
+      printWindow.print();
+
+      // Clear cart and reset states
+      clearCart();
+      alert('Transaction completed successfully!');
 
     } catch (error) {
-        console.error("Transaction failed:", error);
-        alert(error.message);
+      console.error('Transaction failed:', error);
+      alert('Transaction failed. Please try again.');
     } finally {
-        setIsProcessing(false);
+      setIsProcessing(false);
+      setIsPaymentProcessing(false);
     }
-}, [addedProducts, products, total, subTotal, tax, amountPaid, paymentMethod, customerDetails, customerDisplayName, isBulkOrder, resetSaleState, currentUser]);
+  }, [addedProducts, customerInfo, subTotal, tax, total, paymentMethod, currentUser, clearCart, collectAnalyticsData]);
 
+  // Dynamic checkout handler based on transaction type
+  const handleCheckout = useCallback(() => {
+    if (addedProducts.length === 0) {
+      alert('No products added to cart');
+      return;
+    }
+
+    if (transactionType === 'quotation') {
+      // Open customer info modal for quotation
+      setShowQuotationModal(true);
+    } else {
+      // Process normal walk-in transaction
+      processTransaction();
+    }
+  }, [addedProducts, transactionType, processTransaction]);
 
   // --- UI ---
-  const shouldDisableInteractions = isProcessing || (showBulkOrderPopup && isBulkOrder === null) || (showBulkOrderPopup && isBulkOrder === true);
+  const shouldDisableInteractions = isProcessing;
 
   return (
     <div className="flex flex-col w-full max-w-[1920px] mx-auto bg-white min-h-screen">
@@ -941,163 +634,153 @@ useEffect(() => {
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6 py-4">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-6">
-              <div className="space-y-1">
-            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-              New Sale
-              {isProcessing && (
-                    <div className="inline-block w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
-              )}
-            </h2>
-                <div className="text-sm text-gray-500">
-                  Create a new sales transaction
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                  </svg>
                 </div>
+                <h1 className="text-lg font-semibold text-gray-900">Point of Sale</h1>
               </div>
-              <div className="h-8 w-px bg-gray-200 hidden md:block" />
-              <div className="clock-display bg-white px-4 py-2 rounded-lg font-mono text-gray-600 hidden md:block shadow-sm border border-gray-100">
-              <span className="clock-time text-lg font-semibold">
-                {currentDateTime.formattedTime?.hours || '00'}
-                <span className="clock-separator animate-pulse">:</span>
-                {currentDateTime.formattedTime?.minutes || '00'}
-                <span className="clock-separator animate-pulse">:</span>
-                {currentDateTime.formattedTime?.seconds || '00'}
-              </span>
-                <span className="clock-divider mx-3 text-gray-500">|</span>
-                <span className="text-gray-700">{currentDateTime.formattedDate}</span>
+              
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>{currentTime.toLocaleTimeString()}</span>
+                <span className="text-gray-400">|</span>
+                <span>{currentTime.toLocaleDateString()}</span>
+              </div>
             </div>
-          </div>
+            
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center border-2 border-slate-200">
-                <span className="text-slate-600 font-bold">
-                {currentUser?.name?.[0]?.toUpperCase() || '?'}
-              </span>
-            </div>
-            <div className="text-sm">
-              <p className="font-semibold text-gray-800">{currentUser?.name || 'Loading...'}</p>
-                <p className="text-gray-700 text-xs">{currentUser?.role || 'User'}</p>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <span>Online</span>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content Area */}
+      {/* Main Content */}
       <div className="flex-1 flex">
-        {/* Left Side: Product Selection - Scrollable */}
-        <div className="flex-1 flex flex-col min-w-0 border-r border-gray-100 mr-[480px]">
-          <div className="sticky top-[73px] bg-white z-20 border-b border-gray-100">
-            <div className="px-4 sm:px-6 py-4 bg-gray-50">
-              <div className="flex gap-4">
-                {/* Search Bar Column */}
-                <div className="flex-1">
-              <SearchBar
-                searchQuery={searchQuery}
-                setSearchQuery={setSearchQuery}
-                disabled={shouldDisableInteractions}
-                    placeholder="Search products by name, category, or brand..."
-                    className="bg-white shadow-sm border-gray-200"
-              />
-            </div>
-                {/* Filters Column */}
-                <div className="flex-1">
-                  <ProductFilters
-                    products={products}
-              selectedCategory={selectedCategory}
-                    setSelectedCategory={setSelectedCategory}
-                    selectedBrand={selectedBrand}
-                    setSelectedBrand={setSelectedBrand}
-                    className="bg-white"
-            />
-          </div>
+        {/* Left Panel - Products */}
+        <div className="flex-1 flex flex-col bg-gray-50">
+          {/* Search and Filters */}
+          <div className="p-4 bg-white border-b border-gray-200">
+            <div className="flex flex-col lg:flex-row gap-4 items-center">
+              <div className="flex-1 w-full">
+                <SearchBar 
+                  searchTerm={searchTerm}
+                  setSearchTerm={setSearchTerm}
+                  disabled={shouldDisableInteractions}
+                />
+              </div>
+              <div className="w-full lg:w-auto">
+                <ProductFilters
+                  products={products}
+                  selectedCategory={selectedCategory}
+                  setSelectedCategory={setSelectedCategory}
+                  selectedBrand={null}
+                  setSelectedBrand={() => {}}
+                  disabled={shouldDisableInteractions}
+                />
               </div>
             </div>
           </div>
-            
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+
+          {/* Product Grid */}
+          <div className="flex-1 overflow-auto">
             <ProductGrid
               products={filteredProducts}
-              onAddProduct={handleAddProduct}
-              loading={loadingProducts}
+              onProductSelect={(product) => {
+                // Always open variant selection modal for quantity input
+                setSelectedProductForModal(product);
+                setVariantModalOpen(true);
+              }}
+              onUnitConversion={(product) => {
+                setSelectedProductForUnitModal(product);
+                setUnitConversionModalOpen(true);
+              }}
+              onQuickQuantity={(product) => {
+                setSelectedProductForQuantity(product);
+                setQuickQuantityModalOpen(true);
+              }}
+              getCartQuantity={getCartItemQuantity}
               disabled={shouldDisableInteractions}
-              getCartItemQuantity={getCartItemQuantity}
             />
           </div>
         </div>
 
-        {/* Right Side: Fixed Panel */}
-        <div className="w-[480px] fixed right-0 top-0 h-screen bg-white flex flex-col border-l border-gray-100">
+        {/* Right Panel - Cart and Checkout */}
+        <div className="w-80 xl:w-96 bg-white border-l border-gray-200 flex flex-col">
           {/* Customer Info */}
-          <div className="pt-[73px]">
-            <div className="border-b border-gray-100 bg-gray-50">
-              <div className="p-4 sm:p-6">
+          <div className="p-4 border-b border-gray-200">
             <CustomerInfo
-              customerDisplayName={customerDisplayName}
-              isBulkOrder={isBulkOrder}
-              customerDetails={customerDetails}
-              formattedDate={currentDateTime.formattedDate}
+              customerInfo={customerInfo}
+              setCustomerInfo={setCustomerInfo}
+              disabled={shouldDisableInteractions}
+              transactionType={transactionType}
+              setTransactionType={setTransactionType}
             />
-              </div>
-            </div>
           </div>
 
-          {/* Scrollable Product List */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-4 sm:p-6">
-              <ProductList
-                cartItems={addedProducts.map(item => ({
-                    ...item,
-                    formattedPrice: formatCurrency(item.price),
-                    formattedTotal: formatCurrency(item.price * item.qty)
-                }))}
-                onRemoveItem={handleRemoveProduct}
-                onUpdateQuantity={handleUpdateCartQuantity}
-                isProcessing={isProcessing}
-              />
-            </div>
+          {/* Cart */}
+          <div className="flex-1 overflow-auto">
+            <ProductList
+              cartItems={addedProducts}
+              onRemoveItem={(index) => {
+                const item = addedProducts[index];
+                if (item && item.cartId) {
+                  removeProduct(item.cartId);
+                }
+              }}
+              isProcessing={shouldDisableInteractions}
+            />
+          </div>
+
+          {/* Order Summary */}
+          <div className="border-t border-gray-200">
+            <OrderSummary
+              subTotal={subTotal}
+              tax={tax}
+              total={total}
+              itemCount={addedProducts.length}
+            />
           </div>
 
           {/* Payment Section */}
-          <div className="border-t border-gray-100 bg-white">
-            <div className="p-4 sm:p-6 bg-green-50">
-              <OrderSummary
-                subTotal={subTotal}
-                tax={tax}
-                total={total}
-              />
-            </div>
-            <div className="p-4 sm:p-6 bg-white">
+          <div className="border-t border-gray-200">
             <PaymentSection
               paymentMethod={paymentMethod}
               setPaymentMethod={setPaymentMethod}
               amountPaid={amountPaid}
               setAmountPaid={setAmountPaid}
               total={total}
-              formattedTotal={formatCurrency(total)}
-              formattedChange={formatCurrency(Number(amountPaid) - total)}
-              isProcessing={isProcessing}
-                hasProducts={addedProducts.length > 0}
-              onPrintAndSave={handlePrintAndSave}
+              formattedTotal={formattedTotal}
+              formattedChange={formattedChange}
+              onPrintAndSave={handleCheckout}
+              onClearCart={clearCart}
+              isProcessing={isPaymentProcessing}
+              disabled={shouldDisableInteractions || addedProducts.length === 0}
+              hasProducts={addedProducts.length > 0}
+              transactionType={transactionType}
+              checkoutButtonText={transactionType === 'quotation' ? 'Generate Quotation' : 'Complete Sale'}
             />
-          </div>
           </div>
         </div>
       </div>
 
       {/* Modals */}
       <div className="relative z-50">
-        {showBulkOrderPopup && isBulkOrder === null && (
-          <BulkOrderChoiceModal onChoice={handleBulkOrderChoice} />
-        )}
-        {showBulkOrderPopup && isBulkOrder === true && (
-          <BulkOrderDetailsModal
-            customerDetails={customerDetails}
-            setCustomerDetails={setCustomerDetails}
-            onSubmit={handleCustomerDetailsSubmit}
-            onClose={() => {
-              setShowBulkOrderPopup(false);
-              resetSaleState();
-            }}
-          />
-        )}
+        {/* Quotation Modal */}
+        <CustomerInfoModal
+          isOpen={showQuotationModal}
+          onClose={() => setShowQuotationModal(false)}
+          onSubmit={handleQuotationSubmit}
+        />
+        
         {variantModalOpen && selectedProductForModal && (
           <VariantSelectionModal
             product={selectedProductForModal}
@@ -1114,9 +797,11 @@ useEffect(() => {
             }}
           />
         )}
+
         {unitConversionModalOpen && selectedProductForUnitModal && (
           <UnitConversionModal
             product={selectedProductForUnitModal}
+            isOpen={unitConversionModalOpen}
             onClose={() => {
               setUnitConversionModalOpen(false);
               setSelectedProductForUnitModal(null);
@@ -1128,53 +813,51 @@ useEffect(() => {
                 baseName: productWithUnit.name,
                 price: productWithUnit.price,
                 qty: productWithUnit.qty,
-                variantId: productWithUnit.variantId,
                 unit: productWithUnit.unit,
+                variantId: productWithUnit.variantId,
+                baseProductId: productWithUnit.baseProductId,
                 category: productWithUnit.category,
-                baseProductId: productWithUnit.id
+                // Add location fields from variant
+                storageLocation: productWithUnit.storageLocation,
+                shelfName: productWithUnit.shelfName,
+                rowName: productWithUnit.rowName,
+                columnIndex: productWithUnit.columnIndex,
+                fullLocation: productWithUnit.fullLocation
               });
               setUnitConversionModalOpen(false);
               setSelectedProductForUnitModal(null);
             }}
           />
         )}
+
         {quickQuantityModalOpen && selectedProductForQuantity && (
           <QuickQuantityModal
             product={selectedProductForQuantity}
-            maxQuantity={selectedProductForQuantity.maxAvailableQty || selectedProductForQuantity.variants[0].quantity}
+            isOpen={quickQuantityModalOpen}
             onClose={() => {
               setQuickQuantityModalOpen(false);
               setSelectedProductForQuantity(null);
             }}
             onAdd={(quantity) => {
-              const variant = selectedProductForQuantity.variants[0];
-              const cartQty = getCartItemQuantity(selectedProductForQuantity.id, variant.variantId);
+              // Use the first variant or the product itself
+              const variant = selectedProductForQuantity.variants?.[0] || selectedProductForQuantity;
               
-              if (cartQty + quantity > variant.quantity) {
-                alert(`Cannot add ${quantity} items. Only ${variant.quantity - cartQty} available.`);
-                return;
-              }
-
-              const displayName = variant.size || variant.unit 
-                ? `${selectedProductForQuantity.name} (${variant.size || ''} ${variant.unit || ''})`.trim()
-                : selectedProductForQuantity.name;
-
               addProduct({
-                id: variant.variantId,
-                name: displayName,
+                id: variant.id || selectedProductForQuantity.id,
+                name: selectedProductForQuantity.name,
                 baseName: selectedProductForQuantity.name,
-                price: variant.price,
+                price: variant.unitPrice || variant.price || selectedProductForQuantity.price || 0,
                 qty: quantity,
-                variantId: variant.variantId,
-                unit: variant.unit,
+                unit: variant.unit || selectedProductForQuantity.unit || 'Piece',
+                variantId: variant.id || selectedProductForQuantity.id,
+                baseProductId: selectedProductForQuantity.id,
                 category: selectedProductForQuantity.category,
-                baseProductId: variant.baseProductId,
-                // Add location fields from variant
-                storageLocation: variant.storageLocation,
-                shelfName: variant.shelfName,
-                rowName: variant.rowName,
-                columnIndex: variant.columnIndex,
-                fullLocation: variant.fullLocation
+                // Add location fields from variant or product
+                storageLocation: variant.storageLocation || selectedProductForQuantity.storageLocation,
+                shelfName: variant.shelfName || selectedProductForQuantity.shelfName,
+                rowName: variant.rowName || selectedProductForQuantity.rowName,
+                columnIndex: variant.columnIndex || selectedProductForQuantity.columnIndex,
+                fullLocation: variant.fullLocation || selectedProductForQuantity.fullLocation
               });
               setQuickQuantityModalOpen(false);
               setSelectedProductForQuantity(null);

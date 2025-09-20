@@ -9,8 +9,9 @@ import {
   FiEye,
   FiPlus,
 } from 'react-icons/fi';
-import RestockRequestModal from '../components/Inventory/RequestStockModal';
 import DashboardHeader from '../components/Dashboard/DashboardHeader';
+import RestockRequestModal from '../components/Inventory/RequestStockModal';
+
 import { useServices } from '../../../services/firebase/ProductServices';
 import { getFirestore, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';

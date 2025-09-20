@@ -19,17 +19,17 @@ function OrderSummary({ subTotal, tax, total, taxRate = DEFAULT_TAX_RATE }) {
   const displayTaxRate = typeof taxRate === 'number' ? taxRate * 100 : DEFAULT_TAX_RATE * 100;
 
   return (
-    <div className="border-t pt-3 text-sm space-y-1">
-      <div className="flex justify-between">
+    <div className="p-4 bg-gray-50 space-y-3">
+      <div className="flex justify-between text-sm">
         <span className="text-gray-600">Subtotal:</span>
         <span className="font-medium">₱{formatCurrency(displaySubTotal)}</span>
       </div>
-      <div className="flex justify-between">
+      <div className="flex justify-between text-sm">
         <span className="text-gray-600">VAT ({displayTaxRate.toFixed(0)}%):</span>
         <span className="font-medium">₱{formatCurrency(displayTax)}</span>
       </div>
-      <div className="flex justify-between text-base font-semibold mt-1 pt-1 border-t">
-        <span>Total:</span>
+      <div className="flex justify-between text-base font-semibold pt-2 border-t border-gray-300">
+        <span className="text-gray-900">Total:</span>
         <span className="text-green-600">₱{formatCurrency(displayTotal)}</span>
       </div>
     </div>

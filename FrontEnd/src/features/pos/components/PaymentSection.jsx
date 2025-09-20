@@ -21,7 +21,9 @@ const PaymentSection = ({
   formattedChange,
   isProcessing,
   hasProducts,
-  onPrintAndSave
+  onPrintAndSave,
+  transactionType,
+  checkoutButtonText
 }) => {
   const handleAmountChange = (e) => {
     const value = e.target.value.replace(/[^0-9.]/g, '');
@@ -29,8 +31,13 @@ const PaymentSection = ({
   };
 
   const change = Number(amountPaid) - total;
-  const insufficientAmount = Number(amountPaid) < total;
-  const canComplete = hasProducts && !isProcessing && Number(amountPaid) >= total;
+  
+  // For quotation type, we don't need payment validation
+  const canComplete = transactionType === 'quotation' 
+    ? hasProducts && !isProcessing
+    : hasProducts && !isProcessing && Number(amountPaid) >= total;
+  
+  const insufficientAmount = transactionType === 'walk-in' && Number(amountPaid) < total;
 
   return (
     <div className="space-y-4">
@@ -53,32 +60,37 @@ const PaymentSection = ({
         </div>
       </div>
 
-      <div className="space-y-3">
-        <h3 className="font-medium text-gray-700">Amount Paid</h3>
-        <div className="relative">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">₱</span>
-          <input
-            type="text"
-            value={amountPaid}
-            onChange={handleAmountChange}
-            disabled={isProcessing}
-            placeholder="0.00"
-            className="w-full pl-8 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-          />
-        </div>
-      </div>
+      {/* Only show amount paid for walk-in transactions */}
+      {transactionType === 'walk-in' && (
+        <>
+          <div className="space-y-3">
+            <h3 className="font-medium text-gray-700">Amount Paid</h3>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">₱</span>
+              <input
+                type="text"
+                value={amountPaid}
+                onChange={handleAmountChange}
+                disabled={isProcessing}
+                placeholder="0.00"
+                className="w-full pl-8 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              />
+            </div>
+          </div>
 
-      <div className="flex justify-between text-sm text-gray-600">
-        <span>Total Amount:</span>
-        <span className="font-medium">{formattedTotal}</span>
-      </div>
+          <div className="flex justify-between text-sm text-gray-600">
+            <span>Total Amount:</span>
+            <span className="font-medium">{formattedTotal}</span>
+          </div>
 
-      <div className="flex justify-between text-sm">
-        <span>Change:</span>
-        <span className={`font-medium ${change < 0 ? 'text-red-500' : 'text-green-500'}`}>
-          {formattedChange}
-        </span>
-      </div>
+          <div className="flex justify-between text-sm">
+            <span>Change:</span>
+            <span className={`font-medium ${change < 0 ? 'text-red-500' : 'text-green-500'}`}>
+              {formattedChange}
+            </span>
+          </div>
+        </>
+      )}
 
       <button
         onClick={onPrintAndSave}
@@ -102,7 +114,7 @@ const PaymentSection = ({
         ) : insufficientAmount ? (
           'Insufficient Amount'
         ) : (
-          'Complete Sale'
+          checkoutButtonText
         )}
       </button>
     </div>

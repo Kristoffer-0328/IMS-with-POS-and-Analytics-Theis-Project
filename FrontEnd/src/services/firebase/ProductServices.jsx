@@ -87,12 +87,16 @@ export const ServicesProvider = ({ children }) => {
                         variants: Array.isArray(data.variants) ? data.variants.map((variant, index) => ({
                           ...variant,
                           id: `${doc.id}-${index}`,
+                          variantId: variant.variantId || `${doc.id}-${index}`,
                           baseProductId: doc.id,
                           brand: data.brand || 'Generic',
+                          size: variant.size || variant.variantName || '',
+                          variantName: variant.variantName || variant.size || '',
                           storageType: variant.storageType || data.storageType || 'Goods',
                           specifications: variant.specifications || data.specifications || '',
                           unitPrice: typeof variant.unitPrice === 'number' ? variant.unitPrice : parseFloat(variant.unitPrice) || 0,
                           quantity: typeof variant.quantity === 'number' ? variant.quantity : parseInt(variant.quantity) || 0,
+                          unit: variant.unit || 'pcs',
                           supplierCode: variant.supplierCode || data.supplierCode || data.supplier?.primaryCode || data.supplier?.code || '',
                           supplier: variant.supplier || data.supplier || {
                             name: 'Unknown',
