@@ -9,6 +9,8 @@
     "jspdf-autotable": "^5.0.2",
     "moment": "^2.30.1",
     "papaparse": "^5.4.1",
+    "qrcode": "^1.5.4",
+    "qrcode-react": "^0.1.16",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hot-toast": "^2.4.1",

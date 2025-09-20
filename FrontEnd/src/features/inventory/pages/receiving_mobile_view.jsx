@@ -20,7 +20,10 @@ import {
   serverTimestamp,
   getFirestore,
   doc,
-  getDoc
+  getDoc,
+  getDocs,
+  updateDoc,
+  runTransaction
 } from 'firebase/firestore';
 import { ref, uploadBytes, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import app from '../../../services/firebase/config';
@@ -154,11 +157,27 @@ const ProductImageHolder = () => {
 };
 
 // Update the ProductVerification component
-const ProductVerification = ({ products, updateProduct }) => (
-  <div className="space-y-4">
-    <h3 className="text-lg font-semibold text-gray-800 mb-4">Product Verification</h3>
-    {products.map((product) => (
-      <div key={product.id} className="bg-white rounded-lg p-4 border border-gray-200">
+const ProductVerification = ({ products, updateProduct }) => {
+  console.log('ProductVerification rendered with products:', products);
+  
+  if (!products || products.length === 0) {
+    return (
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">Product Verification</h3>
+        <div className="text-center py-8">
+          <FiAlertCircle className="mx-auto text-gray-400 mb-2" size={32} />
+          <p className="text-gray-600">No products found for verification</p>
+          <p className="text-sm text-gray-500 mt-1">Please go back and check the delivery details</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold text-gray-800 mb-4">Product Verification ({products.length} items)</h3>
+      {products.map((product) => (
+        <div key={product.id} className="bg-white rounded-lg p-4 border border-gray-200">
         <div className="flex justify-between items-start mb-3">
           <h4 className="font-medium text-gray-800">{product.name}</h4>
           <span className="text-sm text-gray-500">Ordered: {product.orderedQty}</span>
@@ -242,7 +261,7 @@ const ProductVerification = ({ products, updateProduct }) => (
     ))}
   </div>
 );
-
+};
 
 const DeliveryDetailsForm = ({ deliveryDetails, updateDeliveryDetails, uploadedFiles, setUploadedFiles, uploadProgress, retryUpload, cancelUpload }) => {
   const [dragOver, setDragOver] = useState(false);
@@ -354,22 +373,28 @@ const DeliveryDetailsForm = ({ deliveryDetails, updateDeliveryDetails, uploadedF
         required
       />
 
-      {/* Supporting Documents Section */}
-      <div className="space-y-4">
-        <h4 className="text-lg font-semibold text-gray-800">Supporting Documents</h4>
+      {/* Temporary Notice */}
+      <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+        <div className="flex items-center">
+          <FiAlertTriangle className="text-yellow-600 mr-2" size={16} />
+          <p className="text-sm text-yellow-800">
+            <strong>Notice:</strong> File uploads are temporarily disabled due to storage configuration. 
+            You can still process deliveries without uploading documents.
+          </p>
+        </div>
+      </div>
+
+      {/* Supporting Documents Section - Temporarily Disabled */}
+      <div className="space-y-4 opacity-50">
+        <h4 className="text-lg font-semibold text-gray-800">
+          Supporting Documents <span className="text-red-500 text-sm">(Temporarily Disabled)</span>
+        </h4>
         
-        <div 
-          className={`bg-white rounded-lg p-4 border-2 border-dashed transition-colors ${
-            dragOver ? 'border-orange-400 bg-orange-50' : 'border-gray-300'
-          }`}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-        >
+        <div className="bg-white rounded-lg p-4 border-2 border-dashed border-gray-300 cursor-not-allowed">
           <div className="text-center">
             <FiCamera className="mx-auto text-gray-400 mb-2" size={32} />
-            <p className="text-sm text-gray-600 mb-2">
-              Upload DR, Invoice, or Proof of Delivery
+            <p className="text-sm text-gray-500 mb-2">
+              Upload DR, Invoice, or Proof of Delivery (Currently Disabled)
             </p>
             <p className="text-xs text-gray-500 mb-2">
               Max {MAX_FILE_SIZE / (1024 * 1024)}MB per file, {MAX_FILES} files max
@@ -381,13 +406,14 @@ const DeliveryDetailsForm = ({ deliveryDetails, updateDeliveryDetails, uploadedF
               onChange={(e) => handleFileSelect(e.target.files)}
               className="hidden"
               id="file-upload"
+              disabled
             />
             <label
               htmlFor="file-upload"
-              className="inline-block px-4 py-2 bg-orange-500 text-white rounded-lg cursor-pointer hover:bg-orange-600"
+              className="inline-block px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed"
             >
               <FiUpload className="inline mr-2" size={16} />
-              Choose Files
+              Choose Files (Disabled)
             </label>
           </div>
         </div>
@@ -444,9 +470,13 @@ const DeliveryDetailsForm = ({ deliveryDetails, updateDeliveryDetails, uploadedF
 const ReceivingMobileView = () => {
   const [activeTab, setActiveTab] = useState('delivery-details');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [processingStep, setProcessingStep] = useState('');
   const [uploadProgress, setUploadProgress] = useState({});
   const [uploadTasks, setUploadTasks] = useState({});
   const [poId, setPoId] = useState(null);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [completionData, setCompletionData] = useState(null);
   const [deliveryDetails, setDeliveryDetails] = useState({
     drNumber: '',
     invoiceNumber: '',
@@ -455,64 +485,82 @@ const ReceivingMobileView = () => {
     driverName: ''
   });
   
-  const [products, setProducts] = useState([
-    {
-      id: 1,
-      name: 'Portland Cement 50kg',
-      orderedQty: 100,
-      deliveredQty: '',
-      status: 'pending',
-      remarks: '',
-      condition: 'complete'
-    },
-    {
-      id: 2,
-      name: 'Steel Bars 12mm',
-      orderedQty: 50,
-      deliveredQty: '',
-      status: 'pending',
-      remarks: '',
-      condition: 'complete'
-    }
-  ]);
-
+  const [products, setProducts] = useState([]);
+  
   const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [poData, setPoData] = useState(null);
+  const [PoData, setPoData] = useState(null);
 
   // Read poId from URL parameters
   useEffect(() => {
+    console.log('Mobile receiving view loaded');
+    console.log('Current URL:', window.location.href);
     const urlParams = new URLSearchParams(window.location.search);
     const poIdParam = urlParams.get('poId');
+    console.log('PO ID from URL:', poIdParam);
     if (poIdParam) {
       setPoId(poIdParam);
+      setIsLoading(true);
+      
       // Fetch PO data from Firestore
       const fetchPO = async () => {
         try {
-          const poDoc = await getDoc(doc(db, 'purchaseOrders', poIdParam));
+          console.log('Fetching PO data for:', poIdParam);
+          const poRef = doc(db, 'purchase_orders', poIdParam);
+          const poDoc = await getDoc(poRef);
+          
           if (poDoc.exists()) {
-            setPoData(poDoc.data());
-            // Optionally set products from PO
-            if (poDoc.data().products) {
-              setProducts(
-                poDoc.data().products.map((p, idx) => ({
-                  id: p.id || idx + 1,
-                  name: p.name,
-                  orderedQty: p.orderedQty,
-                  deliveredQty: '',
-                  status: 'pending',
-                  remarks: '',
-                  condition: 'complete'
-                }))
-              );
+            const poData = poDoc.data();
+            console.log('PO Data:', poData);
+            setPoData(poData);
+            
+            // Update PO status to 'receiving_in_progress' if not already
+            if (poData.status !== 'receiving_in_progress' && poData.status !== 'received') {
+              console.log('Updating PO status to receiving_in_progress');
+              await updateDoc(poRef, {
+                status: 'receiving_in_progress',
+                receivingStartedAt: serverTimestamp(),
+                receivingStartedBy: 'mobile_user', // You can get actual user if auth is implemented
+                updatedAt: serverTimestamp()
+              });
+              console.log('PO status updated to receiving_in_progress');
             }
+          } else {
+            console.log('PO document does not exist');
           }
         } catch (err) {
           console.error('Error fetching PO:', err);
+        } finally {
+          setIsLoading(false);
         }
       };
       fetchPO();
+    } else {
+      setIsLoading(false);
     }
   }, []);
+
+  // Separate effect to handle setting products when PoData is available
+  useEffect(() => {
+    if (PoData && PoData.items && PoData.items.length > 0) {
+      console.log('Setting products from PO items:', PoData.items);
+      setProducts(
+        PoData.items.map((item, idx) => ({
+          id: item.productId || `item-${idx}`,
+          name: item.productName || item.name || 'Unknown Product',
+          orderedQty: item.quantity || 0,
+          deliveredQty: '',
+          status: 'pending',
+          remarks: '',
+          condition: 'complete',
+          productId: item.productId,
+          unitPrice: item.unitPrice || 0,
+          total: item.total || 0
+        }))
+      );
+    } else if (PoData) {
+      console.log('No items found in PO data');
+    }
+  }, [PoData]);
 
   // Memoized functions to prevent re-renders
   const updateDeliveryDetails = useCallback((field, value) => {
@@ -612,52 +660,184 @@ const ReceivingMobileView = () => {
     }
   };
 
-  // Enhanced Firebase save function with concurrent uploads and progress tracking
-  const saveReceivingData = async () => {
+  // Function to find product in inventory by searching all locations
+  const findProductInInventory = async (productId, productName) => {
+    console.log(`Searching for product ${productName} (ID: ${productId}) in inventory...`);
+    
     try {
-      setIsSubmitting(true);
+      // Get all storage locations
+      const productsCollection = collection(db, 'Products');
+      const storageSnapshot = await getDocs(productsCollection);
+      
+      for (const storageDoc of storageSnapshot.docs) {
+        const storageLocation = storageDoc.id;
+        console.log(`Searching in storage location: ${storageLocation}`);
+        
+        // Get all shelves in this storage location
+        const shelvesCollection = collection(db, 'Products', storageLocation, 'shelves');
+        const shelvesSnapshot = await getDocs(shelvesCollection);
+        
+        for (const shelfDoc of shelvesSnapshot.docs) {
+          const shelfName = shelfDoc.id;
+          
+          // Get all rows in this shelf
+          const rowsCollection = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows');
+          const rowsSnapshot = await getDocs(rowsCollection);
+          
+          for (const rowDoc of rowsSnapshot.docs) {
+            const rowName = rowDoc.id;
+            
+            // Get all columns in this row
+            const columnsCollection = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns');
+            const columnsSnapshot = await getDocs(columnsCollection);
+            
+            for (const columnDoc of columnsSnapshot.docs) {
+              const columnIndex = columnDoc.id;
+              
+              // Check if product exists in this column
+              const productRef = doc(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items', productId);
+              const productDoc = await getDoc(productRef);
+              
+              if (productDoc.exists()) {
+                console.log(`Found product ${productName} at: ${storageLocation}/${shelfName}/${rowName}/${columnIndex}`);
+                return {
+                  ref: productRef,
+                  data: productDoc.data(),
+                  location: {
+                    storageLocation,
+                    shelfName,
+                    rowName,
+                    columnIndex: parseInt(columnIndex)
+                  }
+                };
+              }
+            }
+          }
+        }
+      }
+      
+      console.log(`Product ${productName} not found in any inventory location`);
+      return null;
+      
+    } catch (error) {
+      console.error(`Error searching for product ${productName}:`, error);
+      throw error;
+    }
+  };
 
-      // Initialize progress tracking for document uploads only
-      const initialProgress = {};
-      uploadedFiles.forEach(file => {
-        initialProgress[file.name] = { progress: 0, status: 'uploading' };
-      });
-      setUploadProgress(initialProgress);
+  // Function to update inventory quantities by adding received items
+  const updateInventoryQuantities = async (receivedProducts) => {
+    try {
+      console.log('Starting inventory update for received products:', receivedProducts);
+      
+      for (const product of receivedProducts) {
+        // Skip if no quantity delivered
+        if (!product.deliveredQty || product.deliveredQty <= 0) {
+          console.log(`Skipping ${product.name} - no quantity delivered`);
+          continue;
+        }
 
-      // Upload files concurrently with progress tracking
-      const uploadedFileURLs = await Promise.all(
-        uploadedFiles.map(async (file) => {
-          try {
-            const url = await uploadFileToFirebase(file, (progress) => {
-              setUploadProgress(prev => ({
-                ...prev,
-                [file.name]: { progress, status: 'uploading' }
-              }));
+        console.log(`Processing product: ${product.name} (ID: ${product.productId})`);
+        
+        // Find the product in inventory
+        const productInfo = await findProductInInventory(product.productId, product.name);
+        
+        if (!productInfo) {
+          throw new Error(`Product "${product.name}" (ID: ${product.productId}) not found in inventory. Cannot update stock levels.`);
+        }
+        
+        // Update the product using a transaction
+        await runTransaction(db, async (transaction) => {
+          // Re-fetch the latest product data in the transaction
+          const currentProductDoc = await transaction.get(productInfo.ref);
+          
+          if (!currentProductDoc.exists()) {
+            throw new Error(`Product "${product.name}" was deleted during update process.`);
+          }
+          
+          const productData = currentProductDoc.data();
+          console.log(`Current product data for ${product.name}:`, productData);
+          
+          // Update the appropriate variant (assuming first variant for now, could be enhanced)
+          let updatedVariants = [...(productData.variants || [])];
+          
+          if (updatedVariants.length > 0) {
+            // Update the first variant quantity
+            const currentVariantQty = updatedVariants[0].quantity || 0;
+            const deliveredQty = parseInt(product.deliveredQty);
+            const newVariantQty = currentVariantQty + deliveredQty;
+            updatedVariants[0].quantity = newVariantQty;
+            
+            console.log(`Updated variant for ${product.name}: ${currentVariantQty} -> ${newVariantQty} (+${deliveredQty})`);
+            
+            // Calculate new total quantity
+            const totalQuantity = updatedVariants.reduce((sum, variant) => sum + (variant.quantity || 0), 0);
+            
+            // Update the product document
+            transaction.update(productInfo.ref, {
+              variants: updatedVariants,
+              quantity: totalQuantity,
+              lastReceived: serverTimestamp(),
+              totalReceived: (productData.totalReceived || 0) + deliveredQty,
+              lastUpdated: serverTimestamp()
             });
             
-            setUploadProgress(prev => ({
-              ...prev,
-              [file.name]: { progress: 100, status: 'completed' }
-            }));
+            console.log(`Successfully updated ${product.name} - Total quantity now: ${totalQuantity}`);
+          } else {
+            // Create a default variant with received quantity
+            const deliveredQty = parseInt(product.deliveredQty);
+            updatedVariants = [{
+              quantity: deliveredQty,
+              variant: 'default'
+            }];
             
-            return {
-              name: file.name,
-              url: url,
-              type: file.type,
-              size: file.size
-            };
-          } catch (error) {
-            console.error(`Failed to upload ${file.name}:`, error);
-            setUploadProgress(prev => ({
-              ...prev,
-              [file.name]: { progress: 0, status: 'error' }
-            }));
-            throw new Error(`Failed to upload ${file.name}: ${error.message}`);
+            transaction.update(productInfo.ref, {
+              variants: updatedVariants,
+              quantity: deliveredQty,
+              lastReceived: serverTimestamp(),
+              totalReceived: (productData.totalReceived || 0) + deliveredQty,
+              lastUpdated: serverTimestamp()
+            });
+            
+            console.log(`Created default variant for ${product.name} with quantity ${deliveredQty}`);
           }
-        })
-      );
+        });
+      }
+      
+      console.log('All inventory updates completed successfully');
+      
+    } catch (error) {
+      console.error('Error in inventory update:', error);
+      throw new Error(`Failed to update inventory: ${error.message}`);
+    }
+  };
+
+  // Enhanced Firebase save function with concurrent uploads and progress tracking
+  const saveReceivingData = async () => {
+    const timeoutId = setTimeout(() => {
+      alert('Operation is taking too long. Please try again.');
+      setIsSubmitting(false);
+    }, 30000); // 30 second timeout
+
+    try {
+      setIsSubmitting(true);
+      setProcessingStep('Initializing...');
+      console.log('Starting receiving data save process...');
+
+      // TEMPORARILY DISABLED: Skip file uploads due to Firebase Storage issues
+      console.log('File uploads temporarily disabled - skipping upload process');
+      setProcessingStep('Skipping file uploads (temporarily disabled)...');
+      
+      // Create empty array for uploaded file URLs since we're not uploading
+      const uploadedFileURLs = [];
+      
+      // Log what would have been uploaded
+      if (uploadedFiles.length > 0) {
+        console.log('Files that would have been uploaded:', uploadedFiles.map(f => f.name));
+      }
 
       // Prepare data for Firestore
+      setProcessingStep('Preparing data...');
       const receivingData = {
         poId: poId, // Include PO ID from QR scan
         deliveryDetails: {
@@ -668,22 +848,97 @@ const ReceivingMobileView = () => {
           ...product,
           deliveredQty: isNaN(Number(product.deliveredQty)) ? 0 : Number(product.deliveredQty)
         })),
-        uploadedFiles: uploadedFileURLs,
+        uploadedFiles: uploadedFileURLs, // This will be empty array when uploads are disabled
+        documentsUploaded: uploadedFileURLs.length > 0, // Track if documents were uploaded
+        uploadStatus: 'disabled', // Indicate that uploads were disabled
         status: 'completed',
         createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
+        notes: 'File uploads temporarily disabled - processed without supporting documents'
       };
 
+      // Update inventory quantities with received products
+      console.log('Updating inventory quantities...');
+      setProcessingStep('Updating inventory...');
+      await updateInventoryQuantities(receivingData.products);
+      
+      // Update Purchase Order status and received quantities
+      console.log('Updating Purchase Order status...');
+      setProcessingStep('Updating Purchase Order...');
+      if (poId) {
+        const poRef = doc(db, 'purchase_orders', poId);
+        
+        // Calculate total ordered vs received for summary
+        const orderSummary = {
+          totalItemsOrdered: products.length,
+          totalItemsReceived: products.filter(p => p.deliveredQty > 0).length,
+          totalQuantityOrdered: products.reduce((sum, p) => sum + (p.orderedQty || 0), 0),
+          totalQuantityReceived: products.reduce((sum, p) => sum + (Number(p.deliveredQty) || 0), 0),
+          itemsWithDiscrepancies: products.filter(p => Number(p.deliveredQty) !== p.orderedQty).length
+        };
+        
+        await updateDoc(poRef, {
+          status: 'received',
+          receivedAt: serverTimestamp(),
+          receivingCompletedBy: 'mobile_user', // You can get actual user if auth is implemented
+          orderSummary: orderSummary,
+          receivedProducts: receivingData.products,
+          deliveryDetails: receivingData.deliveryDetails,
+          updatedAt: serverTimestamp()
+        });
+        
+        console.log('Purchase Order updated with received status and summary:', orderSummary);
+      }
+
+      // Save receiving transaction record (similar to POS transactions)
+      console.log('Logging receiving transaction...');
+      setProcessingStep('Logging transaction...');
+      const receivingTransactionData = {
+        transactionId: `REC-${Date.now()}`,
+        type: 'receiving',
+        poId: poId,
+        deliveryDetails: receivingData.deliveryDetails,
+        items: receivingData.products.map(product => ({
+          productId: product.productId,
+          productName: product.name,
+          orderedQuantity: product.orderedQty,
+          receivedQuantity: Number(product.deliveredQty),
+          condition: product.condition,
+          status: product.status,
+          remarks: product.remarks,
+          unitPrice: product.unitPrice || 0,
+          totalValue: (product.unitPrice || 0) * Number(product.deliveredQty)
+        })),
+        summary: {
+          totalOrderValue: products.reduce((sum, p) => sum + ((p.unitPrice || 0) * (p.orderedQty || 0)), 0),
+          totalReceivedValue: products.reduce((sum, p) => sum + ((p.unitPrice || 0) * (Number(p.deliveredQty) || 0)), 0),
+          itemsCount: products.length,
+          receivedItemsCount: products.filter(p => Number(p.deliveredQty) > 0).length
+        },
+        status: 'completed',
+        createdAt: serverTimestamp(),
+        createdBy: 'mobile_user' // You can get actual user if auth is implemented
+      };
+      
+      await addDoc(collection(db, 'receivingTransactions'), receivingTransactionData);
+      console.log('Receiving transaction logged with ID:', receivingTransactionData.transactionId);
+
       // Save to Firestore
+      console.log('Saving receiving record...');
+      setProcessingStep('Saving record...');
       const docRef = await addDoc(collection(db, 'receivingRecords'), receivingData);
       
       console.log('Receiving data saved with ID:', docRef.id);
+      setProcessingStep('Completed!');
+      clearTimeout(timeoutId); // Clear timeout since we succeeded
       return docRef.id;
     } catch (error) {
+      clearTimeout(timeoutId); // Clear timeout on error
       console.error('Error saving receiving data:', error);
       throw error;
     } finally {
       setIsSubmitting(false);
+      setProcessingStep('');
     }
   };
 
@@ -741,44 +996,171 @@ const ReceivingMobileView = () => {
       // Save to Firebase
       const recordId = await saveReceivingData();
       
-      alert(`Receiving data submitted successfully! Record ID: ${recordId}`);
-      
-      // Reset form
-      setDeliveryDetails({
-        drNumber: '',
-        invoiceNumber: '',
-        deliveryDate: '',
-        deliveryTime: '',
-        driverName: ''
+      // Set completion data and show completion page
+      setCompletionData({
+        recordId,
+        poId,
+        deliveryDetails,
+        productsReceived: products.filter(p => p.deliveredQty > 0),
+        totalProducts: products.length,
+        timestamp: new Date().toISOString()
       });
-      setProducts(prev => prev.map(p => ({
-        ...p,
-        deliveredQty: '',
-        status: 'pending',
-        remarks: '',
-        condition: 'complete'
-      })));
-      setUploadedFiles([]);
-      setUploadProgress({});
-      setActiveTab('delivery-details');
+      
+      setIsCompleted(true);
       
     } catch (error) {
       console.error('Error submitting data:', error);
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
       
       // Better error handling with specific messages
       let errorMessage = 'Error submitting data. Please try again.';
       
       if (error.message.includes('Failed to upload')) {
         errorMessage = `Upload failed: ${error.message}`;
-      } else if (error.message.includes('permission')) {
+      } else if (error.message.includes('permission') || error.code === 'permission-denied') {
         errorMessage = 'Permission denied. Please check your authentication.';
-      } else if (error.message.includes('network') || error.message.includes('CORS')) {
+      } else if (error.message.includes('network') || error.message.includes('CORS') || error.code === 'unavailable') {
         errorMessage = 'Network error. Please check your connection and try again.';
+      } else if (error.message.includes('quota') || error.code === 'resource-exhausted') {
+        errorMessage = 'Storage quota exceeded. Please contact your administrator.';
+      } else if (error.message.includes('invalid-argument') || error.code === 'invalid-argument') {
+        errorMessage = 'Invalid data format. Please check your inputs and try again.';
+      } else if (error.message) {
+        // Include the actual error message for debugging
+        errorMessage = `Error: ${error.message}`;
       }
       
       alert(errorMessage);
     }
   };
+
+  // Show completion page if receiving is completed
+  if (isCompleted && completionData) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="max-w-lg mx-auto bg-white rounded-lg shadow-lg p-6">
+          {/* Success Header */}
+          <div className="text-center mb-6">
+            <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+              <FiCheckCircle className="w-8 h-8 text-green-600" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-800">Receiving Completed!</h1>
+            <p className="text-gray-600 mt-2">All items have been successfully processed</p>
+          </div>
+
+          {/* Summary Information */}
+          <div className="space-y-4 mb-6">
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="font-semibold text-gray-800 mb-2">Delivery Summary</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Record ID:</span>
+                  <span className="font-medium">{completionData.recordId}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">PO ID:</span>
+                  <span className="font-medium">{completionData.poId}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">DR Number:</span>
+                  <span className="font-medium">{completionData.deliveryDetails?.drNumber}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Driver:</span>
+                  <span className="font-medium">{completionData.deliveryDetails?.driverName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Products Received:</span>
+                  <span className="font-medium">{completionData.productsReceived?.length} of {completionData.totalProducts}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Products Received */}
+            <div className="bg-green-50 rounded-lg p-4">
+              <h3 className="font-semibold text-gray-800 mb-2 flex items-center">
+                <FiPackage className="mr-2" />
+                Inventory Updated
+              </h3>
+              <div className="space-y-1 text-sm">
+                {completionData.productsReceived?.map((product, index) => (
+                  <div key={index} className="flex justify-between">
+                    <span className="text-gray-600">{product.name}</span>
+                    <span className="font-medium text-green-600">+{product.deliveredQty}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Status Updates */}
+            <div className="bg-blue-50 rounded-lg p-4">
+              <h3 className="font-semibold text-gray-800 mb-2">System Updates</h3>
+              <div className="space-y-1 text-sm text-gray-600">
+                <div className="flex items-center">
+                  <FiCheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                  Purchase Order status updated to 'Received'
+                </div>
+                <div className="flex items-center">
+                  <FiCheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                  Inventory quantities updated
+                </div>
+                <div className="flex items-center">
+                  <FiCheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                  Receiving transaction logged
+                </div>
+                <div className="flex items-center text-gray-400">
+                  <FiX className="w-4 h-4 mr-2" />
+                  Document uploads (temporarily disabled)
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="space-y-3">
+            <button
+              onClick={() => {
+                // Reset all states to start a new receiving process
+                setIsCompleted(false);
+                setCompletionData(null);
+                setPoId(null);
+                setPoData(null);
+                setDeliveryDetails({
+                  drNumber: '',
+                  invoiceNumber: '',
+                  deliveryDate: '',
+                  deliveryTime: '',
+                  driverName: ''
+                });
+                setProducts([]);
+                setUploadedFiles([]);
+                setUploadProgress({});
+                setActiveTab('delivery-details');
+              }}
+              className="w-full bg-orange-500 text-white py-3 px-4 rounded-lg font-medium hover:bg-orange-600 transition-colors flex items-center justify-center"
+            >
+              <FiRefreshCw className="mr-2" />
+              Process New Delivery
+            </button>
+            
+            <button
+              onClick={() => {
+                // Go back to main receiving page (or wherever you want)
+                window.history.back();
+              }}
+              className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+            >
+              Back to Receiving
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -788,6 +1170,19 @@ const ReceivingMobileView = () => {
           <h1 className="text-xl font-bold text-gray-800">Mobile Receiving</h1>
           <p className="text-sm text-gray-600">
             {poId ? `PO ID: ${poId}` : 'Process delivery receipts'}
+            {PoData && PoData.status && (
+              <span className={`ml-2 px-2 py-1 rounded-full text-xs ${
+                PoData.status === 'receiving_in_progress' ? 'bg-orange-100 text-orange-700' :
+                PoData.status === 'received' ? 'bg-green-100 text-green-700' :
+                PoData.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                'bg-gray-100 text-gray-700'
+              }`}>
+                {PoData.status === 'receiving_in_progress' ? 'Receiving in Progress' :
+                 PoData.status === 'received' ? 'Received' :
+                 PoData.status === 'pending' ? 'Pending' :
+                 PoData.status}
+              </span>
+            )}
           </p>
         </div>
       </div>
@@ -795,7 +1190,14 @@ const ReceivingMobileView = () => {
 
       {/* Content Area */}
       <div className="p-4 pb-24">
-        {renderContent()}
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mb-4"></div>
+            <p className="text-gray-600">Loading PO data...</p>
+          </div>
+        ) : (
+          renderContent()
+        )}
       </div>
 
       {/* Action Button */}
@@ -817,7 +1219,21 @@ const ReceivingMobileView = () => {
                 : 'bg-orange-500 text-white hover:bg-orange-600'
             }`}
           >
-            {isSubmitting ? 'Submitting...' : 'Submit Receiving Data'}
+            {isSubmitting ? (
+              <div className="flex flex-col items-center justify-center">
+                <div className="flex items-center mb-2">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                  Processing...
+                </div>
+                {processingStep && (
+                  <div className="text-xs text-gray-200">
+                    {processingStep}
+                  </div>
+                )}
+              </div>
+            ) : (
+              'Submit Receiving Data'
+            )}
           </button>
         )}
       </div>

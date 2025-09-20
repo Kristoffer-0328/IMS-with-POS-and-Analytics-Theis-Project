@@ -168,10 +168,27 @@ export const generateReceiptHtml = (data) => {
  * @param {object} data - The transaction data object.
  */
 export const printReceiptContent = (data) => {
-    const htmlContent = generateReceiptHtml(data); // Generate the HTML first
+    // Map the POS data to the format expected by generateReceiptHtml
+    const receiptData = {
+        receiptNumber: data.transactionId, // Map transactionId to receiptNumber
+        transactionId: data.transactionId,
+        customerInfo: data.customerInfo || {},
+        items: data.items || [],
+        totals: data.totals || { subTotal: 0, tax: 0, total: 0 },
+        paymentMethod: data.paymentMethod || 'Cash',
+        timestamp: new Date(), // Use current time for receipt
+        date: data.date,
+        time: data.time,
+        cashier: data.cashier || 'Unknown Cashier'
+    };
+    
+    console.log('Generating receipt with data:', receiptData);
+    
+    const htmlContent = generateReceiptHtml(receiptData); // Generate the HTML first
 
     // Check if HTML generation failed (e.g., due to invalid data)
     if (htmlContent.includes("Error generating receipt")) {
+         console.error("Receipt generation failed:", receiptData);
          alert("Error: Could not generate receipt HTML. Check console for details.");
          return;
     }

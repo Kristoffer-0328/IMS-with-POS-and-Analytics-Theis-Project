@@ -6,7 +6,7 @@ import { useAuth } from '../../../auth/services/FirebaseAuth';
 import ViewPOModal from '../PurchaseOrder/ViewPOModal';
 import ProcessReceiptModal from './ProcessReceiptModal';
 import RejectReceiptModal from './RejectReceiptModal';
-import { QRCodeCanvas } from 'qrcode.react';
+import QRCode from 'qrcode-react';
 
 const PendingReceipts = () => {
   const [pendingPOs, setPendingPOs] = useState([]);
@@ -111,8 +111,10 @@ const PendingReceipts = () => {
 
   const openQRForPO = (po) => {
     setSelectedPO(po);
-    const base = 'http://192.168.18.13:5173';
+    const base = `${window.location.protocol}//${window.location.host}`;
     const url = `${base}/receiving_mobile?poId=${encodeURIComponent(po.id)}`;
+    console.log('Generated QR URL:', url);
+    console.log('PO ID:', po.id);
     setQrUrl(url);
     setShowQRModal(true);
   };
@@ -204,10 +206,20 @@ const PendingReceipts = () => {
             <h3 className="text-lg font-semibold text-gray-800 mb-2">Scan to Receive</h3>
             <p className="text-sm text-gray-500 mb-4">Scan this QR code with your mobile device to open the receiving screen.</p>
             <div className="flex justify-center mb-4">
-              <QRCodeCanvas value={qrUrl} size={220} includeMargin={true} />
+              <QRCode value={qrUrl} size={220} includeMargin={true} />
             </div>
             <div className="bg-gray-50 rounded-md p-2 text-xs text-gray-600 break-all select-all mb-4">
               {qrUrl}
+            </div>
+            <div className="mb-4">
+              <a 
+                href={qrUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-blue-500 hover:text-blue-700 text-sm underline"
+              >
+                🔗 Test this link directly
+              </a>
             </div>
             <div className="flex justify-end gap-2">
               <button
