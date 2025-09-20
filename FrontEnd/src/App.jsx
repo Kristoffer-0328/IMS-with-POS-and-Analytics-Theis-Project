@@ -34,7 +34,7 @@ import LoadingScreen from './features/inventory/components/LoadingScreen';
 import PurchaseOrders from './features/inventory/pages/PurchaseOrders';
 import ReceivingManagement from './features/inventory/pages/ReceivingManagement';
 import SupplierManagement from './features/inventory/pages/SupplierManagement';
-
+import ReceivingMobileView from './features/inventory/pages/receiving_mobile_view';
 // POS cashier Interface
 
 import Pos_Sidebar from './features/pos/pages/Pos_Sidebar';
@@ -55,17 +55,21 @@ const AdminLayout = ({ children }) => (
 const IMLayout = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
 
+  // Debug: Log when IMLayout renders
+  console.log('🏗️ IMLayout rendering at:', new Date().toISOString());
+
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
       <IMSidebar collapsed={collapsed} setCollapsed={setCollapsed} />
-      {console.log("Sidebar collapsed:", collapsed)}
       <main
         id="content"
         className={`flex-1 transition-all duration-300
           ${collapsed ? 'ml-0 sm:ml-[70px]' : 'ml-0 sm:ml-[250px]'}
         `}
       >
-        <div className="p-6">{children}</div>
+        <div className="p-6">
+          {children}
+        </div>
       </main>
     </div>
   );
@@ -133,6 +137,8 @@ const AppRoutes = () => {
       <Route path="/" element={<Login />} />
       <Route path="/logout" element={<Logout />} />
       <Route path="/loading" element={<LoadingScreen />}/>
+      <Route path="/receiving_mobile" element={<ReceivingMobileView/>}/>
+      
       {/* Admin */}
       <Route
         path="/admin"

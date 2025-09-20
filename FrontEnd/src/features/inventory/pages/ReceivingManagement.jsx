@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { FiClock, FiCheckCircle } from 'react-icons/fi';
-import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import PendingReceipts from '../components/Receiving/PendingReceipts';
 
 const ReceivingManagement = () => {
@@ -43,8 +42,8 @@ const ReceivingManagement = () => {
   };
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto p-4 sm:p-6 bg-gray-50">
-      <DashboardHeader />
+    <div className="min-h-screen bg-gray-50">
+      
 
       {/* Tabs */}
       <div className="flex mb-6 border-b">

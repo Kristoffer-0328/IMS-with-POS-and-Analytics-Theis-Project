@@ -33,26 +33,67 @@ const SupplierProducts = ({ supplier, onClose }) => {
           const productData = docSnapshot.data();
           
           try {
-            // We need to search through all categories to find the product
-            const categoriesRef = collection(db, 'Products');
-            const categoriesSnapshot = await getDocs(categoriesRef);
+            // Search through the new nested Firebase structure
+            const storageLocationsRef = collection(db, 'Products');
+            const storageLocationsSnapshot = await getDocs(storageLocationsRef);
             
             let mainProductData = {};
-            let foundInCategory = null;
+            let foundLocation = null;
             
-            for (const categoryDoc of categoriesSnapshot.docs) {
-              const categoryName = categoryDoc.id;
-              const productRef = doc(db, 'Products', categoryName, 'Items', productData.productId);
+            // Search through all storage locations, shelves, rows, and columns
+            for (const storageLocationDoc of storageLocationsSnapshot.docs) {
+              const storageLocation = storageLocationDoc.id;
               
               try {
-                const productSnap = await getDoc(productRef);
-                if (productSnap.exists()) {
-                  mainProductData = productSnap.data();
-                  foundInCategory = categoryName;
-                  break;
+                const shelvesRef = collection(db, 'Products', storageLocation, 'shelves');
+                const shelvesSnapshot = await getDocs(shelvesRef);
+                
+                for (const shelfDoc of shelvesSnapshot.docs) {
+                  const shelfName = shelfDoc.id;
+                  
+                  const rowsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows');
+                  const rowsSnapshot = await getDocs(rowsRef);
+                  
+                  for (const rowDoc of rowsSnapshot.docs) {
+                    const rowName = rowDoc.id;
+                    
+                    const columnsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns');
+                    const columnsSnapshot = await getDocs(columnsRef);
+                    
+                    for (const columnDoc of columnsSnapshot.docs) {
+                      const columnIndex = columnDoc.id;
+                      
+                      const productRef = doc(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items', productData.productId);
+                      
+                      try {
+                        const productSnap = await getDoc(productRef);
+                        if (productSnap.exists()) {
+                          mainProductData = productSnap.data();
+                          foundLocation = {
+                            storageLocation,
+                            shelfName,
+                            rowName,
+                            columnIndex,
+                            fullLocation: `${storageLocation} - ${shelfName} - ${rowName} - Column ${columnIndex}`
+                          };
+                          // Break out of all loops when product is found
+                          throw new Error('PRODUCT_FOUND'); // Using error to break out of nested loops
+                        }
+                      } catch (err) {
+                        if (err.message === 'PRODUCT_FOUND') {
+                          throw err; // Re-throw to break out of all loops
+                        }
+                        // Continue searching if this specific path fails
+                        continue;
+                      }
+                    }
+                  }
                 }
               } catch (err) {
-                // Continue to next category if this one fails
+                if (err.message === 'PRODUCT_FOUND') {
+                  break; // Break out of storage location loop
+                }
+                // Continue to next storage location if this one fails
                 continue;
               }
             }
@@ -65,8 +106,13 @@ const SupplierProducts = ({ supplier, onClose }) => {
               supplierPrice: productData.supplierPrice || 0, // This is the actual supplier price from database
               supplierSKU: productData.supplierSKU || '',
               lastUpdated: productData.lastUpdated,
-              // Use the exact category where the product was found
-              actualCategory: foundInCategory || mainProductData.category || 'Unknown',
+              // Use the found storage location information
+              actualCategory: mainProductData.category || foundLocation?.storageLocation || 'Unknown',
+              storageLocation: foundLocation?.storageLocation,
+              shelfName: foundLocation?.shelfName,
+              rowName: foundLocation?.rowName,
+              columnIndex: foundLocation?.columnIndex,
+              fullLocation: foundLocation?.fullLocation,
               // Check if this is a variant by looking at the productId structure
               isVariant: productData.productId.includes('_variant_'),
               // Extract base product ID for variants
@@ -77,6 +123,34 @@ const SupplierProducts = ({ supplier, onClose }) => {
               originalUnitPrice: productData.originalUnitPrice
             };
           } catch (error) {
+            if (error.message === 'PRODUCT_FOUND') {
+              // Product was found, proceed with the return statement above
+              return {
+                id: productData.productId,
+                ...mainProductData,
+                // Map database fields correctly:
+                // Database stores supplierPrice directly, not in unitPrice field
+                supplierPrice: productData.supplierPrice || 0, // This is the actual supplier price from database
+                supplierSKU: productData.supplierSKU || '',
+                lastUpdated: productData.lastUpdated,
+                // Use the found storage location information
+                actualCategory: mainProductData.category || foundLocation?.storageLocation || 'Unknown',
+                storageLocation: foundLocation?.storageLocation,
+                shelfName: foundLocation?.shelfName,
+                rowName: foundLocation?.rowName,
+                columnIndex: foundLocation?.columnIndex,
+                fullLocation: foundLocation?.fullLocation,
+                // Check if this is a variant by looking at the productId structure
+                isVariant: productData.productId.includes('_variant_'),
+                // Extract base product ID for variants
+                baseProductId: productData.productId.includes('_variant_') 
+                  ? productData.productId.split('_variant_')[0] 
+                  : productData.productId,
+                // Include original unit price if available
+                originalUnitPrice: productData.originalUnitPrice
+              };
+            }
+            
             console.error('Error fetching product details:', error);
             return {
               id: productData.productId,

@@ -9,8 +9,9 @@ import {
   FiEye,
   FiPlus,
 } from 'react-icons/fi';
-import RestockRequestModal from '../components/Inventory/RequestStockModal';
 import DashboardHeader from '../components/Dashboard/DashboardHeader';
+import RestockRequestModal from '../components/Inventory/RequestStockModal';
+
 import { useServices } from '../../../services/firebase/ProductServices';
 import { getFirestore, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
@@ -32,14 +33,36 @@ const RestockingRequest = () => {
   // Listen to restock requests
   useEffect(() => {
     const restockRequestsRef = collection(db, 'RestockRequests');
-    const q = query(restockRequestsRef, orderBy('timestamp', 'desc'));
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const requestsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().timestamp?.toDate() || new Date()
-      }));
+    
+    // Try ordering by timestamp, fallback to listening without ordering if it fails
+      const unsubscribe = onSnapshot(restockRequestsRef, (snapshot) => {
+        const requestsData = snapshot.docs.map(doc => {
+          const data = doc.data();
+          console.log('Restock request data:', { id: doc.id, ...data });
+          
+          // Handle different date formats
+          let createdAtDate;
+          if (data.timestamp?.toDate) {
+            createdAtDate = data.timestamp.toDate();
+          } else if (data.createdAt) {
+            createdAtDate = typeof data.createdAt === 'string' ? new Date(data.createdAt) : data.createdAt;
+          } else {
+            createdAtDate = new Date();
+          }
+          
+          return {
+            id: doc.id,
+            ...data,
+            createdAt: createdAtDate,
+            // Properly extract supplier name from object fields
+            supplierName: (typeof data.supplierName === 'object' ? data.supplierName?.name : data.supplierName) ||
+                         (typeof data.supplier === 'object' ? data.supplier?.name : data.supplier) || 
+                         'Unknown Supplier'
+          };
+        });
+        
+        // Sort manually by createdAt in descending order
+        requestsData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));      console.log('Processed restock requests:', requestsData);
       setRequests(requestsData);
     }, (error) => {
       console.error('Error fetching restock requests:', error);
@@ -177,6 +200,22 @@ const RestockingRequest = () => {
         </div>
       </div>
 
+      {/* Debug Section - Remove this after testing */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+          <h3 className="text-sm font-medium text-yellow-800 mb-2">Debug Info:</h3>
+          <p className="text-xs text-yellow-700">
+            Total requests in state: {requests.length}
+          </p>
+          <p className="text-xs text-yellow-700">
+            Request IDs: {requests.map(r => String(r.id || 'no-id')).join(', ')}
+          </p>
+          <p className="text-xs text-yellow-700">
+            Sample supplier data: {requests.length > 0 ? JSON.stringify(requests[0].supplier || 'no-supplier') : 'No requests'}
+          </p>
+        </div>
+      )}
+
       {/* Stock Restocking Request Table */}
       <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100">
         <div className="flex justify-between items-center mb-6">
@@ -213,31 +252,43 @@ const RestockingRequest = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
-              {requests.map((request) => (
-                <tr key={request.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {request.productName}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {request.supplierName || (request.supplier?.name) || 'N/A'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {request.currentQuantity}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {request.requestedQuantity}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {request.category || request.productId?.split('-')[0] || 'N/A'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {renderStatusBadge(request.status)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {request.createdAt ? new Date(request.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Not specified'}
+              {requests.length === 0 ? (
+                <tr>
+                  <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
+                    <div className="flex flex-col items-center">
+                      <FiPackage className="text-gray-300 mb-2" size={48} />
+                      <p className="text-lg">No restock requests found</p>
+                      <p className="text-sm">Restock requests will appear here when products run low on stock</p>
+                    </div>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                requests.map((request) => (
+                  <tr key={request.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {String(request.productName || 'Unknown Product')}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {String(request.supplierName || 'N/A')}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {String(request.currentQuantity !== undefined ? request.currentQuantity : 'N/A')}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {String(request.requestedQuantity || 'N/A')}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {String(request.category || request.productId?.split('-')[0] || 'N/A')}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {renderStatusBadge(request.status)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {request.createdAt ? new Date(request.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Not specified'}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

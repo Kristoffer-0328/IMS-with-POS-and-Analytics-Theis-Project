@@ -8,35 +8,144 @@ import { useServices } from '../../../../../services/firebase/ProductServices';
 
 const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
     const { linkProductToSupplier } = useServices();
-    const [categories, setCategories] = useState([]);
-    const [selectedCategory, setSelectedCategory] = useState(null);
+    const [storageLocations, setStorageLocations] = useState([]);
+    const [selectedStorageLocation, setSelectedStorageLocation] = useState(null);
     const [showAddProductModal, setShowAddProductModal] = useState(false);
     const [activeForm, setActiveForm] = useState(null); // 'product' or 'variant'
-    const [showAddCategory, setShowAddCategory] = useState(false);
-    const [newCategoryName, setNewCategoryName] = useState('');
+    const [unitCapacities, setUnitCapacities] = useState({});
+    const [loading, setLoading] = useState(false);
     const db = getFirestore(app);
 
     useEffect(() => {
-        const fetchCategories = async () => {
+        const fetchStorageLocations = async () => {
             try {
+                setLoading(true);
                 const querySnapshot = await getDocs(collection(db, "Products"));
-                const fetchedCategories = querySnapshot.docs.map(doc => ({
+                const fetchedStorageLocations = querySnapshot.docs.map(doc => ({
                     id: doc.id,
-                    name: doc.id
+                    name: doc.id,
+                    category: doc.data().category
                 }));
-                setCategories(fetchedCategories);
+                setStorageLocations(fetchedStorageLocations);
+                
+                // Fetch capacity data for each unit
+                await fetchUnitCapacities();
             } catch (error) {
-                console.error("Error fetching categories:", error);
+                console.error("Error fetching storage locations:", error);
+            } finally {
+                setLoading(false);
             }
         };
 
         if (CategoryOpen) {
-            fetchCategories();
+            fetchStorageLocations();
         }
     }, [CategoryOpen, db]);
 
-    const handleCategoryClick = (category) => {
-        setSelectedCategory(category);
+    // Calculate unit capacity based on actual products vs total slots
+    const fetchUnitCapacities = async () => {
+        try {
+            const capacities = {};
+            
+            // Define total slots for each unit based on shelf layout
+            const unitTotalSlots = {
+                'Unit 01': 4 * 8 + 5 * 13 + 6 * 6, // Shelf A (4 cols * 8 rows) + Shelf B (5 cols * 13 rows) + Shelf C (6 cols * 6 rows)
+                'Unit 02': 4 * 8, // Shelf A only (4 cols * 8 rows)
+                'Unit 03': 4 * 8 + 4 * 8, // Shelf A + Shelf B (4 cols * 8 rows each)
+                'Unit 04': 4 * 8 + 4 * 8, // Shelf A + Shelf B (4 cols * 8 rows each)
+                'Unit 05': 4 * 8 + 4 * 8, // Shelf A + Shelf B (4 cols * 8 rows each)
+                'Unit 06': 4 * 8 + 4 * 8, // Shelf A + Shelf B (4 cols * 8 rows each)
+                'Unit 07': 4 * 2 + 4 * 1, // Shelf A (4 cols * 2 rows) + Shelf B (4 cols * 1 row)
+                'Unit 08': 4 * 10 + 5 * 20, // Shelf A (4 cols * 10 rows) + Shelf B (5 cols * 20 rows)
+                'Unit 09': 4 * 8 + 4 * 8 + 4 * 8 // Shelf A + Shelf B + Shelf C (4 cols * 8 rows each)
+            };
+
+            // Fetch products for each unit
+            const storageLocationsRef = collection(db, 'Products');
+            const storageLocationsSnapshot = await getDocs(storageLocationsRef);
+            
+            for (const storageLocationDoc of storageLocationsSnapshot.docs) {
+                const unitName = storageLocationDoc.id;
+                let productCount = 0;
+                
+                try {
+                    const shelvesRef = collection(db, 'Products', unitName, 'shelves');
+                    const shelvesSnapshot = await getDocs(shelvesRef);
+                    
+                    for (const shelfDoc of shelvesSnapshot.docs) {
+                        const shelfName = shelfDoc.id;
+                        
+                        const rowsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows');
+                        const rowsSnapshot = await getDocs(rowsRef);
+                        
+                        for (const rowDoc of rowsSnapshot.docs) {
+                            const rowName = rowDoc.id;
+                            
+                            const columnsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows', rowName, 'columns');
+                            const columnsSnapshot = await getDocs(columnsRef);
+                            
+                            for (const columnDoc of columnsSnapshot.docs) {
+                                const columnIndex = columnDoc.id;
+                                
+                                const itemsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items');
+                                const itemsSnapshot = await getDocs(itemsRef);
+                                
+                                productCount += itemsSnapshot.docs.length;
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.log(`No products found in ${unitName} or error fetching:`, error);
+                }
+                
+                const totalSlots = unitTotalSlots[unitName] || 100; // Default to 100 if not defined
+                const occupancyRate = productCount / totalSlots;
+                
+                capacities[unitName] = {
+                    productCount,
+                    totalSlots,
+                    occupancyRate,
+                    status: getCapacityStatus(occupancyRate)
+                };
+            }
+            
+            setUnitCapacities(capacities);
+        } catch (error) {
+            console.error('Error fetching unit capacities:', error);
+        }
+    };
+
+    // Determine capacity status based on occupancy rate
+    const getCapacityStatus = (occupancyRate) => {
+        if (occupancyRate >= 0.9) return 'full';      // 90%+ = full (red)
+        if (occupancyRate >= 0.6) return 'occupied';  // 60-89% = occupied (yellow/orange)
+        return 'available';                           // <60% = available (green)
+    };
+
+    // Get status color for unit
+    const getStatusColor = (unitName) => {
+        const capacity = unitCapacities[unitName];
+        if (!capacity) return 'bg-gray-400'; // Loading or no data
+        
+        switch (capacity.status) {
+            case 'full': return 'bg-red-500';      // 90%+ occupied
+            case 'occupied': return 'bg-yellow-500'; // 60-89% occupied  
+            case 'available': return 'bg-green-500'; // <60% occupied
+            default: return 'bg-gray-400';
+        }
+    };
+
+    // Get capacity info for tooltip
+    const getCapacityInfo = (unitName) => {
+        const capacity = unitCapacities[unitName];
+        if (!capacity) return 'Loading...';
+        
+        const percentage = (capacity.occupancyRate * 100).toFixed(1);
+        return `${capacity.productCount}/${capacity.totalSlots} slots (${percentage}%)`;
+    };
+
+    const handleStorageLocationClick = (storageLocation) => {
+        setSelectedStorageLocation(storageLocation);
         setShowAddProductModal(true);
         if (supplier) {
             setActiveForm('product'); // Automatically go to product form when supplier is provided
@@ -45,51 +154,24 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
 
     const handleClose = () => {
         setShowAddProductModal(false);
-        setSelectedCategory(null);
+        setSelectedStorageLocation(null);
         setActiveForm(null);
         CategoryClose();
     };
 
     const handleBack = () => {
-        if (activeForm) {
-            setActiveForm(null);
-        } else {
-            setShowAddProductModal(false);
-            setSelectedCategory(null);
-        }
+        setShowAddProductModal(false);
+        setSelectedStorageLocation(null);
+        setActiveForm(null);
     };
 
-    const handleAddCategory = async () => {
-        if (!newCategoryName.trim()) return;
-
-        try {
-            const categoryRef = doc(db, 'Products', newCategoryName.trim());
-            await setDoc(categoryRef, { 
-                name: newCategoryName.trim(),
-                createdAt: new Date().toISOString()
-            });
-
-            const querySnapshot = await getDocs(collection(db, "Products"));
-            const updatedCategories = querySnapshot.docs.map((doc) => ({
-                id: doc.id,
-                name: doc.id
-            }));
-            
-            setCategories(updatedCategories);
-            setNewCategoryName('');
-            setShowAddCategory(false);
-        } catch (error) {
-            console.error("Error adding category:", error);
-            alert("Failed to add category: " + error.message);
-        }
-    };
 
     if (!CategoryOpen) return null;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="fixed inset-0 bg-black/40 backdrop-blur-sm"></div>
-            <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-xl p-8 animate-scaleUp z-10">
+            <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-4xl p-8 animate-scaleUp z-10">
                 <button 
                     onClick={handleClose}
                     className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
@@ -100,66 +182,96 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
                 {!showAddProductModal ? (
                     <>
                         <h2 className="text-center text-2xl font-semibold mb-8 text-gray-800">
-                            Select a Category
-                            <span className="block text-sm text-gray-500 font-normal mt-1">Choose a category to add new product</span>
+                            Select Storage Location
+                            <span className="block text-sm text-gray-500 font-normal mt-1">Choose a storage unit to add new product</span>
                         </h2>
-                        <div className="grid grid-cols-2 gap-4 mb-6">
-                            {categories.map((category) => (
-                                <button
-                                    key={category.id}
-                                    onClick={() => handleCategoryClick(category)}
-                                    className="p-6 text-center border border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 hover:text-blue-600 transition-all duration-200 group"
-                                >
-                                    <span className="text-lg font-medium group-hover:scale-105 inline-block transition-transform duration-200">
-                                        {category.name}
-                                    </span>
-                                </button>
-                            ))}
-                        </div>
-
-                        {showAddCategory && (
-                            <div className="mb-6 bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl shadow-inner">
-                                <div className="flex items-center gap-4">
-                                    <div className="flex-1">
-                                        <label className="text-sm font-medium text-gray-700 mb-1 block">
-                                            Category Name
-                                        </label>
-                                        <input
-                                            type="text"
-                                            className="w-full px-4 py-2 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-shadow"
-                                            value={newCategoryName}
-                                            onChange={(e) => setNewCategoryName(e.target.value)}
-                                            placeholder="Enter category name"
-                                        />
-                                    </div>
+                        
+                        {/* Storage Facility Map Layout */}
+                        <div className="bg-transparent rounded-2xl p-6 relative min-h-[400px] mb-6">
+                            <div className="grid grid-cols-7 grid-rows-3 gap-0.5 h-[350px] relative bg-gray-50 border-4 border-slate-800 p-1 w-full">
+                                {/* Construction Materials Units 01-05 (Bottom row) */}
+                                {storageLocations.filter(loc => ['Unit 01', 'Unit 02', 'Unit 03', 'Unit 04', 'Unit 05'].includes(loc.name)).map((storageLocation, index) => (
                                     <button
-                                        onClick={handleAddCategory}
-                                        className="h-10 w-10 bg-blue-500 hover:bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-sm hover:shadow transition-all duration-200"
+                                        key={storageLocation.id}
+                                        onClick={() => handleStorageLocationClick(storageLocation)}
+                                        className="bg-white border-2 border-slate-800 p-3 cursor-pointer transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[70px] text-sm hover:bg-blue-50 hover:border-blue-500 border-red-500 bg-red-50 row-start-3"
+                                        style={{ gridColumnStart: index + 1 }}
+                                        title={`${storageLocation.name} - ${getCapacityInfo(storageLocation.name)}`}
                                     >
-                                        +
+                                        <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${getStatusColor(storageLocation.name)}`}></div>
+                                        <div className="text-sm font-bold mb-1 text-slate-800">{storageLocation.name}</div>
+                                        <div className="text-xs text-gray-600 font-medium">{storageLocation.category}</div>
                                     </button>
+                                ))}
+                                
+                                {/* Upper units */}
+                                {storageLocations.filter(loc => ['Unit 06', 'Unit 07'].includes(loc.name)).map((storageLocation, index) => (
+                                    <button
+                                        key={storageLocation.id}
+                                        onClick={() => handleStorageLocationClick(storageLocation)}
+                                        className="bg-white border-2 border-slate-800 p-3 cursor-pointer transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[70px] text-sm hover:bg-blue-50 hover:border-blue-500 border-orange-500 bg-orange-50"
+                                        style={{ 
+                                            gridColumnStart: 6, 
+                                            gridRowStart: index === 0 ? 1 : 2 
+                                        }}
+                                        title={`${storageLocation.name} - ${getCapacityInfo(storageLocation.name)}`}
+                                    >
+                                        <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${getStatusColor(storageLocation.name)}`}></div>
+                                        <div className="text-sm font-bold mb-1 text-slate-800">{storageLocation.name}</div>
+                                        <div className="text-xs text-gray-600 font-medium">{storageLocation.category}</div>
+                                    </button>
+                                ))}
+                                
+                                {storageLocations.filter(loc => ['Unit 08', 'Unit 09'].includes(loc.name)).map((storageLocation, index) => (
+                                    <button
+                                        key={storageLocation.id}
+                                        onClick={() => handleStorageLocationClick(storageLocation)}
+                                        className="bg-white border-2 border-slate-800 p-3 cursor-pointer transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[70px] text-sm hover:bg-blue-50 hover:border-blue-500 border-green-500 bg-green-50"
+                                        style={{ 
+                                            gridColumnStart: 7, 
+                                            gridRowStart: index === 0 ? 1 : 2 
+                                        }}
+                                        title={`${storageLocation.name} - ${getCapacityInfo(storageLocation.name)}`}
+                                    >
+                                        <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${getStatusColor(storageLocation.name)}`}></div>
+                                        <div className="text-sm font-bold mb-1 text-slate-800">{storageLocation.name}</div>
+                                        <div className="text-xs text-gray-600 font-medium">{storageLocation.category}</div>
+                                    </button>
+                                ))}
+                                
+                                {/* Front Desk - Static, non-clickable */}
+                                <div className="bg-gray-300 border-2 border-gray-500 p-3 relative z-10 flex flex-col justify-center items-center text-center min-h-[70px] text-sm font-bold row-start-3 col-start-6 col-span-2">
+                                    <div className="text-xs text-gray-600 font-medium">Front Desk</div>
                                 </div>
                             </div>
-                        )}
+                        </div>
+                        
+                        {/* Legend */}
+                        <div className="flex justify-center gap-4 mb-4 flex-wrap">
+                            <div className="flex items-center gap-2 px-3 py-1 bg-white/90 rounded-full text-xs font-medium">
+                                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                <span>Available (&lt;60%)</span>
+                            </div>
+                            <div className="flex items-center gap-2 px-3 py-1 bg-white/90 rounded-full text-xs font-medium">
+                                <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                                <span>Occupied (60-89%)</span>
+                            </div>
+                            <div className="flex items-center gap-2 px-3 py-1 bg-white/90 rounded-full text-xs font-medium">
+                                <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                                <span>Full (90%+)</span>
+                            </div>
+                            {loading && (
+                                <div className="flex items-center gap-2 px-3 py-1 bg-blue-100 rounded-full text-xs font-medium">
+                                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                                    <span>Loading...</span>
+                                </div>
+                            )}
+                        </div>
 
-                        <div className="flex justify-center">
-                            <button
-                                className="px-6 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl 
-                                    hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow transition-all duration-200
-                                    flex items-center gap-2"
-                                onClick={() => setShowAddCategory((prev) => !prev)}
-                            >
-                                {showAddCategory ? (
-                                    <>
-                                        <span>Cancel</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <span>Add New Category</span>
-                                        <span className="text-lg">+</span>
-                                    </>
-                                )}
-                            </button>
+                        <div className="text-center">
+                            <p className="text-sm text-gray-500">
+                                Available storage units are pre-configured and cannot be modified.
+                            </p>
                         </div>
                     </>
                 ) : (
@@ -169,7 +281,7 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
                                 <div className="text-center mb-8">
                                     <h3 className="text-xl font-semibold text-gray-800">
                                         {supplier ? 'Add Product to Supplier' : 'Add New Item'}
-                                        <span className="block text-blue-600 text-sm mt-1">{selectedCategory?.name}</span>
+                                        <span className="block text-blue-600 text-sm mt-1">{selectedStorageLocation?.name}</span>
                                     </h3>
                                 </div>
                                 <div className="space-y-4">
@@ -193,22 +305,18 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
                             </>
                         ) : (
                             <>
-                                <button
-                                    onClick={handleBack}
-                                    className="mb-4 px-4 py-2 text-gray-600 hover:text-gray-800 flex items-center gap-2"
-                                >
-                                    <span>← Back</span>
-                                </button>
                                 {activeForm === 'product' ? (
                                     <NewProductForm
-                                        selectedCategory={selectedCategory}
+                                        selectedCategory={selectedStorageLocation}
                                         onClose={handleClose}
+                                        onBack={handleBack}
                                         supplier={supplier}
+                                        
                                     />
                                 ) : (
                                     <NewVariantForm
-                                        selectedCategory={selectedCategory}
-                                        onBack={() => setActiveForm(null)}
+                                        selectedCategory={selectedStorageLocation}
+                                        onBack={handleBack}
                                     />
                                 )}
                             </>

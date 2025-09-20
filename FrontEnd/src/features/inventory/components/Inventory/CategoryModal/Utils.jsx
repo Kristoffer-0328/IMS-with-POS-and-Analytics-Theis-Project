@@ -38,11 +38,9 @@ export const validateProduct = (productData) => {
 
 export const getStorageOptions = () => {
     const storageOptions = [];
-    const rows = ["A", "B", "C"];
-    for (let row of rows) {
-        for (let i = 1; i <= 3; i++) {
-            storageOptions.push(`STR ${row}${i}`);
-        }
+
+    for (let i = 1; i <= 9; i++) {
+        storageOptions.push(`Unit ${i}`);
     }
     return storageOptions;
 };

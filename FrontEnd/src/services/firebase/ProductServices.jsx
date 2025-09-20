@@ -1,6 +1,6 @@
 // ProductServices.jsx
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import { getFirestore, collection, onSnapshot, query, getDocs, orderBy, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, query, getDocs, orderBy, doc, setDoc, deleteDoc, updateDoc, getDoc } from 'firebase/firestore';
 import app from './config';
 import { ProductFactory } from '../../features/inventory/components/Factory/productFactory';
 
@@ -11,112 +11,185 @@ export const ServicesProvider = ({ children }) => {
   const [products, setProducts] = useState([]);
 
   const listenToProducts = useCallback((onUpdate) => {
-    const categoryListeners = new Map();
-    const allProducts = new Map();
+    const allProducts = [];
     let isFirstLoad = true;
 
-    const unsubscribeCategories = onSnapshot(
-      collection(db, "Products"),
-      (categoriesSnapshot) => {
+    // Simplified approach: recursively fetch all products from the nested structure
+    const fetchAllProducts = async () => {
+      try {
+        console.log('Fetching products from new nested structure...');
+        const storageLocationsRef = collection(db, "Products");
+        const storageLocationsSnapshot = await getDocs(storageLocationsRef);
         
-        // Handle removed categories
-        const currentCategories = new Set(categoriesSnapshot.docs.map(doc => doc.id));
-        [...categoryListeners.keys()].forEach(category => {
-          if (!currentCategories.has(category)) {
-            const unsubscribe = categoryListeners.get(category);
-            if (unsubscribe) unsubscribe();
-            categoryListeners.delete(category);
-            allProducts.delete(category);
-          }
-        });
-
-        // Set up listeners for each category's Items subcollection
-        categoriesSnapshot.forEach((categoryDoc) => {
-          const category = categoryDoc.id;
-
-          // Skip if already listening to this category
-          if (categoryListeners.has(category)) return;
-
-          const itemsQuery = query(collection(db, "Products", category, "Items"));
+        const productPromises = [];
+        
+        for (const storageLocationDoc of storageLocationsSnapshot.docs) {
+          const storageLocation = storageLocationDoc.id;
+          console.log(`Fetching from storage location: ${storageLocation}`);
           
-          const unsubscribeItems = onSnapshot(
-            itemsQuery,
-            (itemsSnapshot) => {
-              if (!isFirstLoad && !itemsSnapshot.docChanges().length) {
-                return; // Skip if no actual changes and not first load
+          // Fetch the storage unit's category
+          const storageLocationData = storageLocationDoc.data();
+          const unitCategory = storageLocationData.category || storageLocation;
+          console.log(`Storage unit ${storageLocation} has category: ${unitCategory}`);
+          
+          const shelvesRef = collection(db, "Products", storageLocation, "shelves");
+          const shelvesSnapshot = await getDocs(shelvesRef);
+          
+          for (const shelfDoc of shelvesSnapshot.docs) {
+            const shelfName = shelfDoc.id;
+            
+            const rowsRef = collection(db, "Products", storageLocation, "shelves", shelfName, "rows");
+            const rowsSnapshot = await getDocs(rowsRef);
+            
+            for (const rowDoc of rowsSnapshot.docs) {
+              const rowName = rowDoc.id;
+              
+              const columnsRef = collection(db, "Products", storageLocation, "shelves", shelfName, "rows", rowName, "columns");
+              const columnsSnapshot = await getDocs(columnsRef);
+              
+              for (const columnDoc of columnsSnapshot.docs) {
+                const columnIndex = columnDoc.id;
+                
+                const productsRef = collection(db, "Products", storageLocation, "shelves", shelfName, "rows", rowName, "columns", columnIndex, "items");
+                
+                productPromises.push(
+                  getDocs(productsRef).then(productsSnapshot => {
+                    return productsSnapshot.docs.map(doc => {
+                      const data = doc.data();
+                      console.log(`Found product: ${data.name} in ${storageLocation}/${shelfName}/${rowName}/${columnIndex}`);
+                      
+                      return {
+                        ...data,
+                        id: doc.id,
+                        baseProductId: doc.id.split('-')[0],
+                        category: data.category || unitCategory, // Use data.category first, fallback to storage unit's category
+                        storageLocation: storageLocation,
+                        shelfName: shelfName,
+                        rowName: rowName,
+                        columnIndex: columnIndex,
+                        fullLocation: `${storageLocation} - ${shelfName} - ${rowName} - Column ${columnIndex}`,
+                        brand: data.brand || 'Generic',
+                        subCategory: data.subCategory || data.category || unitCategory,
+                        specifications: data.specifications || '',
+                        storageType: data.storageType || 'Goods',
+                        unitPrice: typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice) || 0,
+                        quantity: typeof data.quantity === 'number' ? data.quantity : parseInt(data.quantity) || 0,
+                        supplierCode: data.supplierCode || data.supplier?.primaryCode || data.supplier?.code || '',
+                        supplier: data.supplier || {
+                          name: 'Unknown',
+                          primaryCode: '',
+                          code: '',
+                          address: '',
+                          contactPerson: '',
+                          phone: '',
+                          email: ''
+                        },
+                        variants: Array.isArray(data.variants) && data.variants.length > 0 ? data.variants.map((variant, index) => ({
+                          ...variant,
+                          id: `${doc.id}-${index}`,
+                          variantId: variant.variantId || `${doc.id}-${index}`,
+                          baseProductId: doc.id,
+                          brand: data.brand || 'Generic',
+                          size: variant.size || variant.variantName || '',
+                          variantName: variant.variantName || variant.size || '',
+                          storageType: variant.storageType || data.storageType || 'Goods',
+                          specifications: variant.specifications || data.specifications || '',
+                          unitPrice: typeof variant.unitPrice === 'number' ? variant.unitPrice : parseFloat(variant.unitPrice) || 0,
+                          quantity: typeof variant.quantity === 'number' ? variant.quantity : parseInt(variant.quantity) || 0,
+                          unit: variant.unit || 'pcs',
+                          supplierCode: variant.supplierCode || data.supplierCode || data.supplier?.primaryCode || data.supplier?.code || '',
+                          // Add location fields to variants
+                          storageLocation: storageLocation,
+                          shelfName: shelfName,
+                          rowName: rowName,
+                          columnIndex: columnIndex,
+                          fullLocation: `${storageLocation} - ${shelfName} - ${rowName} - Column ${columnIndex}`,
+                          supplier: variant.supplier || data.supplier || {
+                            name: 'Unknown',
+                            primaryCode: '',
+                            code: ''
+                          }
+                        })) : [
+                          // Create a default variant if no variants exist
+                          {
+                            id: doc.id,
+                            variantId: doc.id,
+                            baseProductId: doc.id,
+                            brand: data.brand || 'Generic',
+                            size: data.size || 'Standard',
+                            variantName: 'Standard',
+                            storageType: data.storageType || 'Goods',
+                            specifications: data.specifications || '',
+                            unitPrice: typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice) || 0,
+                            quantity: typeof data.quantity === 'number' ? data.quantity : parseInt(data.quantity) || 0,
+                            unit: data.unit || 'pcs',
+                            supplierCode: data.supplierCode || data.supplier?.primaryCode || data.supplier?.code || '',
+                            // Add location fields to default variant
+                            storageLocation: storageLocation,
+                            shelfName: shelfName,
+                            rowName: rowName,
+                            columnIndex: columnIndex,
+                            fullLocation: `${storageLocation} - ${shelfName} - ${rowName} - Column ${columnIndex}`,
+                            supplier: data.supplier || {
+                              name: 'Unknown',
+                              primaryCode: '',
+                              code: ''
+                            }
+                          }
+                        ],
+                        // Calculate total value for display
+                        totalvalue: (typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice) || 0) * 
+                                   (typeof data.quantity === 'number' ? data.quantity : parseInt(data.quantity) || 0)
+                      };
+                    });
+                  }).catch(error => {
+                    console.error(`Error fetching products from ${storageLocation}/${shelfName}/${rowName}/${columnIndex}:`, error);
+                    return [];
+                  })
+                );
               }
-
-              const categoryProducts = itemsSnapshot.docs.map(doc => {
-                const data = doc.data();
-                console.log('Raw product data:', {
-                  id: doc.id,
-                  name: data.name,
-                  supplier: data.supplier,
-                  supplierCode: data.supplierCode,
-                  variants: data.variants
-                });
-                return {
-                  ...data,
-                  id: doc.id,
-                  baseProductId: doc.id.split('-')[0],
-                  category: category,
-                  brand: data.brand || 'Generic',
-                  subCategory: data.subCategory || category,
-                  specifications: data.specifications || '',
-                  storageType: data.storageType || 'Goods',
-                  unitPrice: typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice),
-                  supplierCode: data.supplierCode || '',
-                  supplier: data.supplier || {
-                    name: 'Unknown',
-                    code: '',
-                    address: '',
-                    contactPerson: '',
-                    phone: '',
-                    email: ''
-                  },
-                  variants: Array.isArray(data.variants) ? data.variants.map((variant, index) => ({
-                    ...variant,
-                    id: `${doc.id}-${index}`,
-                    baseProductId: doc.id,
-                    brand: data.brand || 'Generic',
-                    storageType: variant.storageType || data.storageType || 'Goods',
-                    specifications: variant.specifications || data.specifications || '',
-                    unitPrice: typeof variant.unitPrice === 'number' ? variant.unitPrice : parseFloat(variant.unitPrice) || 0,
-                    supplierCode: variant.supplierCode || data.supplierCode || '',
-                    supplier: variant.supplier || data.supplier || {
-                      name: 'Unknown',
-                      code: ''
-                    }
-                  })) : []
-                };
-              });
-
-              allProducts.set(category, categoryProducts);
-              
-              const mergedProducts = Array.from(allProducts.values()).flat();
-              
-              setProducts(mergedProducts);
-              if (onUpdate) onUpdate(mergedProducts);
-              
-              if (isFirstLoad) isFirstLoad = false;
-            },
-            (error) => {
-              console.error(`Error listening to ${category} items:`, error);
             }
-          );
+          }
+        }
+        
+        const productArrays = await Promise.all(productPromises);
+        const allProducts = productArrays.flat();
+        
+        console.log(`Total products found: ${allProducts.length}`);
+        console.log('Sample products:', allProducts.slice(0, 3));
+        
+        setProducts(allProducts);
+        if (onUpdate) onUpdate(allProducts);
+        
+      } catch (error) {
+        console.error('Error fetching products:', error);
+        setProducts([]);
+        if (onUpdate) onUpdate([]);
+      }
+    };
 
-          categoryListeners.set(category, unsubscribeItems);
-        });
+    // Initial fetch
+    fetchAllProducts();
+
+    // Set up a single listener on the top-level Products collection to detect changes
+    const unsubscribe = onSnapshot(
+      collection(db, "Products"),
+      (snapshot) => {
+        if (!isFirstLoad) {
+          console.log('Products collection changed, refetching...');
+          fetchAllProducts();
+        }
+        isFirstLoad = false;
+      },
+      (error) => {
+        console.error('Error listening to Products collection:', error);
       }
     );
 
     // Return cleanup function
     return () => {
       console.log("Cleaning up product listeners");
-      unsubscribeCategories();
-      categoryListeners.forEach(unsubscribe => unsubscribe());
-      categoryListeners.clear();
-      allProducts.clear();
+      unsubscribe();
     };
   }, []); // Empty dependency array since it doesn't depend on any external values
 
@@ -176,45 +249,63 @@ export const linkProductToSupplier = async (productId, supplierId, supplierData)
 // Helper function to update product variants with supplier information
 const updateProductVariantsWithSupplier = async (productId, supplierId, supplierData) => {
   try {
-    // Find the product in all categories
-    const categoriesRef = collection(db, 'Products');
-    const categoriesSnapshot = await getDocs(categoriesRef);
+    // Find the product in the new nested structure
+    const storageLocationsRef = collection(db, 'Products');
+    const storageLocationsSnapshot = await getDocs(storageLocationsRef);
     
-    for (const categoryDoc of categoriesSnapshot.docs) {
-      const categoryName = categoryDoc.id;
-      const productRef = doc(db, 'Products', categoryName, 'Items', productId);
+    for (const storageLocationDoc of storageLocationsSnapshot.docs) {
+      const storageLocation = storageLocationDoc.id;
+      const shelvesRef = collection(db, 'Products', storageLocation);
+      const shelvesSnapshot = await getDocs(shelvesRef);
       
-      try {
-        const productSnap = await getDoc(productRef);
-        if (productSnap.exists()) {
-          const productData = productSnap.data();
+      for (const shelfDoc of shelvesSnapshot.docs) {
+        const shelfName = shelfDoc.id;
+        const rowsRef = collection(db, 'Products', storageLocation, shelfName);
+        const rowsSnapshot = await getDocs(rowsRef);
+        
+        for (const rowDoc of rowsSnapshot.docs) {
+          const rowName = rowDoc.id;
+          const columnsRef = collection(db, 'Products', storageLocation, shelfName, rowName);
+          const columnsSnapshot = await getDocs(columnsRef);
           
-          // Update variants with supplier information
-          if (productData.variants && Array.isArray(productData.variants)) {
-            const updatedVariants = productData.variants.map(variant => ({
-              ...variant,
-              supplier: {
-                name: supplierData.supplierName || 'Unknown',
-                code: supplierData.supplierCode || supplierData.supplierSKU || '',
-                id: supplierId,
-                price: supplierData.supplierPrice || variant.unitPrice || 0,
-                sku: supplierData.supplierSKU || ''
+          for (const columnDoc of columnsSnapshot.docs) {
+            const columnIndex = columnDoc.id;
+            const productRef = doc(db, 'Products', storageLocation, shelfName, rowName, columnIndex, productId);
+            
+            try {
+              const productSnap = await getDoc(productRef);
+              if (productSnap.exists()) {
+                const productData = productSnap.data();
+                
+                // Update variants with supplier information
+                if (productData.variants && Array.isArray(productData.variants)) {
+                  const updatedVariants = productData.variants.map(variant => ({
+                    ...variant,
+                    supplier: {
+                      name: supplierData.supplierName || 'Unknown',
+                      code: supplierData.supplierCode || supplierData.supplierSKU || '',
+                      id: supplierId,
+                      price: supplierData.supplierPrice || variant.unitPrice || 0,
+                      sku: supplierData.supplierSKU || ''
+                    }
+                  }));
+                  
+                  // Update the product document with the new variants
+                  await updateDoc(productRef, {
+                    variants: updatedVariants,
+                    lastUpdated: new Date().toISOString()
+                  });
+                  
+                  console.log(`Updated product ${productId} in ${storageLocation}/${shelfName}/${rowName}/${columnIndex} with supplier information`);
+                  return; // Found and updated, no need to continue searching
+                }
               }
-            }));
-            
-            // Update the product document with the new variants
-            await updateDoc(productRef, {
-              variants: updatedVariants,
-              lastUpdated: new Date().toISOString()
-            });
-            
-            console.log(`Updated product ${productId} in category ${categoryName} with supplier information`);
-            break; // Found and updated, no need to continue searching
+            } catch (err) {
+              // Continue to next location if this one fails
+              continue;
+            }
           }
         }
-      } catch (err) {
-        // Continue to next category if this one fails
-        continue;
       }
     }
   } catch (error) {
@@ -242,43 +333,61 @@ export const unlinkProductFromSupplier = async (productId, supplierId) => {
 // Helper function to remove supplier information from product variants
 const removeSupplierFromProductVariants = async (productId, supplierId) => {
   try {
-    // Find the product in all categories
-    const categoriesRef = collection(db, 'Products');
-    const categoriesSnapshot = await getDocs(categoriesRef);
+    // Find the product in the new nested structure
+    const storageLocationsRef = collection(db, 'Products');
+    const storageLocationsSnapshot = await getDocs(storageLocationsRef);
     
-    for (const categoryDoc of categoriesSnapshot.docs) {
-      const categoryName = categoryDoc.id;
-      const productRef = doc(db, 'Products', categoryName, 'Items', productId);
+    for (const storageLocationDoc of storageLocationsSnapshot.docs) {
+      const storageLocation = storageLocationDoc.id;
+      const shelvesRef = collection(db, 'Products', storageLocation);
+      const shelvesSnapshot = await getDocs(shelvesRef);
       
-      try {
-        const productSnap = await getDoc(productRef);
-        if (productSnap.exists()) {
-          const productData = productSnap.data();
+      for (const shelfDoc of shelvesSnapshot.docs) {
+        const shelfName = shelfDoc.id;
+        const rowsRef = collection(db, 'Products', storageLocation, shelfName);
+        const rowsSnapshot = await getDocs(rowsRef);
+        
+        for (const rowDoc of rowsSnapshot.docs) {
+          const rowName = rowDoc.id;
+          const columnsRef = collection(db, 'Products', storageLocation, shelfName, rowName);
+          const columnsSnapshot = await getDocs(columnsRef);
           
-          // Remove supplier information from variants
-          if (productData.variants && Array.isArray(productData.variants)) {
-            const updatedVariants = productData.variants.map(variant => {
-              // Remove supplier info if it matches the supplier being unlinked
-              if (variant.supplier && variant.supplier.id === supplierId) {
-                const { supplier, ...variantWithoutSupplier } = variant;
-                return variantWithoutSupplier;
+          for (const columnDoc of columnsSnapshot.docs) {
+            const columnIndex = columnDoc.id;
+            const productRef = doc(db, 'Products', storageLocation, shelfName, rowName, columnIndex, productId);
+            
+            try {
+              const productSnap = await getDoc(productRef);
+              if (productSnap.exists()) {
+                const productData = productSnap.data();
+                
+                // Remove supplier information from variants
+                if (productData.variants && Array.isArray(productData.variants)) {
+                  const updatedVariants = productData.variants.map(variant => {
+                    // Remove supplier info if it matches the supplier being unlinked
+                    if (variant.supplier && variant.supplier.id === supplierId) {
+                      const { supplier, ...variantWithoutSupplier } = variant;
+                      return variantWithoutSupplier;
+                    }
+                    return variant;
+                  });
+                  
+                  // Update the product document with the updated variants
+                  await updateDoc(productRef, {
+                    variants: updatedVariants,
+                    lastUpdated: new Date().toISOString()
+                  });
+                  
+                  console.log(`Removed supplier ${supplierId} from product ${productId} in ${storageLocation}/${shelfName}/${rowName}/${columnIndex}`);
+                  return; // Found and updated, no need to continue searching
+                }
               }
-              return variant;
-            });
-            
-            // Update the product document with the updated variants
-            await updateDoc(productRef, {
-              variants: updatedVariants,
-              lastUpdated: new Date().toISOString()
-            });
-            
-            console.log(`Removed supplier ${supplierId} from product ${productId} in category ${categoryName}`);
-            break; // Found and updated, no need to continue searching
+            } catch (err) {
+              // Continue to next location if this one fails
+              continue;
+            }
           }
         }
-      } catch (err) {
-        // Continue to next category if this one fails
-        continue;
       }
     }
   } catch (error) {

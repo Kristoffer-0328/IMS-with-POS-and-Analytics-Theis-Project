@@ -6,6 +6,7 @@ import { useAuth } from '../../../auth/services/FirebaseAuth';
 import ViewPOModal from '../PurchaseOrder/ViewPOModal';
 import ProcessReceiptModal from './ProcessReceiptModal';
 import RejectReceiptModal from './RejectReceiptModal';
+import QRCode from 'react-qr-code';
 
 const PendingReceipts = () => {
   const [pendingPOs, setPendingPOs] = useState([]);
@@ -14,6 +15,8 @@ const PendingReceipts = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [showProcessModal, setShowProcessModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [qrUrl, setQrUrl] = useState('');
   
   const poServices = usePurchaseOrderServices();
   const { currentUser } = useAuth();
@@ -106,6 +109,16 @@ const PendingReceipts = () => {
     );
   };
 
+  const openQRForPO = (po) => {
+    setSelectedPO(po);
+    const base = `${window.location.protocol}//${window.location.host}`;
+    const url = `${base}/receiving_mobile?poId=${encodeURIComponent(po.id)}`;
+    console.log('Generated QR URL:', url);
+    console.log('PO ID:', po.id);
+    setQrUrl(url);
+    setShowQRModal(true);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48">
@@ -169,28 +182,11 @@ const PendingReceipts = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => handleViewDetails(po)}
-                          className="p-1 text-blue-600 hover:text-blue-800"
-                          title="View Details"
+                          onClick={() => openQRForPO(po)}
+                          className="px-3 py-1.5 rounded-md bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-200"
+                          title="Receive via QR"
                         >
-                          <FiEye size={18} />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedPO(po);
-                            setShowProcessModal(true);
-                          }}
-                          className="p-1 text-green-600 hover:text-green-800"
-                          title="Process Receipt"
-                        >
-                          <FiCheckCircle size={18} />
-                        </button>
-                        <button
-                          onClick={() => handleRejectReceipt(po)}
-                          className="p-1 text-red-600 hover:text-red-800"
-                          title="Reject"
-                        >
-                          <FiXCircle size={18} />
+                          Receive via QR
                         </button>
                       </div>
                     </td>
@@ -202,7 +198,42 @@ const PendingReceipts = () => {
         </div>
       </div>
 
-      {/* Modals */}
+      {/* QR Modal */}
+      {showQRModal && selectedPO && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowQRModal(false)} />
+          <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-sm z-10">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">Scan to Receive</h3>
+            <p className="text-sm text-gray-500 mb-4">Scan this QR code with your mobile device to open the receiving screen.</p>
+            <div className="flex justify-center mb-4">
+              <QRCode value={qrUrl} size={220} includeMargin={true} />
+            </div>
+            <div className="bg-gray-50 rounded-md p-2 text-xs text-gray-600 break-all select-all mb-4">
+              {qrUrl}
+            </div>
+            <div className="mb-4">
+              <a 
+                href={qrUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-blue-500 hover:text-blue-700 text-sm underline"
+              >
+                🔗 Test this link directly
+              </a>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowQRModal(false)}
+                className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Existing Modals (kept for now; not used by QR flow) */}
       {showViewModal && selectedPO && (
         <ViewPOModal
           poId={selectedPO.id}

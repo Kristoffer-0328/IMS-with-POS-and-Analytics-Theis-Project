@@ -8,6 +8,7 @@ import {
   FiBell,
   FiInfo
 } from 'react-icons/fi';
+import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import {
   AreaChart,
   Area,
@@ -17,7 +18,7 @@ import {
   Tooltip,
   ResponsiveContainer
 } from 'recharts';
-import DashboardHeader from '../components/Dashboard/DashboardHeader';
+
 import DashboardBarChart from '../components/Dashboard/DashboardBarChart';
 import InfoModal from '../components/Dashboard/InfoModal';
 import InventoryTrendChart from '../components/Inventory/InventoryTrendChart';
