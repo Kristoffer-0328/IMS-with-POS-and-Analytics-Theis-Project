@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { 
   FiClock, 
   FiCheckCircle, 
@@ -18,7 +18,9 @@ import {
   collection, 
   addDoc, 
   serverTimestamp,
-  getFirestore 
+  getFirestore,
+  doc,
+  getDoc
 } from 'firebase/firestore';
 import { ref, uploadBytes, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import app from '../../../services/firebase/config';
@@ -241,7 +243,8 @@ const ProductVerification = ({ products, updateProduct }) => (
   </div>
 );
 
-const FileUpload = ({ uploadedFiles, setUploadedFiles, uploadProgress, retryUpload, cancelUpload }) => {
+
+const DeliveryDetailsForm = ({ deliveryDetails, updateDeliveryDetails, uploadedFiles, setUploadedFiles, uploadProgress, retryUpload, cancelUpload }) => {
   const [dragOver, setDragOver] = useState(false);
 
   const validateFile = (file) => {
@@ -303,147 +306,147 @@ const FileUpload = ({ uploadedFiles, setUploadedFiles, uploadProgress, retryUplo
 
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-800 mb-4">Supporting Documents</h3>
+      <h3 className="text-lg font-semibold text-gray-800 mb-4">Input Delivery Details</h3>
       
-      <div 
-        className={`bg-white rounded-lg p-4 border-2 border-dashed transition-colors ${
-          dragOver ? 'border-orange-400 bg-orange-50' : 'border-gray-300'
-        }`}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-      >
-        <div className="text-center">
-          <FiCamera className="mx-auto text-gray-400 mb-2" size={32} />
-          <p className="text-sm text-gray-600 mb-2">
-            Upload DR, Invoice, or Proof of Delivery
-          </p>
-          <p className="text-xs text-gray-500 mb-2">
-            Max {MAX_FILE_SIZE / (1024 * 1024)}MB per file, {MAX_FILES} files max
-          </p>
-          <input
-            type="file"
-            accept="image/*,.pdf"
-            multiple
-            onChange={(e) => handleFileSelect(e.target.files)}
-            className="hidden"
-            id="file-upload"
-          />
-          <label
-            htmlFor="file-upload"
-            className="inline-block px-4 py-2 bg-orange-500 text-white rounded-lg cursor-pointer hover:bg-orange-600"
-          >
-            <FiUpload className="inline mr-2" size={16} />
-            Choose Files
-          </label>
-        </div>
+      <InputField
+        label="Delivery Receipt (DR No.)"
+        value={deliveryDetails.drNumber}
+        onChange={(e) => updateDeliveryDetails('drNumber', e.target.value)}
+        placeholder="Enter DR Number"
+        icon={FiFileText}
+        required
+      />
+      
+      <InputField
+        label="Invoice Number (if available)"
+        value={deliveryDetails.invoiceNumber}
+        onChange={(e) => updateDeliveryDetails('invoiceNumber', e.target.value)}
+        placeholder="Enter Invoice Number"
+        icon={FiFileText}
+      />
+      
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <InputField
+          label="Delivery Date"
+          type="date"
+          value={deliveryDetails.deliveryDate}
+          onChange={(e) => updateDeliveryDetails('deliveryDate', e.target.value)}
+          icon={FiCalendar}
+          required
+        />
+        
+        <InputField
+          label="Delivery Time"
+          type="time"
+          value={deliveryDetails.deliveryTime}
+          onChange={(e) => updateDeliveryDetails('deliveryTime', e.target.value)}
+          icon={FiClock}
+          required
+        />
       </div>
+      
+      <InputField
+        label="Delivery Personnel/Driver Name"
+        value={deliveryDetails.driverName}
+        onChange={(e) => updateDeliveryDetails('driverName', e.target.value)}
+        placeholder="Enter driver name"
+        icon={FiUser}
+        required
+      />
 
-      {/* Upload Progress */}
-      {uploadProgress && Object.keys(uploadProgress).length > 0 && (
-        <div className="space-y-2">
-          <h4 className="font-medium text-gray-700">Upload Progress:</h4>
-          {Object.entries(uploadProgress).map(([fileName, progress]) => (
-            <ProgressBar
-              key={fileName}
-              fileName={fileName}
-              progress={progress.progress}
-              status={progress.status}
-              onRetry={() => retryUpload(fileName)}
-              onCancel={() => cancelUpload(fileName)}
+      {/* Supporting Documents Section */}
+      <div className="space-y-4">
+        <h4 className="text-lg font-semibold text-gray-800">Supporting Documents</h4>
+        
+        <div 
+          className={`bg-white rounded-lg p-4 border-2 border-dashed transition-colors ${
+            dragOver ? 'border-orange-400 bg-orange-50' : 'border-gray-300'
+          }`}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+        >
+          <div className="text-center">
+            <FiCamera className="mx-auto text-gray-400 mb-2" size={32} />
+            <p className="text-sm text-gray-600 mb-2">
+              Upload DR, Invoice, or Proof of Delivery
+            </p>
+            <p className="text-xs text-gray-500 mb-2">
+              Max {MAX_FILE_SIZE / (1024 * 1024)}MB per file, {MAX_FILES} files max
+            </p>
+            <input
+              type="file"
+              accept="image/*,.pdf"
+              multiple
+              onChange={(e) => handleFileSelect(e.target.files)}
+              className="hidden"
+              id="file-upload"
             />
-          ))}
+            <label
+              htmlFor="file-upload"
+              className="inline-block px-4 py-2 bg-orange-500 text-white rounded-lg cursor-pointer hover:bg-orange-600"
+            >
+              <FiUpload className="inline mr-2" size={16} />
+              Choose Files
+            </label>
+          </div>
         </div>
-      )}
 
-      {/* Uploaded Files List */}
-      {uploadedFiles.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="font-medium text-gray-700">Selected Files:</h4>
-          {uploadedFiles.map((file, index) => (
-            <div key={index} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
-              <div className="flex items-center">
-                <FiFileText className="mr-2 text-gray-500" size={16} />
-                <div>
-                  <span className="text-sm text-gray-700">{file.name}</span>
-                  <span className="text-xs text-gray-500 ml-2">
-                    ({(file.size / (1024 * 1024)).toFixed(2)}MB)
-                  </span>
+        {/* Upload Progress */}
+        {uploadProgress && Object.keys(uploadProgress).length > 0 && (
+          <div className="space-y-2">
+            <h4 className="font-medium text-gray-700">Upload Progress:</h4>
+            {Object.entries(uploadProgress).map(([fileName, progress]) => (
+              <ProgressBar
+                key={fileName}
+                fileName={fileName}
+                progress={progress.progress}
+                status={progress.status}
+                onRetry={() => retryUpload(fileName)}
+                onCancel={() => cancelUpload(fileName)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Uploaded Files List */}
+        {uploadedFiles.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="font-medium text-gray-700">Selected Files:</h4>
+            {uploadedFiles.map((file, index) => (
+              <div key={index} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                <div className="flex items-center">
+                  <FiFileText className="mr-2 text-gray-500" size={16} />
+                  <div>
+                    <span className="text-sm text-gray-700">{file.name}</span>
+                    <span className="text-xs text-gray-500 ml-2">
+                      ({(file.size / (1024 * 1024)).toFixed(2)}MB)
+                    </span>
+                  </div>
                 </div>
+                <button
+                  onClick={() => {
+                    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+                  }}
+                  className="text-red-500 hover:text-red-700"
+                >
+                  <FiX size={16} />
+                </button>
               </div>
-              <button
-                onClick={() => {
-                  setUploadedFiles(prev => prev.filter((_, i) => i !== index));
-                }}
-                className="text-red-500 hover:text-red-700"
-              >
-                <FiX size={16} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
-
-const DeliveryDetailsForm = ({ deliveryDetails, updateDeliveryDetails }) => (
-  <div className="space-y-4">
-    <h3 className="text-lg font-semibold text-gray-800 mb-4">Input Delivery Details</h3>
-    
-    <InputField
-      label="Delivery Receipt (DR No.)"
-      value={deliveryDetails.drNumber}
-      onChange={(e) => updateDeliveryDetails('drNumber', e.target.value)}
-      placeholder="Enter DR Number"
-      icon={FiFileText}
-      required
-    />
-    
-    <InputField
-      label="Invoice Number (if available)"
-      value={deliveryDetails.invoiceNumber}
-      onChange={(e) => updateDeliveryDetails('invoiceNumber', e.target.value)}
-      placeholder="Enter Invoice Number"
-      icon={FiFileText}
-    />
-    
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <InputField
-        label="Delivery Date"
-        type="date"
-        value={deliveryDetails.deliveryDate}
-        onChange={(e) => updateDeliveryDetails('deliveryDate', e.target.value)}
-        icon={FiCalendar}
-        required
-      />
-      
-      <InputField
-        label="Delivery Time"
-        type="time"
-        value={deliveryDetails.deliveryTime}
-        onChange={(e) => updateDeliveryDetails('deliveryTime', e.target.value)}
-        icon={FiClock}
-        required
-      />
-    </div>
-    
-    <InputField
-      label="Delivery Personnel/Driver Name"
-      value={deliveryDetails.driverName}
-      onChange={(e) => updateDeliveryDetails('driverName', e.target.value)}
-      placeholder="Enter driver name"
-      icon={FiUser}
-      required
-    />
-  </div>
-);
 
 const ReceivingMobileView = () => {
   const [activeTab, setActiveTab] = useState('delivery-details');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({});
   const [uploadTasks, setUploadTasks] = useState({});
+  const [poId, setPoId] = useState(null);
   const [deliveryDetails, setDeliveryDetails] = useState({
     drNumber: '',
     invoiceNumber: '',
@@ -474,6 +477,42 @@ const ReceivingMobileView = () => {
   ]);
 
   const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [poData, setPoData] = useState(null);
+
+  // Read poId from URL parameters
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const poIdParam = urlParams.get('poId');
+    if (poIdParam) {
+      setPoId(poIdParam);
+      // Fetch PO data from Firestore
+      const fetchPO = async () => {
+        try {
+          const poDoc = await getDoc(doc(db, 'purchaseOrders', poIdParam));
+          if (poDoc.exists()) {
+            setPoData(poDoc.data());
+            // Optionally set products from PO
+            if (poDoc.data().products) {
+              setProducts(
+                poDoc.data().products.map((p, idx) => ({
+                  id: p.id || idx + 1,
+                  name: p.name,
+                  orderedQty: p.orderedQty,
+                  deliveredQty: '',
+                  status: 'pending',
+                  remarks: '',
+                  condition: 'complete'
+                }))
+              );
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching PO:', err);
+        }
+      };
+      fetchPO();
+    }
+  }, []);
 
   // Memoized functions to prevent re-renders
   const updateDeliveryDetails = useCallback((field, value) => {
@@ -620,6 +659,7 @@ const ReceivingMobileView = () => {
 
       // Prepare data for Firestore
       const receivingData = {
+        poId: poId, // Include PO ID from QR scan
         deliveryDetails: {
           ...deliveryDetails,
           deliveryDateTime: new Date(`${deliveryDetails.deliveryDate}T${deliveryDetails.deliveryTime}`)
@@ -650,22 +690,33 @@ const ReceivingMobileView = () => {
   const renderContent = () => {
     switch (activeTab) {
       case 'delivery-details':
-        return <DeliveryDetailsForm deliveryDetails={deliveryDetails} updateDeliveryDetails={updateDeliveryDetails} />;
-      case 'product-verification':
-        return <ProductVerification products={products} updateProduct={updateProduct} />;
-      case 'documents':
         return (
-          <FileUpload 
-            uploadedFiles={uploadedFiles} 
+          <DeliveryDetailsForm 
+            deliveryDetails={deliveryDetails} 
+            updateDeliveryDetails={updateDeliveryDetails}
+            uploadedFiles={uploadedFiles}
             setUploadedFiles={setUploadedFiles}
             uploadProgress={uploadProgress}
             retryUpload={retryUpload}
             cancelUpload={cancelUpload}
           />
         );
+      case 'product-verification':
+        return <ProductVerification products={products} updateProduct={updateProduct} />;
       default:
         return null;
     }
+  };
+
+  const handleNext = () => {
+    // Validate required fields before proceeding
+    if (!deliveryDetails.drNumber || !deliveryDetails.deliveryDate || !deliveryDetails.deliveryTime || !deliveryDetails.driverName) {
+      alert('Please fill in all required fields');
+      return;
+    }
+    
+    // Move to product verification tab
+    setActiveTab('product-verification');
   };
 
   const handleSubmit = async () => {
@@ -735,61 +786,43 @@ const ReceivingMobileView = () => {
       <div className="bg-white shadow-sm border-b">
         <div className="px-4 py-3">
           <h1 className="text-xl font-bold text-gray-800">Mobile Receiving</h1>
-          <p className="text-sm text-gray-600">Process delivery receipts</p>
+          <p className="text-sm text-gray-600">
+            {poId ? `PO ID: ${poId}` : 'Process delivery receipts'}
+          </p>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white border-b">
-        <div className="px-4 py-2 flex overflow-x-auto">
-          <TabButton
-            id="delivery-details"
-            label="Delivery Details"
-            icon={FiFileText}
-            count={0}
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-          />
-          <TabButton
-            id="product-verification"
-            label="Products"
-            icon={FiPackage}
-            count={products.length}
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-          />
-          <TabButton
-            id="documents"
-            label="Documents"
-            icon={FiUpload}
-            count={uploadedFiles.length}
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-          />
-        </div>
-      </div>
 
       {/* Content Area */}
       <div className="p-4 pb-24">
         {renderContent()}
       </div>
 
-      {/* Submit Button */}
+      {/* Action Button */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow-lg">
-        <button
-          onClick={handleSubmit}
-          disabled={isSubmitting}
-          className={`w-full py-3 rounded-lg font-medium transition-colors ${
-            isSubmitting 
-              ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
-              : 'bg-orange-500 text-white hover:bg-orange-600'
-          }`}
-        >
-          {isSubmitting ? 'Submitting...' : 'Submit Receiving Data'}
-        </button>
+        {activeTab === 'delivery-details' ? (
+          <button
+            onClick={handleNext}
+            className="w-full py-3 rounded-lg font-medium transition-colors bg-orange-500 text-white hover:bg-orange-600"
+          >
+            Next
+          </button>
+        ) : (
+          <button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+            className={`w-full py-3 rounded-lg font-medium transition-colors ${
+              isSubmitting 
+                ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
+                : 'bg-orange-500 text-white hover:bg-orange-600'
+            }`}
+          >
+            {isSubmitting ? 'Submitting...' : 'Submit Receiving Data'}
+          </button>
+        )}
       </div>
     </div>
   );
 };
 
-export default ReceivingMobileView; 
+export default ReceivingMobileView;

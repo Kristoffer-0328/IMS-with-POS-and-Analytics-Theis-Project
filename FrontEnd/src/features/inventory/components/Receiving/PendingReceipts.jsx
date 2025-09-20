@@ -111,8 +111,8 @@ const PendingReceipts = () => {
 
   const openQRForPO = (po) => {
     setSelectedPO(po);
-    const base = window.location.origin;
-    const url = `${base}/dev?poId=${encodeURIComponent(po.id)}`;
+    const base = 'http://192.168.18.13:5173';
+    const url = `${base}/receiving_mobile?poId=${encodeURIComponent(po.id)}`;
     setQrUrl(url);
     setShowQRModal(true);
   };
