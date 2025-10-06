@@ -100,7 +100,7 @@ const PurchaseOrders = () => {
 
   return (
     <div className="w-full max-w-[1600px] mx-auto p-6 bg-gray-50">
-      <DashboardHeader />
+      
       
       {/* Header Section */}
       <div className="bg-white rounded-lg shadow-sm p-6 mb-6">

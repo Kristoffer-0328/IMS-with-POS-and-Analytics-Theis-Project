@@ -93,6 +93,15 @@
     }
 }
 
+@keyframes progress {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 @layer utilities {
   .animate-blink {
     animation: blink 1s step-start infinite;
@@ -102,5 +111,8 @@
   }
   .animate-fadeIn {
     animation: fadeIn 0.3s ease-out;
+  }
+  .animate-progress {
+    animation: progress 1.5s ease-in-out infinite;
   }
 }

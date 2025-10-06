@@ -42,39 +42,9 @@ const IMSidebar = ({ collapsed, setCollapsed }) => {
       badge: null
     },
     { 
-      path: '/im/restocking-request', 
-      icon: <FiAlertCircle size={20} />, 
-      label: 'Restock Requests',
-      badge: null
-    },
-    { 
-      path: '/im/receiving', 
-      icon: <FiTruck size={20} />, 
-      label: 'Receiving',
-      badge: 0
-    },
-    { 
-      path: '/im/purchase-orders', 
-      icon: <FiShoppingBag size={20} />, 
-      label: 'Purchase Orders',
-      badge: null
-    },
-    { 
       path: '/im/suppliers', 
       icon: <FiUsers size={20} />, 
       label: 'Supplier Management',
-      badge: null
-    },
-    { 
-      path: '/im/stock-transfer', 
-      icon: <FiRefreshCw size={20} />, 
-      label: 'Stock Transfer',
-      badge: null
-    },
-    { 
-      path: '/im/reports', 
-      icon: <FiFileText size={20} />, 
-      label: 'Reports & Logs',
       badge: null
     },
     { 

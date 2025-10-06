@@ -9,7 +9,6 @@ import {
   FiEye,
   FiPlus,
 } from 'react-icons/fi';
-import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import RestockRequestModal from '../components/Inventory/RequestStockModal';
 
 import { useServices } from '../../../services/firebase/ProductServices';
@@ -129,9 +128,7 @@ const RestockingRequest = () => {
   };
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto p-6 bg-gray-50">
-      <DashboardHeader />
-
+    <div className="w-full max-w-[1600px] mx-auto p-6">
       {/* Background gradient design element */}
       <div className="relative mb-6">
         <div className="absolute top-10 bottom-5 inset-0 bg-gradient-to-r from-amber-100/60 to-amber-300/40 rounded-3xl transform -skew-y-3"></div>

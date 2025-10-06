@@ -17,6 +17,11 @@ export default function VariantSelectionModal({
   onAddVariant,
   onClose
 }) {
+  // Early return if product is null or doesn't have variants
+  if (!product || !product.variants || product.variants.length === 0) {
+    return null;
+  }
+
   const activeVariant = product.variants[activeVariantIndex];
   const maxQty = activeVariant?.quantity || 0;
 

@@ -11,7 +11,7 @@ import {
   FiToggleRight,
   FiChevronRight,
 } from 'react-icons/fi';
-import DashboardHeader from '../components/Dashboard/DashboardHeader';
+
 
 const Settings = () => {
   const [activeTab, setActiveTab] = useState('account');
@@ -534,7 +534,7 @@ const Settings = () => {
 
   return (
     <div className="w-full max-w-[1600px] mx-auto p-6 bg-gray-50">
-      <DashboardHeader />
+      
 
       <div className="flex flex-col md:flex-row gap-6">
         {/* Settings Sidebar */}

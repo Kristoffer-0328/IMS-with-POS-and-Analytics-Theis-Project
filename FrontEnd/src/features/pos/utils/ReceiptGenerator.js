@@ -97,6 +97,7 @@ export const generateReceiptHtml = (data) => {
                     <div><span>Cashier:</span><span>${data.cashierName || 'N/A'}</span></div>
                     <div><span>Customer:</span><span>${data.customerName || 'N/A'} ${data.isBulkOrder ? '(Bulk)' : ''}</span></div>
                     <div><span>Payment:</span><span>${data.paymentMethod || 'N/A'}</span></div>
+                    ${data.paymentReference ? `<div><span>Reference:</span><span>${data.paymentReference}</span></div>` : ''}
                     ${data.isBulkOrder && data.customerDetails?.phone ? `<div><span>Phone:</span><span>${data.customerDetails.phone}</span></div>` : ''}
                     ${data.isBulkOrder && data.customerDetails?.address ? `<div><span>Address:</span><span>${data.customerDetails.address}</span></div>` : ''}
                 </div>
@@ -176,6 +177,7 @@ export const printReceiptContent = (data) => {
         items: data.items || [],
         totals: data.totals || { subTotal: 0, tax: 0, total: 0 },
         paymentMethod: data.paymentMethod || 'Cash',
+        paymentReference: data.paymentReference || null,
         timestamp: new Date(), // Use current time for receipt
         date: data.date,
         time: data.time,

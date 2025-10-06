@@ -2,11 +2,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import { getFirestore, doc, updateDoc, collection, query, where, getDocs } from "firebase/firestore";
 import app from '../../../../FirebaseConfig';
 import { getDoc } from 'firebase/firestore';
+import { FiPackage, FiDollarSign, FiMapPin, FiInfo, FiLayers, FiCalendar, FiMap } from 'react-icons/fi';
+import ShelfViewModal from './ShelfViewModal';
 
 const ViewProductModal = ({ isOpen, onClose, product }) => {
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [imageUrl, setImageUrl] = useState(null);
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'variants', 'additional'
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [selectedUnitForMap, setSelectedUnitForMap] = useState(null);
   const db = getFirestore(app);
   
   useEffect(() => {
@@ -255,159 +260,409 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
       key !== 'key'
   );
 
-  const getVariantsList = () => {
-    if (!product.variants || product.variants.length === 0) return null;
+  // Get unit configuration for ShelfViewModal
+  const getUnitConfig = (storageLocation) => {
+    const unitConfigs = {
+      'Unit 01': {
+        title: 'Unit 01 - Steel & Heavy Materials',
+        type: 'Steel & Heavy Materials Storage',
+        shelves: [
+          { name: 'Shelf A', rows: Array.from({ length: 8 }, (_, i) => `Row ${i + 1}`) },
+          { name: 'Shelf B', rows: Array.from({ length: 13 }, (_, i) => `Row ${i + 1}`) },
+          { name: 'Shelf C', rows: Array.from({ length: 6 }, (_, i) => `Row ${i + 1}`) }
+        ]
+      },
+      'Unit 02': {
+        title: 'Unit 02 - Cement & Aggregate',
+        type: 'Cement & Aggregate Storage',
+        shelves: [
+          { name: 'Shelf A', rows: Array.from({ length: 8 }, (_, i) => `Row ${i + 1}`) }
+        ]
+      },
+      'Unit 03': {
+        title: 'Unit 03 - Goods',
+        type: 'General Goods Storage',
+        shelves: [
+          { name: 'Shelf A', rows: Array.from({ length: 8 }, (_, i) => `Row ${i + 1}`) },
+          { name: 'Shelf B', rows: Array.from({ length: 8 }, (_, i) => `Row ${i + 1}`) }
+        ]
+      },
+      'Unit 04': {
+        title: 'Unit 04 - Goods',
+        type: 'General Goods Storage',
+        shelves: [
+          { name: 'Shelf A', rows: Array.from({ length: 8 }, (_, i) => `Row ${i + 1}`) },
+          { name: 'Shelf B', rows: Array.from({ length: 8 }, (_, i) => `Row ${i + 1}`) }
+        ]
+      }
+    };
+    
+    return unitConfigs[storageLocation] || null;
+  };
+
+  // Handle view location click
+  const handleViewLocation = () => {
+    const storageLocation = product.storageLocation;
+    console.log('Opening location view for product:', product);
+    console.log('Storage location:', storageLocation);
+    console.log('Shelf:', product.shelfName);
+    console.log('Row:', product.rowName);
+    console.log('Column:', product.columnIndex);
+    
+    if (storageLocation) {
+      const unitConfig = getUnitConfig(storageLocation);
+      console.log('Unit config:', unitConfig);
+      if (unitConfig) {
+        setSelectedUnitForMap(unitConfig);
+        setShowLocationModal(true);
+      } else {
+        console.error('No unit config found for:', storageLocation);
+      }
+    } else {
+      console.error('No storage location on product');
+    }
+  };
+
+  const InfoRow = ({ label, value, icon: Icon }) => (
+    <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+      <div className="flex items-center gap-2">
+        {Icon && <Icon className="text-gray-400" size={16} />}
+        <span className="text-sm text-gray-600">{label}</span>
+      </div>
+      <span className="text-sm font-medium text-gray-900">{value}</span>
+    </div>
+  );
+
+  const StatCard = ({ icon: Icon, label, value, color = "blue" }) => {
+    const colorClasses = {
+      blue: "bg-blue-50 text-blue-600",
+      green: "bg-green-50 text-green-600",
+      orange: "bg-orange-50 text-orange-600",
+      purple: "bg-purple-50 text-purple-600"
+    };
 
     return (
-      <div className="bg-gray-50 rounded-lg border border-gray-200 p-3 mt-3">
-        <div className="text-xs font-medium text-gray-500 mb-2">Variants</div>
-        <div className="space-y-2">
-          {product.variants.map((variant, index) => (
-            <div key={variant.id} className="bg-white p-2 rounded border border-gray-100">
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <span className="text-gray-500">Size: </span>
-                  <span className="font-medium text-gray-900">{variant.size || 'Default'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Type: </span>
-                  <span className="font-medium text-gray-900">{variant.type || 'N/A'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Quantity: </span>
-                  <span className="font-medium text-gray-900">{variant.quantity}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Price: </span>
-                  <span className="font-medium text-gray-900">₱{formatMoney(variant.unitPrice)}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Location: </span>
-                  <span className="font-medium text-gray-900">{variant.location}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Unit: </span>
-                  <span className="font-medium text-gray-900">{variant.unit}</span>
-                </div>
-              </div>
-            </div>
-          ))}
+      <div className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
+        <div className={`w-10 h-10 rounded-lg ${colorClasses[color]} flex items-center justify-center mb-3`}>
+          <Icon size={20} />
         </div>
+        <div className="text-xs text-gray-500 mb-1">{label}</div>
+        <div className="text-xl font-bold text-gray-900">{value}</div>
       </div>
     );
   };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose}></div>
       
       <div className="min-h-screen px-4 py-8 flex items-center justify-center">
-        <div className="relative bg-white w-full max-w-2xl max-h-[85vh] rounded-xl shadow-xl animate-scaleUp overflow-hidden">
-          <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">Product Details</h2>
+        <div className="relative bg-white w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl animate-scaleUp overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                <FiPackage className="text-white" size={20} />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-white">Product Details</h2>
+                <p className="text-xs text-orange-100">{getProductDetail('category')}</p>
+              </div>
+            </div>
             <button
               onClick={onClose}
-              className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+              className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
             >
-              <span className="text-lg">✕</span>
+              <span className="text-xl">✕</span>
             </button>
           </div>
 
-          <div className="overflow-y-auto p-4 space-y-4" style={{ maxHeight: 'calc(85vh - 48px)' }}>
-            <div className="relative group">
-              <div onClick={handleImageClick} 
-                className="h-40 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg flex items-center justify-center cursor-pointer overflow-hidden border border-gray-200 group-hover:border-blue-300 transition-all duration-200"
-              >
-                {uploading ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                    <span className="text-sm text-gray-500">Uploading...</span>
-                  </div>
-                ) : imageUrl ? (
-                  <img
-                    src={imageUrl}
-                    alt={product.name}
-                    className="h-full w-full object-contain p-2 transition duration-300 group-hover:scale-105"
+          {/* Product Header Card */}
+          <div className="bg-gradient-to-br from-orange-50 to-white p-6 border-b border-gray-200">
+            <div className="flex flex-col md:flex-row gap-6">
+              {/* Image Section */}
+              <div className="relative group md:w-64 flex-shrink-0">
+                <div onClick={handleImageClick} 
+                  className="h-48 bg-white rounded-xl flex items-center justify-center cursor-pointer overflow-hidden border-2 border-gray-200 group-hover:border-orange-300 transition-all duration-200 shadow-sm"
+                >
+                  {uploading ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 border-3 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="text-sm text-gray-500">Uploading...</span>
+                    </div>
+                  ) : imageUrl ? (
+                    <img
+                      src={imageUrl}
+                      alt={product.name}
+                      className="h-full w-full object-contain p-3 transition duration-300 group-hover:scale-105"
+                    />
+                  ) : (
+                    <div className="text-center p-4">
+                      <FiPackage className="mx-auto text-gray-300 mb-2" size={32} />
+                      <div className="text-gray-400 text-xs">Click to upload image</div>
+                    </div>
+                  )}
+                </div>
+                
+                <button 
+                  onClick={handleUploadButtonClick}
+                  className="absolute bottom-3 right-3 p-2.5 bg-orange-500 text-white rounded-lg shadow-lg hover:bg-orange-600 hover:shadow-xl transition-all duration-200"
+                  title="Upload Image"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Product Info */}
+              <div className="flex-1">
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">{getProductDetail('name')}</h3>
+                <div className="inline-flex items-center gap-2 px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-sm font-medium mb-4">
+                  <FiLayers size={14} />
+                  {getProductDetail('category')}
+                </div>
+
+                {/* Stats Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                  <StatCard 
+                    icon={FiPackage}
+                    label="Total Stock"
+                    value={getProductDetail('quantity')}
+                    color="blue"
                   />
+                  <StatCard 
+                    icon={FiDollarSign}
+                    label="Unit Price"
+                    value={`₱${formatMoney(getProductDetail('unitprice'))}`}
+                    color="green"
+                  />
+                  <StatCard 
+                    icon={FiDollarSign}
+                    label="Total Value"
+                    value={`₱${formatMoney(getProductDetail('totalvalue'))}`}
+                    color="orange"
+                  />
+                  <StatCard 
+                    icon={FiLayers}
+                    label="Variants"
+                    value={product.variants?.length || 0}
+                    color="purple"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="border-b border-gray-200 bg-gray-50">
+            <div className="flex px-6">
+              <button
+                onClick={() => setActiveTab('overview')}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'overview'
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <FiInfo size={16} />
+                  Overview
+                </div>
+              </button>
+              {product.variants && product.variants.length > 0 && (
+                <button
+                  onClick={() => setActiveTab('variants')}
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'variants'
+                      ? 'border-orange-500 text-orange-600'
+                      : 'border-transparent text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <FiLayers size={16} />
+                    Variants ({product.variants.length})
+                  </div>
+                </button>
+              )}
+              {additionalFields.length > 0 && (
+                <button
+                  onClick={() => setActiveTab('additional')}
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === 'additional'
+                      ? 'border-orange-500 text-orange-600'
+                      : 'border-transparent text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <FiInfo size={16} />
+                    Additional Info
+                  </div>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Tab Content */}
+          <div className="overflow-y-auto p-6" style={{ maxHeight: 'calc(90vh - 400px)' }}>
+            {/* Overview Tab */}
+            {activeTab === 'overview' && (
+              <div className="space-y-6">
+                {/* Stock Information */}
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                    <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <FiPackage size={16} />
+                      Stock Information
+                    </h4>
+                  </div>
+                  <div className="p-4 space-y-1">
+                    <InfoRow label="Maximum Stock Level" value={product.maximumStockLevel || 'N/A'} />
+                    <InfoRow label="Restock Level" value={product.restockLevel || 60} />
+                    <InfoRow label="Unit" value={getProductDetail('unit')} />
+                  </div>
+                </div>
+
+                {/* Location Information */}
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <FiMapPin size={16} />
+                      Storage Location
+                    </h4>
+                    {product.storageLocation && (
+                      <button
+                        onClick={handleViewLocation}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition-colors"
+                      >
+                        <FiMap size={14} />
+                        View on Map
+                      </button>
+                    )}
+                  </div>
+                  <div className="p-4 space-y-1">
+                    <InfoRow label="Storage Location" value={product.storageLocation || 'N/A'} />
+                    <InfoRow label="Shelf Name" value={product.shelfName || 'N/A'} />
+                    <InfoRow label="Row Name" value={product.rowName || 'N/A'} />
+                    <InfoRow label="Full Location" value={product.fullLocation || 'N/A'} />
+                  </div>
+                </div>
+
+                {/* Timestamps */}
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                    <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <FiCalendar size={16} />
+                      Timeline
+                    </h4>
+                  </div>
+                  <div className="p-4 space-y-1">
+                    <InfoRow label="Created At" value={formatDate(product.createdAt)} />
+                    <InfoRow label="Last Updated" value={formatDate(product.lastUpdated)} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Variants Tab */}
+            {activeTab === 'variants' && (
+              <div className="space-y-4">
+                {product.variants && product.variants.length > 0 ? (
+                  product.variants.map((variant, index) => (
+                    <div key={variant.id || index} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+                      <div className="bg-gradient-to-r from-orange-50 to-orange-100/50 px-4 py-3 border-b border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-semibold text-gray-800">
+                            Variant {index + 1}: {variant.size || 'Default'} {variant.type && `- ${variant.type}`}
+                          </h4>
+                          <span className="px-3 py-1 bg-white rounded-full text-xs font-medium text-gray-700 shadow-sm">
+                            {variant.quantity} {variant.unit}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="p-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">Size</div>
+                            <div className="text-sm font-medium text-gray-900">{variant.size || 'N/A'}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">Type</div>
+                            <div className="text-sm font-medium text-gray-900">{variant.type || 'N/A'}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">Quantity</div>
+                            <div className="text-sm font-medium text-blue-600">{variant.quantity} {variant.unit}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">Unit Price</div>
+                            <div className="text-sm font-medium text-green-600">₱{formatMoney(variant.unitPrice)}</div>
+                          </div>
+                          <div className="col-span-2">
+                            <div className="text-xs text-gray-500 mb-1">Location</div>
+                            <div className="text-sm font-medium text-gray-900">{variant.location || 'N/A'}</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
                 ) : (
-                  <div className="text-center">
-                    <div className="text-gray-400 text-sm">Click to upload image</div>
+                  <div className="text-center py-8 text-gray-500">
+                    <FiLayers className="mx-auto mb-2" size={32} />
+                    <p>No variants available</p>
                   </div>
                 )}
               </div>
-              
-              <button 
-                onClick={handleUploadButtonClick}
-                className="absolute bottom-2 right-2 p-2 bg-blue-500 text-white rounded-full shadow-sm hover:bg-blue-600 hover:shadow transition-all duration-200"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
-                </svg>
-              </button>
-            </div>
+            )}
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2 bg-blue-50 p-3 rounded-lg border border-blue-100">
-                <div className="text-sm font-medium text-blue-900">{getProductDetail('name')}</div>
-                <div className="text-xs text-blue-600 mt-1">{getProductDetail('category')}</div>
-              </div>
-              
-              <div className="bg-white p-3 rounded-lg border border-gray-200">
-                <div className="text-xs text-gray-500">Total Quantity</div>
-                <div className="text-lg font-semibold text-blue-600">{getProductDetail('quantity')}</div>
-              </div>
-              
-              <div className="bg-white p-3 rounded-lg border border-gray-200">
-                <div className="text-xs text-gray-500">Base Price</div>
-                <div className="text-lg font-semibold text-green-600">₱{formatMoney(getProductDetail('unitprice'))}</div>
-              </div>
-            </div>
-
-            <div className="bg-gray-50 rounded-lg border border-gray-200 divide-y divide-gray-200">
-              <div className="flex justify-between items-center px-3 py-2">
-                <span className="text-xs text-gray-500">Total Value</span>
-                <span className="text-sm font-medium text-gray-900">₱{formatMoney(getProductDetail('totalvalue'))}</span>
-              </div>
-              <div className="flex justify-between items-center px-3 py-2">
-                <span className="text-xs text-gray-500">Maximum Stock Level</span>
-                <span className="text-sm font-medium text-gray-900">{product.maximumStockLevel || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between items-center px-3 py-2">
-                <span className="text-xs text-gray-500">Restock Level</span>
-                <span className="text-sm font-medium text-gray-900">{product.restockLevel || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between items-center px-3 py-2">
-                <span className="text-xs text-gray-500">Created At</span>
-                <span className="text-sm font-medium text-gray-900">
-                  {formatDate(product.createdAt)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center px-3 py-2">
-                <span className="text-xs text-gray-500">Last Updated</span>
-                <span className="text-sm font-medium text-gray-900">
-                  {formatDate(product.lastUpdated)}
-                </span>
-              </div>
-            </div>
-
-            {getVariantsList()}
-
-            {additionalFields.length > 0 && (
-              <div className="bg-gray-50 rounded-lg border border-gray-200 p-3">
-                <div className="text-xs font-medium text-gray-500 mb-2">Additional Information</div>
-                <div className="grid grid-cols-2 gap-2">
-                  {additionalFields.map(([key, value]) => (
-                    <div key={key} className="text-xs">
-                      <span className="text-gray-500">{key}: </span>
-                      <span className="font-medium text-gray-900">{value === null ? "N/A" : String(value)}</span>
+            {/* Additional Info Tab */}
+            {activeTab === 'additional' && (
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-700">Additional Information</h4>
+                </div>
+                <div className="p-4">
+                  {additionalFields.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-4">
+                      {additionalFields.map(([key, value]) => (
+                        <div key={key} className="pb-3 border-b border-gray-100 last:border-0">
+                          <div className="text-xs text-gray-500 mb-1 capitalize">
+                            {key.replace(/([A-Z])/g, ' $1').trim()}
+                          </div>
+                          <div className="text-sm font-medium text-gray-900 break-words">
+                            {value === null ? "N/A" : typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <FiInfo className="mx-auto mb-2" size={32} />
+                      <p>No additional information available</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
           </div>
         </div>
       </div>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        accept="image/*"
+        className="hidden"
+      />
+
+      {/* Location View Modal */}
+      <ShelfViewModal 
+        isOpen={showLocationModal}
+        onClose={() => setShowLocationModal(false)}
+        selectedUnit={selectedUnitForMap}
+        highlightedProduct={product}
+      />
     </div>
   );
 };

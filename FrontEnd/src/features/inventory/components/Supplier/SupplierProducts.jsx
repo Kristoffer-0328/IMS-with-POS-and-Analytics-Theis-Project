@@ -341,23 +341,37 @@ const SupplierProducts = ({ supplier, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg w-full max-w-4xl max-h-[80vh] overflow-hidden">
-        <div className="flex justify-between items-center p-6 border-b">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+        {/* Fixed Header */}
+        <div className="flex justify-between items-center p-6 border-b bg-white flex-shrink-0">
           <h2 className="text-xl font-semibold">
             Products from {supplier?.name}
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
+            className="text-gray-500 hover:text-gray-700 transition-colors"
           >
             <FiX size={24} />
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto max-h-[calc(80vh-120px)]">
+        {/* Scrollable Content Area */}
+        <div className="p-6 overflow-y-auto flex-1">
           {loading ? (
-            <div className="text-center py-4">Loading products...</div>
+            <div className="flex flex-col items-center justify-center py-12 space-y-4">
+              {/* Animated Spinner */}
+              <div className="relative">
+                <div className="w-16 h-16 border-4 border-blue-200 rounded-full"></div>
+                <div className="w-16 h-16 border-4 border-blue-600 rounded-full animate-spin border-t-transparent absolute top-0 left-0"></div>
+              </div>
+              
+              {/* Loading Text */}
+              <div className="text-center space-y-2">
+                <p className="text-lg font-semibold text-gray-800">Loading Products...</p>
+                <p className="text-sm text-gray-500">Please wait while we fetch the supplier's products</p>
+              </div>
+            </div>
           ) : supplierProducts.length === 0 ? (
             <div className="text-center py-4 text-gray-500">
               No products found for this supplier
@@ -737,33 +751,40 @@ const SupplierProducts = ({ supplier, onClose }) => {
           )}
         </div>
 
-        <div className="border-t border-gray-200 bg-gray-50 p-6 flex justify-between items-center">
-          <div className="text-sm text-gray-500">
-            {supplierProducts.length} product{supplierProducts.length !== 1 ? 's' : ''} linked to this supplier
-            {supplierProducts.some(p => hasVariants(p)) && (
-              <span className="ml-2">
-                • {supplierProducts.reduce((total, product) => total + (product.variants?.length || 0), 0)} variant{supplierProducts.reduce((total, product) => total + (product.variants?.length || 0), 0) !== 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-          
-          <div className="flex space-x-3">
-            <button
-              onClick={() => setcategorymodal(true)}
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-            >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              Add Product
-            </button>
+        {/* Fixed Footer with Buttons */}
+        <div className="border-t border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100 p-6 flex-shrink-0">
+          <div className="flex justify-between items-center gap-4">
+            <div className="text-sm text-gray-600 flex-shrink-0">
+              <span className="font-semibold text-gray-900">{supplierProducts.length}</span> product{supplierProducts.length !== 1 ? 's' : ''} linked
+              {supplierProducts.some(p => hasVariants(p)) && (
+                <span className="ml-2 text-gray-500">
+                  • <span className="font-semibold text-gray-900">{supplierProducts.reduce((total, product) => total + (product.variants?.length || 0), 0)}</span> variant{supplierProducts.reduce((total, product) => total + (product.variants?.length || 0), 0) !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+            
+            <div className="flex gap-3 flex-shrink-0">
+              <button
+                onClick={() => setcategorymodal(true)}
+                className="inline-flex items-center px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg 
+                         hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 
+                         transition-all shadow-md hover:shadow-lg transform hover:scale-105"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Add Product
+              </button>
 
-            <button
-              onClick={onClose}
-              className="inline-flex items-center px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-            >
-              Close
-            </button>
+              <button
+                onClick={onClose}
+                className="inline-flex items-center px-5 py-2.5 bg-white text-gray-700 text-sm font-semibold rounded-lg 
+                         border-2 border-gray-300 hover:bg-gray-50 hover:border-gray-400 focus:outline-none 
+                         focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all shadow-sm hover:shadow"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       </div>

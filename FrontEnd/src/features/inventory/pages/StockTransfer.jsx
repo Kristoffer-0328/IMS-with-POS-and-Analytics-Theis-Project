@@ -10,7 +10,7 @@ import {
 } from 'react-icons/fi';
 import { useServices } from '../../../services/firebase/ProductServices';
 import TransferFormModal from '../components/Inventory/TransferFormModal';
-import DashboardHeader from '../components/Dashboard/DashboardHeader';
+
 
 const StockTransfer = () => {
   const [products, setProduct] = useState([]);
@@ -60,9 +60,7 @@ const StockTransfer = () => {
   ];
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto p-4 sm:p-6 bg-gray-50">
-      <DashboardHeader />
-
+    <div className="w-full max-w-[1600px] mx-auto p-4 sm:p-6">
       {/* Summary Cards Section */}
       <div className="relative mb-6">
         <div className="absolute inset-0 top-10 bottom-5 bg-gradient-to-r from-amber-100/60 to-amber-300/40 rounded-3xl -skew-y-3"></div>

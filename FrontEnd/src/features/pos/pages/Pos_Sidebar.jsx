@@ -24,8 +24,8 @@ const Pos_Sidebar = ({ collapsed, setCollapsed }) => {
   };
 
   const navItems = [
-    
-    { path: '/pos/newsale', icon: <FiPackage size={20} />, label: 'New Sale' },
+    { path: '/pos/newsale', icon: <FiPackage size={20} />, label: 'Invoice' },
+    { path: '/pos/quotation', icon: <FiFileText size={20} />, label: 'Quotation' },
     { path: '/pos/THistory', icon: <FiRefreshCw size={20} />, label: 'Transaction History' },
     { path: '/pos/salesreport', icon: <FiClipboard size={20} />, label: 'Sales Report' },
     { path: '/pos/settings', icon: <FiSettings size={20} />, label: 'Settings' },

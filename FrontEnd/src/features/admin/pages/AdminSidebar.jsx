@@ -39,6 +39,11 @@ const AdminSidebar = () => {
       label: 'Purchase Orders',
     },
     {
+      path: '/admin/reports',
+      icon: <FiFileText size={20} />,
+      label: 'Reports & Logs',
+    },
+    {
       path: '/admin/audit-trail',
       icon: <FiActivity size={20} />,
       label: 'Audit Trail',
