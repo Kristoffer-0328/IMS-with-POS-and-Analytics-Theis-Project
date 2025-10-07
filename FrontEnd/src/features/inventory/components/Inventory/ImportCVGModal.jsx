@@ -129,9 +129,7 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
       // Save products
       for (const product of processedProducts) {
         const productRef = doc(db, "Products", product.category, "Items", product.id);
-        
-        console.log(`Saving product: ${product.id} in category: ${product.category}`);
-        
+
         batch.set(productRef, {
           ...product,
           lastUpdated: new Date().toISOString()
@@ -151,7 +149,7 @@ const ImportCVGModal = ({ isOpen, onClose }) => {
       }
       
       listenToProducts((updatedProducts) => {
-        console.log("Products updated after import:", updatedProducts.length);
+
       });
 
     } catch (error) {

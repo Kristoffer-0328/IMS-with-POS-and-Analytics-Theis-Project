@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import InventoryChart from '../components/Inventory/InventoryChart';
 import InventoryTrendChart from '../components/Inventory/InventoryTrendChart';
 import InventoryTable from '../components/Inventory/InventoryTable';
@@ -113,6 +113,13 @@ const Inventory = () => {
     setViewModalOpen(true);
   };
 
+  // Function to handle product updates (e.g., image upload)
+  const handleProductUpdate = () => {
+    // The listenToProducts will automatically pick up the changes
+    // But we can also force a refresh if needed
+
+  };
+
   useEffect(() => {
     const unsubscribe = listenToProducts(setProduct);
     return () => unsubscribe();
@@ -143,28 +150,16 @@ const Inventory = () => {
     return null;
   };
 
-  const monthlyInventoryData = [
-    { name: 'Jan', value: 1250 },
-    { name: 'Feb', value: 1320 },
-    { name: 'Mar', value: 800 },
-    { name: 'Apr', value: 1400 },
-    { name: 'May', value: 1345 },
-    { name: 'Jun', value: 950 },
-    { name: 'Jul', value: 1420 },
-    { name: 'Aug', value: 1380 },
-    { name: 'Sep', value: 1440 },
-    { name: 'Oct', value: 1555 },
-    { name: 'Nov', value: 720 },
-    { name: 'Dec', value: 1600 },
-  ];
-
-  const getFilteredData = () => {
+  const filteredData = useMemo(() => {
     let filtered = [...products];
 
     // Map the products to include the correct price field and status
     filtered = filtered.map(item => {
-        // Check if product has variants
-        const hasVariants = item.variants && Array.isArray(item.variants) && item.variants.length > 0;
+        // Check if product has variants (can be array or object)
+        const hasVariants = item.variants && (
+            (Array.isArray(item.variants) && item.variants.length > 0) ||
+            (typeof item.variants === 'object' && Object.keys(item.variants).length > 0)
+        );
         
         let totalQuantity = 0;
         let totalValue = 0;
@@ -172,11 +167,17 @@ const Inventory = () => {
         let status = 'in-stock';
         
         if (hasVariants) {
+            // Convert variants to array if it's an object
+            const variantsArray = Array.isArray(item.variants) 
+                ? item.variants 
+                : Object.values(item.variants);
+            
             // Calculate totals from all variants
-            totalQuantity = item.variants.reduce((sum, variant) => sum + (Number(variant.quantity) || 0), 0);
-            totalValue = item.variants.reduce((sum, variant) => {
+            totalQuantity = variantsArray.reduce((sum, variant) => sum + (Number(variant.quantity) || 0), 0);
+            totalValue = variantsArray.reduce((sum, variant) => {
                 const variantQuantity = Number(variant.quantity) || 0;
-                const variantPrice = Number(variant.unitPrice) || 0;
+                // Check both unitPrice and price fields (some products use different field names)
+                const variantPrice = Number(variant.unitPrice) || Number(variant.price) || 0;
                 return sum + (variantQuantity * variantPrice);
             }, 0);
             
@@ -187,7 +188,8 @@ const Inventory = () => {
         } else {
             // Single product without variants
             totalQuantity = item.quantity || 0;
-            const unitPrice = item.unitPrice || 0;
+            // Check both unitPrice and price fields
+            const unitPrice = Number(item.unitPrice) || Number(item.price) || 0;
             totalValue = totalQuantity * unitPrice;
             averageUnitPrice = unitPrice;
         }
@@ -207,21 +209,21 @@ const Inventory = () => {
             totalvalue: totalValue, // Use calculated total value
             status: status,
             hasVariants: hasVariants,
-            variantCount: hasVariants ? item.variants.length : 0
+            variantCount: hasVariants ? (Array.isArray(item.variants) ? item.variants.length : Object.keys(item.variants).length) : 0
         };
     });
 
     // Apply filters
     if (debouncedSearchQuery !== '') {
         filtered = filtered.filter((item) =>
-            item.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+            item.name?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
             item.brand?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
             item.category?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
             item.storageLocation?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
             item.fullLocation?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
             item.shelfName?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
             item.rowName?.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
-            (item.supplier?.name && item.supplier.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase()))
+            (typeof item.supplier?.name === 'string' && item.supplier.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase()))
         );
     }
 
@@ -245,21 +247,25 @@ const Inventory = () => {
     }
 
     return filtered;
-  };
+  }, [products, debouncedSearchQuery, selectedCategory, currentFilter, selectedStorageRoom]);
 
-  const totalValue = getFilteredData().reduce((sum, p) => sum + (parseFloat(p.totalvalue) || 0), 0);
+  const totalValue = useMemo(() => {
+    return filteredData.reduce((sum, p) => sum + (parseFloat(p.totalvalue) || 0), 0);
+  }, [filteredData]);
 
-  const chartData = getFilteredData().map((p) => {
-    let color = '#4779FF';
-    if (p.quantity < p.restockLevel) color = '#FF4D4D';
-    else if (p.quantity <= 40) color = '#FFC554';
+  const chartData = useMemo(() => {
+    return filteredData.map((p) => {
+      let color = '#4779FF';
+      if (p.quantity < p.restockLevel) color = '#FF4D4D';
+      else if (p.quantity <= 40) color = '#FFC554';
 
-    return {
-      name: p.name,
-      value: p.quantity,
-      color,
-    };
-  });
+      return {
+        name: p.name,
+        value: p.quantity,
+        color,
+      };
+    });
+  }, [filteredData]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -340,7 +346,7 @@ const Inventory = () => {
                 <div className="flex flex-wrap gap-6 text-xl font-bold">
                   <div className="flex items-center gap-2">
                     <span className="text-gray-600 text-sm font-normal">Total Stock:</span>
-                    <span className="text-gray-900">{getFilteredData().reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0).toLocaleString()}</span>
+                    <span className="text-gray-900">{filteredData.reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0).toLocaleString()}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-gray-600 text-sm font-normal">Total Value:</span>
@@ -407,13 +413,13 @@ const Inventory = () => {
             {viewMode === 'table' ? (
               <div className="w-full rounded-xl overflow-hidden border border-gray-200">
                 <InventoryTable 
-                  data={getFilteredData()} 
+                  data={filteredData} 
                   onViewProduct={handleViewProduct} 
                 />
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {getFilteredData().map((product) => (
+                {filteredData.map((product) => (
                   <div key={product.id} className="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow border border-gray-100">
                     <div className="flex justify-between items-start mb-3">
                       <div>
@@ -512,7 +518,8 @@ const Inventory = () => {
       <ViewProductModal 
         isOpen={viewModalOpen} 
         onClose={() => setViewModalOpen(false)} 
-        product={selectedProduct} 
+        product={selectedProduct}
+        onProductUpdate={handleProductUpdate}
       />
       <InfoModal
         isOpen={activeModal === 'stockLevel' || activeModal === 'stockTrend'}

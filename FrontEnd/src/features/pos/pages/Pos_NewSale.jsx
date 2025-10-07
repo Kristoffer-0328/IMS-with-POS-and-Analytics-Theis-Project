@@ -138,8 +138,7 @@ const generateRestockingRequest = async (productData, variantIndex, locationInfo
     
     // Save to restocking requests collection
     await addDoc(collection(db, 'restockingRequests'), restockingRequest);
-    console.log('Restocking request generated:', requestId);
-    
+
     return restockingRequest;
   } catch (error) {
     console.error('Error generating restocking request:', error);
@@ -181,8 +180,7 @@ const generateNotification = async (restockingRequest, currentUser) => {
     
     // Save to notifications collection
     await addDoc(collection(db, 'Notifications'), notification);
-    console.log('Notification generated:', notificationId);
-    
+
     return notification;
   } catch (error) {
     console.error('Error generating notification:', error);
@@ -265,7 +263,6 @@ export default function Pos_NewSale() {
       }
 
       const quotationData = quotationSnap.data();
-      console.log('Loaded quotation:', quotationData);
 
       // Load customer information
       if (quotationData.customer) {
@@ -285,7 +282,7 @@ export default function Pos_NewSale() {
         const loadedProducts = [];
         
         for (const item of quotationData.items) {
-          console.log('Loading item:', item); // Debug log
+           // Debug log
           
           // Extract price and quantity - handle both old format (price/qty) and new format (unitPrice/quantity)
           const itemPrice = Number(item.unitPrice || item.price || 0);
@@ -329,7 +326,7 @@ export default function Pos_NewSale() {
           }
         }
 
-        console.log('Loaded products:', loadedProducts); // Debug log
+         // Debug log
         setAddedProducts(loadedProducts);
         alert(`Quotation ${quotationNumber} loaded successfully!\n${loadedProducts.length} items added to cart.`);
       } else {
@@ -489,7 +486,7 @@ export default function Pos_NewSale() {
                 brand: product.brand || 'Generic', // Add brand information
                 quantity: product.quantity || 0,
                 variants: [],
-                image: product.image || null,
+                image: product.image || product.imageUrl || null, // Check both image and imageUrl fields
                 hasVariants: false
             };
         }
@@ -505,7 +502,7 @@ export default function Pos_NewSale() {
                     unit: variant.unit || 'pcs',
                     price: Number(variant.unitPrice) || 0,
                     quantity: Number(variant.quantity) || 0,
-                    image: variant.image || product.image || null,
+                    image: variant.image || variant.imageUrl || product.image || product.imageUrl || null, // Check all possible image fields
                     // Add location fields from the parent product
                     storageLocation: product.storageLocation,
                     shelfName: product.shelfName,
@@ -529,13 +526,13 @@ export default function Pos_NewSale() {
     // First filter by category if one is selected
     if (selectedCategory) {
       filtered = filtered.filter(p => p.category === selectedCategory);
-      console.log('After category filter:', { selectedCategory, count: filtered.length });
+
     }
     
     // Then filter by brand if one is selected
     if (selectedBrand) {
       filtered = filtered.filter(p => p.brand === selectedBrand);
-      console.log('After brand filter:', { selectedBrand, count: filtered.length, products: filtered });
+
     }
     
     // Then apply search query if exists
@@ -546,7 +543,7 @@ export default function Pos_NewSale() {
         p.category.toLowerCase().includes(query) ||
         p.brand?.toLowerCase().includes(query)
       );
-      console.log('After search filter:', { query, count: filtered.length });
+
     }
     
     return filtered;
@@ -778,7 +775,7 @@ export default function Pos_NewSale() {
 
       // Send to analytics service
       AnalyticsService.recordSale(analyticsData);
-      console.log('Analytics data collected:', analyticsData);
+
     } catch (error) {
       console.error('Error collecting analytics:', error);
     }
@@ -840,13 +837,7 @@ export default function Pos_NewSale() {
     setIsProcessing(true);
 
     try {
-        console.log('Processing transaction with products:', addedProducts.map(item => ({
-          name: item.name,
-          id: item.id,
-          variantId: item.variantId,
-          qty: item.qty,
-          price: item.price
-        })));
+        
 
         const { formattedDate, formattedTime } = getFormattedDateTime();
         const receiptNumber = `GS-${Date.now()}`;
@@ -887,21 +878,11 @@ export default function Pos_NewSale() {
           cashier: currentUser?.displayName || currentUser?.email || 'Unknown Cashier'
         };
 
-        console.log('POS: Saving transaction with data:', {
-          transactionId: transactionData.transactionId,
-          status: transactionData.status,
-          releaseStatus: transactionData.releaseStatus,
-          itemsCount: transactionData.items.length,
-          total: transactionData.totals.total
-        });
-
         // Save transaction to Firestore
         // NOTE: Inventory deduction will happen in Release Management when items are actually released
         const transactionRef = doc(db, 'posTransactions', receiptNumber);
         await setDoc(transactionRef, transactionData);
-        
-        console.log('POS: Transaction saved to Firestore:', receiptNumber);
-        console.log('POS: Inventory will be deducted when items are released in Release Management');
+
 
         // Collect analytics
         collectAnalyticsData({

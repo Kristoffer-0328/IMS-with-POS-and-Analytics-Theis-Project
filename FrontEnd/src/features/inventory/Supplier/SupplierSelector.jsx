@@ -23,8 +23,7 @@ const SupplierSelector = ({ onSelect, selectedSupplierId, suppliers: propSupplie
           // Ensure code is always available
           code: doc.data().code || doc.id
         }));
-        
-        console.log('Fetched suppliers:', suppliersList);
+
         setSuppliers(suppliersList);
       } catch (error) {
         console.error('Error fetching suppliers:', error);
@@ -51,7 +50,7 @@ const SupplierSelector = ({ onSelect, selectedSupplierId, suppliers: propSupplie
         phone: selectedSupplier.phone || '',
         email: selectedSupplier.email || ''
       };
-      console.log('Selected supplier:', enhancedSupplier);
+
       onSelect(enhancedSupplier);
     } else {
       onSelect(null);

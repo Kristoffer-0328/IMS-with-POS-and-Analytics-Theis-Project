@@ -7,8 +7,7 @@ const db = getFirestore(app);
 export const ReportingService = {
   async getInventoryTurnover(year, month) {
     try {
-      console.log('Getting inventory turnover for:', { year, month });
-      
+
       // Calculate date range
       const startDate = month 
         ? moment(`${year}-${month}-01`).format('YYYYMMDD')
@@ -17,8 +16,6 @@ export const ReportingService = {
       const endDate = month
         ? moment(`${year}-${month}-01`).endOf('month').format('YYYYMMDD')
         : moment(`${year}-12-31`).format('YYYYMMDD');
-
-      console.log('Date range:', { startDate, endDate });
 
       // Get inventory snapshots for the period
       const snapshotsRef = collection(db, 'inventory_snapshots');
@@ -38,15 +35,13 @@ export const ReportingService = {
         orderBy('date')
       );
 
-      console.log('Executing queries...');
-
       // Fetch data
       const [snapshotsSnapshot, salesSnapshot] = await Promise.all([
         getDocs(snapshotsQuery),
         getDocs(salesQuery)
       ]);
 
-      console.log('Raw snapshots:', snapshotsSnapshot.docs.map(doc => ({ id: doc.id, data: doc.data() })));
+      
 
       // Process snapshots
       const snapshots = snapshotsSnapshot.docs.map(doc => ({
@@ -59,8 +54,6 @@ export const ReportingService = {
         date: doc.id,
         ...doc.data()
       }));
-
-      console.log('Processed data:', { snapshots, sales });
 
       // Calculate monthly metrics
       const monthlyData = [];
@@ -89,15 +82,6 @@ export const ReportingService = {
             (monthSnapshots.length || 1);
 
           const monthlySales = monthSales.reduce((sum, s) => sum + (s.total_sales || 0), 0);
-
-          console.log(`Month ${monthStr} calculations:`, {
-            monthStart,
-            monthEnd,
-            snapshots: monthSnapshots,
-            sales: monthSales,
-            avgInventory,
-            monthlySales
-          });
 
           monthlyData.push({
             month: moment(`${year}-${monthStr}-01`).format('MMMM'),
@@ -129,12 +113,6 @@ export const ReportingService = {
           }
         }
 
-        console.log('Monthly view calculations:', {
-          totalInventoryValue,
-          inventoryCount,
-          totalSales
-        });
-
         // For month view, we'll just have one entry
         monthlyData.push({
           month: moment(`${year}-${month}-01`).format('MMMM'),
@@ -163,7 +141,6 @@ export const ReportingService = {
         }))
       };
 
-      console.log('Final result:', result);
       return result;
     } catch (error) {
       console.error('Error calculating inventory turnover:', error);

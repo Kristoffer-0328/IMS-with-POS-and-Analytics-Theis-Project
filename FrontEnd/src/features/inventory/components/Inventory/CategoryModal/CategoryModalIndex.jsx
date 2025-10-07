@@ -95,7 +95,7 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
                         }
                     }
                 } catch (error) {
-                    console.log(`No products found in ${unitName} or error fetching:`, error);
+
                 }
                 
                 const totalSlots = unitTotalSlots[unitName] || 100; // Default to 100 if not defined

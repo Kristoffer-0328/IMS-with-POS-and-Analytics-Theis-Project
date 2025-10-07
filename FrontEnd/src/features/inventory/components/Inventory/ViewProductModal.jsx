@@ -4,10 +4,12 @@ import app from '../../../../FirebaseConfig';
 import { getDoc } from 'firebase/firestore';
 import { FiPackage, FiDollarSign, FiMapPin, FiInfo, FiLayers, FiCalendar, FiMap } from 'react-icons/fi';
 import ShelfViewModal from './ShelfViewModal';
+import { uploadImage } from '../../../../services/cloudinary/CloudinaryService';
 
-const ViewProductModal = ({ isOpen, onClose, product }) => {
+const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [imageUrl, setImageUrl] = useState(null);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'variants', 'additional'
   const [showLocationModal, setShowLocationModal] = useState(false);
@@ -16,7 +18,8 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
   
   useEffect(() => {
     if (product) {
-      setImageUrl(product.imageUrl || null);
+      // Check both imageUrl and image fields (image is used in some products)
+      setImageUrl(product.imageUrl || product.image || null);
     }
   }, [product]);
   
@@ -68,19 +71,58 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
       case 'category':
         return product[field] || "N/A";
       case 'quantity':
-        return product.variants?.reduce((total, variant) => 
-          total + Number(variant.quantity || 0), 0) || 0;
+        // Check if product has variants (nested structure from Firebase)
+        if (product.variants && typeof product.variants === 'object') {
+          // Variants is an object with keys
+          return Object.values(product.variants).reduce((total, variant) => 
+            total + (Number(variant.quantity) || 0), 0);
+        } else if (Array.isArray(product.variants) && product.variants.length > 0) {
+          // Variants is an array
+          return product.variants.reduce((total, variant) => 
+            total + (Number(variant.quantity) || 0), 0);
+        }
+        // Fallback to direct quantity field
+        return Number(product.quantity) || 0;
       case 'unitprice':
-        return product.variants?.[0]?.unitPrice || 0;
+        // Try to get price from variants first - prioritize variant prices over direct fields
+        if (product.variants && typeof product.variants === 'object') {
+          const firstVariant = Object.values(product.variants)[0];
+          const variantPrice = Number(firstVariant?.unitPrice) || Number(firstVariant?.price);
+          // Only use variant price if it's greater than 0, otherwise try direct fields
+          if (variantPrice > 0) return variantPrice;
+        } else if (Array.isArray(product.variants) && product.variants.length > 0) {
+          const variantPrice = Number(product.variants[0]?.unitPrice) || Number(product.variants[0]?.price);
+          if (variantPrice > 0) return variantPrice;
+        }
+        // Fallback to direct price fields (only if variant prices were 0 or don't exist)
+        return Number(product.unitPrice) || Number(product.price) || 0;
       case 'totalvalue':
-        return product.variants?.reduce((total, variant) => 
-          total + (Number(variant.quantity || 0) * Number(variant.unitPrice || 0)), 0) || 0;
+        // Calculate total value from variants
+        if (product.variants && typeof product.variants === 'object') {
+          const variantTotal = Object.values(product.variants).reduce((total, variant) => 
+            total + ((Number(variant.quantity) || 0) * (Number(variant.unitPrice) || Number(variant.price) || 0)), 0);
+          // Only use variant calculation if it results in a value > 0
+          if (variantTotal > 0) return variantTotal;
+        } else if (Array.isArray(product.variants) && product.variants.length > 0) {
+          const variantTotal = product.variants.reduce((total, variant) => 
+            total + ((Number(variant.quantity) || 0) * (Number(variant.unitPrice) || Number(variant.price) || 0)), 0);
+          if (variantTotal > 0) return variantTotal;
+        }
+        // Fallback calculation
+        return (Number(product.quantity) || 0) * (Number(product.unitPrice) || Number(product.price) || 0);
       case 'location':
-        return product.variants?.[0]?.location || "N/A";
+        return product.fullLocation || product.location || "N/A";
       case 'unit':
-        return product.variants?.[0]?.unit || product.measurements?.defaultUnit || "N/A";
+        // Try variants first
+        if (product.variants && typeof product.variants === 'object') {
+          const firstVariant = Object.values(product.variants)[0];
+          return firstVariant?.unit || product.unit || product.measurements?.defaultUnit || "N/A";
+        } else if (Array.isArray(product.variants) && product.variants.length > 0) {
+          return product.variants[0]?.unit || product.unit || product.measurements?.defaultUnit || "N/A";
+        }
+        return product.unit || product.measurements?.defaultUnit || "N/A";
       case 'image':
-        return product.imageUrl || null;
+        return product.imageUrl || product.image || null;
       default:
         return product[field] !== undefined ? product[field] : "N/A";
     }
@@ -181,60 +223,81 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
 
     try {
       setUploading(true);
-      
-      const tempUrl = URL.createObjectURL(file);
-      setImageUrl(tempUrl);
-      
+      setUploadProgress(0);
+
       const category = getProductDetail('category');
       const productId = getProductDetail('id');
       const productName = getProductDetail('name');
-      
+      const storageLocation = product.storageLocation; // e.g., "Unit 01"
+      const shelfName = product.shelfName; // e.g., "A"
+      const rowName = product.rowName; // e.g., "1"
+      const columnIndex = product.columnIndex; // e.g., 1
+
       if (!category) {
         throw new Error("Product category is required but missing");
       }
       
-      const result = await findProductDocument(category, productId, productName);
+      if (!storageLocation || !shelfName || !rowName || columnIndex === undefined) {
+        throw new Error("Product storage information is incomplete. Missing: " + 
+          (!storageLocation ? "storageLocation " : "") +
+          (!shelfName ? "shelfName " : "") +
+          (!rowName ? "rowName " : "") +
+          (columnIndex === undefined ? "columnIndex" : ""));
+      }
       
-      if (result) {
-        const { ref: productRef, doc: productDoc } = result;
-        
-        const variantIndex = productId && productId.includes('-') ? 
-          parseInt(productId.split('-')[1]) : -1;
-        
-        if (variantIndex >= 0) {
-          const productData = productDoc.data();
-          const variants = productData.variants || [];
-          
-          if (variants[variantIndex]) {
-            const updatedVariants = [...variants];
-            updatedVariants[variantIndex] = {
-              ...updatedVariants[variantIndex],
-              image: tempUrl
-            };
-            
-            await updateDoc(productRef, {
-              variants: updatedVariants
-            });
-          } else {
-            await updateDoc(productRef, {
-              image: tempUrl
-            });
-          }
-        } else {
-          await updateDoc(productRef, {
-            image: tempUrl
-          });
+      // Upload to Cloudinary with progress tracking
+      const uploadResult = await uploadImage(
+        file,
+        (progress) => {
+          setUploadProgress(progress);
+        },
+        {
+          folder: `ims-products/${category}`
         }
-        
-        alert('Image updated successfully!');
-      } else {
-        alert(`Failed to update image: Product not found in category "${category}". Please check the console for debugging information.`);
+      );
+
+      // Get the permanent Cloudinary URL
+      const cloudinaryUrl = uploadResult.url;
+      
+      // Update preview with Cloudinary URL
+      setImageUrl(cloudinaryUrl);
+      
+      // Update the product in Firebase using the storage structure fields
+      // Path: Products/{storageLocation}/shelves/{shelfName}/rows/{rowName}/columns/{columnIndex}/items/{productId}
+      
+      const productRef = doc(
+        db,
+        'Products',
+        storageLocation,
+        'shelves',
+        shelfName,
+        'rows',
+        rowName,
+        'columns',
+        String(columnIndex),
+        'items',
+        productId
+      );
+
+      await updateDoc(productRef, {
+        image: cloudinaryUrl,
+        imageUrl: cloudinaryUrl,
+        lastUpdated: new Date().toISOString()
+      });
+
+      alert('Image uploaded successfully!');
+      setImageUrl(cloudinaryUrl);
+      
+      // Notify parent component to refresh the product data
+      if (onProductUpdate) {
+        onProductUpdate();
       }
     } catch (error) {
-      console.error("Error uploading image: ", error);
-      alert('Failed to upload image: ' + error.message);
+      console.error('Failed to update image:', error);
+      alert('Failed to update image: ' + error.message);
     } finally {
       setUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -303,15 +366,14 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
   // Handle view location click
   const handleViewLocation = () => {
     const storageLocation = product.storageLocation;
-    console.log('Opening location view for product:', product);
-    console.log('Storage location:', storageLocation);
-    console.log('Shelf:', product.shelfName);
-    console.log('Row:', product.rowName);
-    console.log('Column:', product.columnIndex);
-    
+
+
+
+
+
     if (storageLocation) {
       const unitConfig = getUnitConfig(storageLocation);
-      console.log('Unit config:', unitConfig);
+
       if (unitConfig) {
         setSelectedUnitForMap(unitConfig);
         setShowLocationModal(true);
@@ -386,9 +448,16 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
                   className="h-48 bg-white rounded-xl flex items-center justify-center cursor-pointer overflow-hidden border-2 border-gray-200 group-hover:border-orange-300 transition-all duration-200 shadow-sm"
                 >
                   {uploading ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col items-center gap-2">
                       <div className="w-6 h-6 border-3 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-                      <span className="text-sm text-gray-500">Uploading...</span>
+                      <span className="text-sm text-gray-500">Uploading to Cloudinary...</span>
+                      <div className="w-32 bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-orange-500 h-2 rounded-full transition-all duration-300" 
+                          style={{ width: `${uploadProgress}%` }}
+                        ></div>
+                      </div>
+                      <span className="text-xs text-gray-400">{uploadProgress}%</span>
                     </div>
                   ) : imageUrl ? (
                     <img
@@ -446,7 +515,11 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
                   <StatCard 
                     icon={FiLayers}
                     label="Variants"
-                    value={product.variants?.length || 0}
+                    value={
+                      product.variants && typeof product.variants === 'object'
+                        ? (Array.isArray(product.variants) ? product.variants.length : Object.keys(product.variants).length)
+                        : 0
+                    }
                     color="purple"
                   />
                 </div>
@@ -470,7 +543,10 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
                   Overview
                 </div>
               </button>
-              {product.variants && product.variants.length > 0 && (
+              {product.variants && (
+                (Array.isArray(product.variants) && product.variants.length > 0) || 
+                (typeof product.variants === 'object' && Object.keys(product.variants).length > 0)
+              ) && (
                 <button
                   onClick={() => setActiveTab('variants')}
                   className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
@@ -481,7 +557,11 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
                 >
                   <div className="flex items-center gap-2">
                     <FiLayers size={16} />
-                    Variants ({product.variants.length})
+                    Variants ({
+                      product.variants && typeof product.variants === 'object' 
+                        ? (Array.isArray(product.variants) ? product.variants.length : Object.keys(product.variants).length)
+                        : 0
+                    })
                   </div>
                 </button>
               )}
@@ -567,51 +647,92 @@ const ViewProductModal = ({ isOpen, onClose, product }) => {
             {/* Variants Tab */}
             {activeTab === 'variants' && (
               <div className="space-y-4">
-                {product.variants && product.variants.length > 0 ? (
-                  product.variants.map((variant, index) => (
-                    <div key={variant.id || index} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
-                      <div className="bg-gradient-to-r from-orange-50 to-orange-100/50 px-4 py-3 border-b border-gray-200">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-semibold text-gray-800">
-                            Variant {index + 1}: {variant.size || 'Default'} {variant.type && `- ${variant.type}`}
-                          </h4>
-                          <span className="px-3 py-1 bg-white rounded-full text-xs font-medium text-gray-700 shadow-sm">
-                            {variant.quantity} {variant.unit}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="p-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1">Size</div>
-                            <div className="text-sm font-medium text-gray-900">{variant.size || 'N/A'}</div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1">Type</div>
-                            <div className="text-sm font-medium text-gray-900">{variant.type || 'N/A'}</div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1">Quantity</div>
-                            <div className="text-sm font-medium text-blue-600">{variant.quantity} {variant.unit}</div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1">Unit Price</div>
-                            <div className="text-sm font-medium text-green-600">₱{formatMoney(variant.unitPrice)}</div>
-                          </div>
-                          <div className="col-span-2">
-                            <div className="text-xs text-gray-500 mb-1">Location</div>
-                            <div className="text-sm font-medium text-gray-900">{variant.location || 'N/A'}</div>
+                {(() => {
+                  // Convert variants to array format for consistent rendering
+                  let variantsArray = [];
+                  
+                  if (product.variants && typeof product.variants === 'object') {
+                    if (Array.isArray(product.variants)) {
+                      variantsArray = product.variants;
+                    } else {
+                      // Convert object to array
+                      variantsArray = Object.entries(product.variants).map(([key, variant]) => ({
+                        ...variant,
+                        variantKey: key,
+                        id: variant.id || key
+                      }));
+                    }
+                  }
+                  
+                  return variantsArray.length > 0 ? (
+                    variantsArray.map((variant, index) => (
+                      <div key={variant.id || index} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+                        <div className="bg-gradient-to-r from-orange-50 to-orange-100/50 px-4 py-3 border-b border-gray-200">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-semibold text-gray-800">
+                              Variant {index + 1}: {variant.name || variant.variantName || variant.size || 'Default'} 
+                              {variant.type && ` - ${variant.type}`}
+                            </h4>
+                            <span className="px-3 py-1 bg-white rounded-full text-xs font-medium text-gray-700 shadow-sm">
+                              {Number(variant.quantity) || 0} {variant.unit || 'pcs'}
+                            </span>
                           </div>
                         </div>
+                        <div className="p-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1">Name</div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {variant.name || variant.variantName || variant.size || 'N/A'}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1">Type</div>
+                              <div className="text-sm font-medium text-gray-900">{variant.type || 'N/A'}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1">Quantity</div>
+                              <div className="text-sm font-medium text-blue-600">
+                                {Number(variant.quantity) || 0} {variant.unit || 'pcs'}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1">Unit Price</div>
+                              <div className="text-sm font-medium text-green-600">
+                                ₱{formatMoney(Number(variant.unitPrice) || Number(variant.price) || 0)}
+                              </div>
+                            </div>
+                            <div className="col-span-2">
+                              <div className="text-xs text-gray-500 mb-1">Total Value</div>
+                              <div className="text-sm font-medium text-orange-600">
+                                ₱{formatMoney((Number(variant.quantity) || 0) * (Number(variant.unitPrice) || Number(variant.price) || 0))}
+                              </div>
+                            </div>
+                            {variant.size && (
+                              <div className="col-span-2">
+                                <div className="text-xs text-gray-500 mb-1">Size</div>
+                                <div className="text-sm font-medium text-gray-900">{variant.size}</div>
+                              </div>
+                            )}
+                            {(variant.location || variant.fullLocation) && (
+                              <div className="col-span-2">
+                                <div className="text-xs text-gray-500 mb-1">Location</div>
+                                <div className="text-sm font-medium text-gray-900">
+                                  {variant.fullLocation || variant.location || 'N/A'}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <FiLayers className="mx-auto mb-2" size={32} />
+                      <p>No variants available</p>
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <FiLayers className="mx-auto mb-2" size={32} />
-                    <p>No variants available</p>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
 

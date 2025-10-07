@@ -41,7 +41,6 @@ import ReleaseMobileView from './features/inventory/pages/release_mobile_view';
 import Pos_Sidebar from './features/pos/pages/Pos_Sidebar';
 import Pos_NewSale from './features/pos/pages/Pos_NewSale';
 import Pos_Quotation from './features/pos/pages/Pos_Quotation';
-import Pos_SalesReport from './features/pos/pages/Pos_SalesReport';
 import Pos_Settings from './features/pos/pages/Pos_Settings';
 import Pos_Transaction_History from './features/pos/pages/Pos_TransactionHistory';
 // Layouts
@@ -58,7 +57,7 @@ const IMLayout = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
 
   // Debug: Log when IMLayout renders
-  console.log('🏗️ IMLayout rendering at:', new Date().toISOString());
+  
 
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
@@ -82,7 +81,7 @@ const pos_CashierLayout = ({ children }) => {
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
       <Pos_Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
-      {console.log("Sidebar collapsed:", collapsed)}
+      
       <main
         id="content"
         className={`flex-1 transition-all duration-300
@@ -103,10 +102,7 @@ const ProtectedRoute = ({ allowedRole, layout: Layout, children }) => {
   
   // Check if user is logged in and has the correct role
   if (!currentUser || currentUser.role !== allowedRole) {
-    console.log('Access denied:', { 
-      userRole: currentUser?.role, 
-      requiredRole: allowedRole 
-    });
+
     return <Navigate to="/unauthorized" />;
   }
   
@@ -192,6 +188,14 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/admin/transaction-history"
+        element={
+          <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
+            <Pos_Transaction_History />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Inventory Manager */}
       <Route
@@ -273,22 +277,6 @@ const AppRoutes = () => {
         element={
           <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
             <Pos_Quotation/>
-          </ProtectedRoute>
-        }
-        />
-         <Route
-        path='/pos/salesreport'
-        element={
-          <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
-            <Pos_SalesReport/>
-          </ProtectedRoute>
-        }
-        />
-         <Route
-        path='/pos/THistory'
-        element={
-          <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
-            <Pos_Transaction_History/>
           </ProtectedRoute>
         }
         />

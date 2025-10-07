@@ -6,16 +6,19 @@ import { validateProduct, getStorageOptions, getCategorySpecificFields, updateFi
 import SupplierSelector from '../../Supplier/SupplierSelector';
 import { useServices } from '../../../../../services/firebase/ProductServices';
 import ShelfViewModal from '../ShelfViewModal';
+import { uploadImage } from '../../../../../services/cloudinary/CloudinaryService';
 
 const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
     const { linkProductToSupplier } = useServices();
     const [productName, setProductName] = useState('');
     const [quantity, setQuantity] = useState('');
     const [unitPrice, setUnitPrice] = useState('');
-    const [location, setLocation] = useState('STR A1');
+    const [location, setLocation] = useState(''); // Will be set when storage location is selected
 
     const [restockLevel, setRestockLevel] = useState('');
     const [productImage, setProductImage] = useState(null);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [isUploading, setIsUploading] = useState(false);
 
     const [additionalFields, setAdditionalFields] = useState([]);
     const [newFieldName, setNewFieldName] = useState("");
@@ -190,11 +193,34 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
         }
     };
 
-    const handleImageUpload = (e) => {
+    const handleImageUpload = async (e) => {
         const file = e.target.files[0];
-        if (file) {
-            const imageUrl = URL.createObjectURL(file);
-            setProductImage(imageUrl);
+        if (!file) return;
+
+        try {
+            setIsUploading(true);
+            setUploadProgress(0);
+
+            // Upload to Cloudinary with progress tracking
+            const uploadResult = await uploadImage(
+                file,
+                (progress) => {
+                    setUploadProgress(progress);
+                },
+                {
+                    folder: `ims-products/${selectedCategory}`,
+                    tags: [selectedCategory, productName || 'new-product'],
+                }
+            );
+
+            // Set the permanent Cloudinary URL
+            setProductImage(uploadResult.url);
+        } catch (error) {
+            console.error('Error uploading image:', error);
+            alert('Failed to upload image: ' + error.message);
+        } finally {
+            setIsUploading(false);
+            setUploadProgress(0);
         }
     };
 
@@ -204,14 +230,6 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
     };
 
     const handleAddProduct = async () => {
-        console.log('Starting product creation...', {
-            productName,
-            brand,
-            quantity,
-            unitPrice,
-            selectedCategory: selectedCategory?.name,
-            supplier: supplier?.name
-        });
 
         // Validate required fields
         if (!productName || !brand || !quantity || !unitPrice || !selectedStorageLocation) {
@@ -230,10 +248,10 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
             if (storageUnitDoc.exists()) {
                 const unitData = storageUnitDoc.data();
                 unitCategory = unitData.category || selectedCategory.name;
-                console.log(`Using category "${unitCategory}" from storage unit ${selectedStorageLocation.unit}`);
+
             }
         } catch (error) {
-            console.log('Could not fetch storage unit category, using fallback:', error);
+
         }
 
         const productData = {
@@ -281,10 +299,8 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
             const productId = currentSupplier 
                 ? ProductFactory.generateSupplierProductId(productData.name, selectedCategory.name, currentSupplier.primaryCode || currentSupplier.code)
                 : ProductFactory.generateProductId(productData.name, selectedCategory.name, productData.brand);
-            
-            console.log('Generated product ID:', productId);
-            console.log('Current supplier:', currentSupplier);
-            
+
+
             // Create product with the correct ID
             const newProduct = ProductFactory.createProduct(productData);
             
@@ -293,16 +309,6 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
             
             // Remove any undefined values
             const cleanProduct = JSON.parse(JSON.stringify(newProduct));
-
-            console.log('Creating product in database...', {
-                category: selectedCategory.name,
-                productId,
-                storageLocation: selectedStorageLocation.unit,
-                shelf: selectedStorageLocation.shelf,
-                row: selectedStorageLocation.row,
-                column: selectedStorageLocation.column,
-                productData: cleanProduct
-            });
 
             // Create Firebase path: Products/{storageLocation}/{shelfName}/{rowName}/{columnIndex}/{productId}
             const storageLocation = selectedStorageLocation.unit;
@@ -358,32 +364,18 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
             // 5. Create the actual product document (using 'items' subcollection)
             const productRef = doc(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex.toString(), 'items', productId);
             await setDoc(productRef, cleanProduct);
-            
-            console.log('Product created successfully in database with full hierarchy:', {
-                storageLocation,
-                shelfName,
-                rowName,
-                columnIndex,
-                productId,
-                productPath: `Products/${storageLocation}/shelves/${shelfName}/rows/${rowName}/columns/${columnIndex}/items/${productId}`
-            });
 
             // If supplier is provided, automatically link the product
             if (currentSupplier) {
                 try {
-                    console.log('Linking product to supplier...', {
-                        productId,
-                        supplierId: currentSupplier.id,
-                        supplierPrice: Number(supplierPrice) || Number(unitPrice) || 0
-                    });
+                    
                     
                     const linkResult = await linkProductToSupplier(productId, currentSupplier.id, {
                         supplierPrice: Number(supplierPrice) || Number(unitPrice) || 0,
                         supplierSKU: productId,
                         lastUpdated: new Date().toISOString()
                     });
-                    
-                    console.log('Link result:', linkResult);
+
                 } catch (error) {
                     console.error('Error linking product to supplier:', error);
                     alert('Product created but failed to link to supplier: ' + error.message);
@@ -441,7 +433,19 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                         <h3 className="text-base font-semibold text-gray-800">Product Image</h3>
                     </div>
                     <div className="group relative w-full h-56 border-2 border-dashed border-gray-300 rounded-xl overflow-hidden transition-all hover:border-blue-400 hover:shadow-md bg-white">
-                        {productImage ? (
+                        {isUploading ? (
+                            <div className="flex flex-col items-center justify-center h-full gap-3">
+                                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                                <span className="text-sm text-gray-600 font-medium">Uploading to Cloudinary...</span>
+                                <div className="w-48 bg-gray-200 rounded-full h-2.5">
+                                    <div 
+                                        className="bg-blue-500 h-2.5 rounded-full transition-all duration-300" 
+                                        style={{ width: `${uploadProgress}%` }}
+                                    ></div>
+                                </div>
+                                <span className="text-xs text-gray-500">{uploadProgress}%</span>
+                            </div>
+                        ) : productImage ? (
                             <div className="relative h-full bg-gray-50">
                                 <img src={productImage} alt="Preview" className="w-full h-full object-contain p-4" />
                                 <button

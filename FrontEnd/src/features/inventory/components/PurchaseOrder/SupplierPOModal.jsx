@@ -36,8 +36,6 @@ const SupplierPOModal = ({ onClose, onSuccess }) => {
           ...doc.data()
         }));
 
-        console.log('Found restock requests:', requests);
-
         // 2. Extract unique supplier codes - handle both primary codes and product codes
         const supplierCodes = new Set();
         requests.forEach(req => {
@@ -59,7 +57,7 @@ const SupplierPOModal = ({ onClose, onSuccess }) => {
           }
         });
 
-        console.log('Extracted supplier codes:', Array.from(supplierCodes));
+        
 
         // 3. Fetch suppliers that match either primary code or have matching product codes
         let suppliers = [];
@@ -84,7 +82,6 @@ const SupplierPOModal = ({ onClose, onSuccess }) => {
               return false;
             });
 
-          console.log('Matched suppliers:', suppliers);
         }
 
         setAvailableSuppliers(suppliers);
@@ -114,26 +111,12 @@ const SupplierPOModal = ({ onClose, onSuccess }) => {
           ...doc.data()
         }));
 
-        console.log('All pending restock requests:', requests);
-
         // Filter requests for this supplier
         const supplierRequests = requests.filter(req => {
-          console.log('Checking request:', {
-            requestId: req.id,
-            productName: req.productName,
-            supplierPrimaryCode: req.supplierPrimaryCode,
-            supplierCode: req.supplierCode,
-            supplier: req.supplier,
-            selectedSupplier: {
-              id: selectedSupplier.id,
-              primaryCode: selectedSupplier.primaryCode || selectedSupplier.code,
-              registeredCodes: selectedSupplier.supplierCodes
-            }
-          });
 
           // First check if supplier IDs match (most reliable)
           if (selectedSupplier.id === req.supplier?.id) {
-            console.log('Matched by supplier ID');
+
             return true;
           }
 
@@ -146,45 +129,16 @@ const SupplierPOModal = ({ onClose, onSuccess }) => {
           );
 
           if (primaryCodeMatch) {
-            console.log('Matched by primary supplier code:', {
-              requestId: req.id,
-              productName: req.productName,
-              matchedCode: req.supplierPrimaryCode
-            });
+
           }
 
-          if (productCodeMatch) {
-            console.log('Matched by product registration code:', {
-              requestId: req.id,
-              productName: req.productName,
-              matchedCode: req.supplierCode,
-              matchedProduct: selectedSupplier.supplierCodes.find(sc => 
-                sc.code === req.supplierCode
-              )
-            });
+          if (productCodeMatch) );
           }
 
           return primaryCodeMatch || productCodeMatch;
         });
 
-        console.log('Filtered requests for supplier:', {
-          supplierName: selectedSupplier.name,
-          supplierId: selectedSupplier.id,
-          supplierPrimaryCode: selectedSupplier.primaryCode || selectedSupplier.code,
-          totalRequests: requests.length,
-          matchedRequests: supplierRequests.length,
-          registeredProducts: selectedSupplier.supplierCodes || [],
-          requests: supplierRequests.map(req => ({
-            id: req.id,
-            productName: req.productName,
-            supplierPrimaryCode: req.supplierPrimaryCode,
-            productCode: req.supplierCode,
-            matchedByPrimary: (selectedSupplier.primaryCode || selectedSupplier.code) === req.supplierPrimaryCode,
-            matchedByProduct: selectedSupplier.supplierCodes?.some(sc => 
-              sc.code === req.supplierCode
-            )
-          }))
-        });
+        
 
         // Only fetch products referenced in the filtered restock requests
         const productIds = supplierRequests.map(req => req.productId).filter(Boolean);
@@ -212,15 +166,7 @@ const SupplierPOModal = ({ onClose, onSuccess }) => {
             const products = await Promise.all(productPromises);
             supplierProducts = products.filter(Boolean); // Remove any null results
 
-            console.log('Found matching products:', {
-              requestedIds: productIds,
-              foundProducts: supplierProducts.map(p => ({
-                id: p.id,
-                name: p.name,
-                supplier: p.supplier?.code,
-                supplierCode: p.supplierCode
-              }))
-            });
+            
           } catch (error) {
             console.error('Error fetching products:', error);
           }
@@ -246,7 +192,6 @@ const SupplierPOModal = ({ onClose, onSuccess }) => {
             productSupplierCode: request?.supplierCode || product.supplierCode
           };
 
-          console.log('Mapped product with restock data:', mappedProduct);
           return mappedProduct;
         });
 

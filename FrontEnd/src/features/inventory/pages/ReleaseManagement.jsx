@@ -28,8 +28,7 @@ const ReleaseManagement = () => {
 
   // Listen to POS transactions that need to be released
   useEffect(() => {
-    console.log('ReleaseManagement: Setting up listener for posTransactions...');
-    
+
     // Query for all completed transactions (status='completed')
     // These will have releaseStatus field to track release workflow
     const q = query(
@@ -39,18 +38,10 @@ const ReleaseManagement = () => {
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      console.log('ReleaseManagement: Received snapshot with', snapshot.docs.length, 'documents');
-      
+
       const releaseData = snapshot.docs.map(doc => {
         const data = doc.data();
-        console.log('Transaction:', {
-          id: doc.id,
-          transactionId: data.transactionId,
-          status: data.status,
-          releaseStatus: data.releaseStatus,
-          createdAt: data.createdAt
-        });
-        
+
         return {
           id: doc.id,
           ...data,
@@ -61,8 +52,7 @@ const ReleaseManagement = () => {
           releasedByName: data.releasedByName || null
         };
       });
-      
-      console.log('ReleaseManagement: Processed releases:', releaseData.length);
+
       setReleases(releaseData);
       setLoading(false);
     }, (error) => {

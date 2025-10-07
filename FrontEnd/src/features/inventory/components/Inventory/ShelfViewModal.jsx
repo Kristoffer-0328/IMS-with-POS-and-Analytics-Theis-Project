@@ -28,42 +28,32 @@ const ShelfViewModal = ({ isOpen, onClose, selectedUnit, onLocationSelect, highl
     setLoading(true);
     try {
       const unitName = selectedUnit.title.split(' - ')[0]; // Extract "Unit 01" from "Unit 01 - Steel & Heavy Materials"
-      console.log('Fetching products for unit:', unitName);
-      console.log('Highlighted product:', highlightedProduct);
-      
+
+
       const products = [];
       
       // Traverse the nested Firebase structure for this specific unit
       const shelvesRef = collection(db, 'Products', unitName, 'shelves');
       const shelvesSnapshot = await getDocs(shelvesRef);
-      
-      console.log(`Found ${shelvesSnapshot.docs.length} shelves in ${unitName}`);
-      
+
       for (const shelfDoc of shelvesSnapshot.docs) {
         const shelfName = shelfDoc.id;
-        console.log(`Processing shelf: ${shelfName}`);
-        
+
         const rowsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows');
         const rowsSnapshot = await getDocs(rowsRef);
-        
-        console.log(`Found ${rowsSnapshot.docs.length} rows in ${shelfName}`);
-        
+
         for (const rowDoc of rowsSnapshot.docs) {
           const rowName = rowDoc.id;
           
           const columnsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows', rowName, 'columns');
           const columnsSnapshot = await getDocs(columnsRef);
-          
-          console.log(`Found ${columnsSnapshot.docs.length} columns in ${shelfName} - ${rowName}`);
-          
+
           for (const columnDoc of columnsSnapshot.docs) {
             const columnIndex = columnDoc.id;
             
             const itemsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items');
             const itemsSnapshot = await getDocs(itemsRef);
-            
-            console.log(`Found ${itemsSnapshot.docs.length} items in ${shelfName} - ${rowName} - Column ${columnIndex}`);
-            
+
             itemsSnapshot.docs.forEach(itemDoc => {
               const productData = itemDoc.data();
               const productInfo = {
@@ -75,15 +65,13 @@ const ShelfViewModal = ({ isOpen, onClose, selectedUnit, onLocationSelect, highl
                 columnIndexNumber: parseInt(columnIndex), // Also store as number
                 locationKey: `${shelfName}-${rowName}-${columnIndex}`
               };
-              
-              console.log('Product found:', productInfo);
+
               products.push(productInfo);
             });
           }
         }
       }
-      
-      console.log(`Total products found: ${products.length}`, products);
+
       setProducts(products);
     } catch (error) {
       console.error('Error fetching unit products:', error);
@@ -116,7 +104,7 @@ const ShelfViewModal = ({ isOpen, onClose, selectedUnit, onLocationSelect, highl
     );
     
     if (found) {
-      console.log(`Product found at ${shelfName}-${rowName}-${columnIndex}:`, found);
+
     }
     
     return found;
@@ -126,15 +114,7 @@ const ShelfViewModal = ({ isOpen, onClose, selectedUnit, onLocationSelect, highl
   const isHighlightedLocation = (shelfName, rowName, columnIndex) => {
     if (!highlightedProduct) return false;
     
-    console.log('Checking highlight:', {
-      checking: `${shelfName}-${rowName}-${columnIndex}`,
-      highlighted: `${highlightedProduct.shelfName}-${highlightedProduct.rowName}-${highlightedProduct.columnIndex}`,
-      match: highlightedProduct.shelfName === shelfName &&
-             highlightedProduct.rowName === rowName &&
-             (highlightedProduct.columnIndex === columnIndex || 
-              highlightedProduct.columnIndex === String(columnIndex) ||
-              parseInt(highlightedProduct.columnIndex) === columnIndex)
-    });
+    
     
     // Match by shelf, row, and column (handle both string and number formats)
     return (
@@ -216,7 +196,7 @@ const ShelfViewModal = ({ isOpen, onClose, selectedUnit, onLocationSelect, highl
               {shelf.rows.map((row, rowIndex) => {
                 // Use the actual row string, not row.name
                 const rowName = typeof row === 'string' ? row : row.name || row;
-                console.log(`Rendering row: ${rowName} (type: ${typeof row})`);
+                
                 
                 // Determine the number of columns based on unit and shelf
                 const getColumnCount = () => {

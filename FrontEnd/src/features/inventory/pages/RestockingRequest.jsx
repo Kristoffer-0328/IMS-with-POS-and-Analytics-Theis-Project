@@ -37,8 +37,7 @@ const RestockingRequest = () => {
       const unsubscribe = onSnapshot(restockRequestsRef, (snapshot) => {
         const requestsData = snapshot.docs.map(doc => {
           const data = doc.data();
-          console.log('Restock request data:', { id: doc.id, ...data });
-          
+
           // Handle different date formats
           let createdAtDate;
           if (data.timestamp?.toDate) {
@@ -61,7 +60,7 @@ const RestockingRequest = () => {
         });
         
         // Sort manually by createdAt in descending order
-        requestsData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));      console.log('Processed restock requests:', requestsData);
+        requestsData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));      
       setRequests(requestsData);
     }, (error) => {
       console.error('Error fetching restock requests:', error);

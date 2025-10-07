@@ -144,13 +144,12 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
 
     useEffect(() => {
         if (!selectedCategory?.name) {
-            console.log('No category selected');
+
             return;
         }
 
         try {
             const unsubscribe = listenToProducts((allProducts) => {
-                console.log('Raw products received:', allProducts);
 
                 if (!Array.isArray(allProducts)) {
                     console.error('allProducts is not an array:', allProducts);
@@ -163,14 +162,7 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
                         typeof product === 'object' &&
                         product.category === selectedCategory.name &&
                         !product.isVariant;
-                    
-                    console.log(`Checking product: ${product?.name || 'unnamed'}`, {
-                        hasProduct: !!product,
-                        category: product?.category,
-                        expectedCategory: selectedCategory.name,
-                        isValidProduct
-                    });
-                    
+
                     return isValidProduct;
                 });
 
@@ -188,12 +180,10 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
                     lastUpdated: product.lastUpdated || new Date().toISOString()
                 }));
 
-                console.log('Formatted products:', formattedProducts);
-
                 if (formattedProducts.length > 0) {
                     setExistingProducts(formattedProducts);
                 } else {
-                    console.log('No products found for category:', selectedCategory.name);
+
                     setExistingProducts([]); // Set empty array to clear previous products
                 }
             });
@@ -207,15 +197,11 @@ const CategoryModal = ({ CategoryOpen, CategoryClose }) => {
 
     // Add this separate useEffect to monitor existingProducts
     useEffect(() => {
-        console.log('ExistingProducts updated:', {
-            length: existingProducts.length,
-            products: existingProducts
-        });
+
     }, [existingProducts]);
 
     const handleProductSelect = (productId) => {
         const product = existingProducts.find(p => p.id === productId);
-        console.log('Selected product:', product);
 
         if (product) {
             setSelectedProduct(product);

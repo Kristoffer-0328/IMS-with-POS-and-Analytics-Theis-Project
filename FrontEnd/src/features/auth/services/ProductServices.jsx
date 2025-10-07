@@ -99,7 +99,7 @@ export const ServicesProvider = ({ children }) => {
 
     // Return cleanup function
     return () => {
-      console.log("Cleaning up product listeners");
+
       unsubscribeCategories();
       categoryListeners.forEach(unsubscribe => unsubscribe());
       categoryListeners.clear();

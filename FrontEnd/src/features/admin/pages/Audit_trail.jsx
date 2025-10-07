@@ -1,127 +1,388 @@
-import React, { useState } from 'react';
-import { FiSearch, FiCalendar, FiFilter } from 'react-icons/fi';
+import React, { useState, useEffect } from 'react';
+import { FiSearch, FiCalendar, FiFilter, FiDownload, FiUser, FiPackage, FiShoppingCart, FiTruck } from 'react-icons/fi';
+import { getFirestore, collection, getDocs, query, orderBy, limit, where } from 'firebase/firestore';
+import app from '../../../FirebaseConfig';
+
+const db = getFirestore(app);
 
 const Audit_trail = () => {
-    // Static data for demonstration
-    const auditLogs = [
-        {
-            id: 1,
-            timestamp: '2024-05-03 09:30:45',
-            user: 'John Doe',
-            action: 'Product Added',
-            details: 'Added new product: Hammer - Hardware Category',
-            ipAddress: '192.168.1.100'
-        },
-        {
-            id: 2,
-            timestamp: '2024-05-03 10:15:22',
-            user: 'Jane Smith',
-            action: 'Stock Updated',
-            details: 'Updated stock quantity for Paint Brush from 50 to 45',
-            ipAddress: '192.168.1.101'
-        },
-        {
-            id: 3,
-            timestamp: '2024-05-03 11:05:33',
-            user: 'Admin',
-            action: 'User Created',
-            details: 'Created new user account for Mark Wilson',
-            ipAddress: '192.168.1.102'
-        },
-        // Add more static entries as needed
-    ];
-
+    const [auditLogs, setAuditLogs] = useState([]);
+    const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterDate, setFilterDate] = useState('');
+    const [filterAction, setFilterAction] = useState('');
+    const [filterUser, setFilterUser] = useState('');
+    const [stats, setStats] = useState({
+        totalActions: 0,
+        uniqueUsers: 0,
+        todayActions: 0
+    });
+
+    useEffect(() => {
+        fetchAuditLogs();
+    }, []);
+
+    const fetchAuditLogs = async () => {
+        setLoading(true);
+        try {
+            const logs = [];
+
+            // Fetch POS Transactions
+            const posRef = collection(db, 'posTransactions');
+            const posQuery = query(posRef, orderBy('createdAt', 'desc'), limit(50));
+            const posSnapshot = await getDocs(posQuery);
+            posSnapshot.docs.forEach(doc => {
+                const data = doc.data();
+                logs.push({
+                    id: doc.id,
+                    timestamp: data.createdAt?.toDate() || new Date(),
+                    user: data.cashier || 'POS User',
+                    action: 'POS Sale',
+                    module: 'POS',
+                    details: `Invoice ${data.transactionId} - ₱${data.totals?.total?.toFixed(2) || '0.00'} - ${data.items?.length || 0} items`,
+                    ipAddress: data.ipAddress || 'N/A',
+                    type: 'transaction'
+                });
+            });
+
+            // Fetch Receiving Records
+            const receivingRef = collection(db, 'receivingRecords');
+            const receivingQuery = query(receivingRef, orderBy('receivingDate', 'desc'), limit(30));
+            const receivingSnapshot = await getDocs(receivingQuery);
+            receivingSnapshot.docs.forEach(doc => {
+                const data = doc.data();
+                logs.push({
+                    id: doc.id,
+                    timestamp: data.receivingDate?.toDate() || new Date(),
+                    user: data.receivedBy || 'IM User',
+                    action: 'Stock Received',
+                    module: 'Inventory',
+                    details: `PO: ${data.poNumber} - Supplier: ${data.supplierName} - ${data.acceptedProducts?.length || 0} products`,
+                    ipAddress: data.ipAddress || 'N/A',
+                    type: 'receiving'
+                });
+            });
+
+            // Fetch Release Logs
+            const releaseRef = collection(db, 'release_logs');
+            const releaseQuery = query(releaseRef, orderBy('releaseDate', 'desc'), limit(30));
+            const releaseSnapshot = await getDocs(releaseQuery);
+            releaseSnapshot.docs.forEach(doc => {
+                const data = doc.data();
+                logs.push({
+                    id: doc.id,
+                    timestamp: data.releaseDate?.toDate() || new Date(),
+                    user: data.releasedByName || 'Warehouse Staff',
+                    action: 'Stock Released',
+                    module: 'Inventory',
+                    details: `Released ${data.items?.length || 0} items - Customer: ${data.customerName || 'N/A'}`,
+                    ipAddress: data.ipAddress || 'N/A',
+                    type: 'release'
+                });
+            });
+
+            // Fetch Purchase Orders
+            const poRef = collection(db, 'purchase_orders');
+            const poQuery = query(poRef, orderBy('createdAt', 'desc'), limit(20));
+            const poSnapshot = await getDocs(poQuery);
+            poSnapshot.docs.forEach(doc => {
+                const data = doc.data();
+                logs.push({
+                    id: doc.id,
+                    timestamp: data.createdAt?.toDate() || new Date(),
+                    user: data.createdBy || 'Admin',
+                    action: 'PO Created',
+                    module: 'Procurement',
+                    details: `PO ${data.poNumber} - ${data.supplierName} - ₱${data.totalAmount?.toFixed(2) || '0.00'}`,
+                    ipAddress: data.ipAddress || 'N/A',
+                    type: 'purchase_order'
+                });
+            });
+
+            // Fetch User Management (Team)
+            const usersRef = collection(db, 'User');
+            const usersSnapshot = await getDocs(usersRef);
+            usersSnapshot.docs.forEach(doc => {
+                const data = doc.data();
+                if (data.createdAt) {
+                    logs.push({
+                        id: doc.id,
+                        timestamp: data.createdAt?.toDate() || new Date(),
+                        user: 'Admin',
+                        action: 'User Created',
+                        module: 'User Management',
+                        details: `Created user: ${data.name} (${data.role})`,
+                        ipAddress: data.ipAddress || 'N/A',
+                        type: 'user_management'
+                    });
+                }
+            });
+
+            // Sort all logs by timestamp
+            logs.sort((a, b) => b.timestamp - a.timestamp);
+
+            setAuditLogs(logs);
+            calculateStats(logs);
+
+        } catch (error) {
+            console.error('Error fetching audit logs:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const calculateStats = (logs) => {
+        const uniqueUsers = new Set(logs.map(log => log.user)).size;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayLogs = logs.filter(log => {
+            const logDate = new Date(log.timestamp);
+            logDate.setHours(0, 0, 0, 0);
+            return logDate.getTime() === today.getTime();
+        });
+
+        setStats({
+            totalActions: logs.length,
+            uniqueUsers: uniqueUsers,
+            todayActions: todayLogs.length
+        });
+    };
+
+    const filteredLogs = auditLogs.filter(log => {
+        const matchesSearch = searchTerm === '' || 
+            log.user.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            log.details.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        const matchesDate = filterDate === '' || 
+            log.timestamp.toISOString().split('T')[0] === filterDate;
+        
+        const matchesAction = filterAction === '' || log.action === filterAction;
+        const matchesUser = filterUser === '' || log.user === filterUser;
+
+        return matchesSearch && matchesDate && matchesAction && matchesUser;
+    });
+
+    const getActionBadge = (action) => {
+        const badges = {
+            'POS Sale': 'bg-green-100 text-green-700 border-green-200',
+            'Stock Received': 'bg-blue-100 text-blue-700 border-blue-200',
+            'Stock Released': 'bg-orange-100 text-orange-700 border-orange-200',
+            'PO Created': 'bg-purple-100 text-purple-700 border-purple-200',
+            'User Created': 'bg-indigo-100 text-indigo-700 border-indigo-200',
+        };
+        return `px-2.5 py-1 text-xs font-medium rounded-full inline-flex items-center border ${badges[action] || 'bg-gray-100 text-gray-700 border-gray-200'}`;
+    };
+
+    const exportToCSV = () => {
+        const headers = ['Timestamp', 'User', 'Action', 'Module', 'Details', 'IP Address'];
+        const csvData = filteredLogs.map(log => [
+            log.timestamp.toLocaleString(),
+            log.user,
+            log.action,
+            log.module,
+            log.details,
+            log.ipAddress
+        ]);
+
+        const csvContent = [
+            headers.join(','),
+            ...csvData.map(row => row.map(cell => `"${cell}"`).join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `audit_trail_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+    };
+
+    if (loading) {
+        return (
+            <div className="p-6">
+                <div className="flex items-center justify-center h-96">
+                    <div className="text-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-800 mx-auto mb-4"></div>
+                        <p className="text-gray-600">Loading audit trail...</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
-        <div className="p-6">
+        <div className="p-6 max-w-[1600px] mx-auto">
             <div className="mb-6">
                 <h1 className="text-2xl font-bold text-gray-800">Audit Trail</h1>
-                <p className="text-gray-600">Track all system activities and changes</p>
+                <p className="text-gray-600">Track all system activities and user actions</p>
+            </div>
+
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-gray-600 text-sm mb-1">Total Actions</p>
+                            <h3 className="text-2xl font-bold">{stats.totalActions}</h3>
+                        </div>
+                        <div className="bg-blue-50 p-3 rounded-lg">
+                            <FiPackage className="text-blue-600 text-xl" />
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-gray-600 text-sm mb-1">Unique Users</p>
+                            <h3 className="text-2xl font-bold">{stats.uniqueUsers}</h3>
+                        </div>
+                        <div className="bg-purple-50 p-3 rounded-lg">
+                            <FiUser className="text-purple-600 text-xl" />
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-gray-600 text-sm mb-1">Today's Actions</p>
+                            <h3 className="text-2xl font-bold">{stats.todayActions}</h3>
+                        </div>
+                        <div className="bg-green-50 p-3 rounded-lg">
+                            <FiShoppingCart className="text-green-600 text-xl" />
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {/* Filters and Search */}
-            <div className="mb-6 flex flex-wrap gap-4">
-                <div className="flex-1 min-w-[200px]">
+            <div className="mb-6 bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="relative">
                         <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input
                             type="text"
-                            placeholder="Search audit logs..."
-                            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Search logs..."
+                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-800 focus:border-transparent"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
-                </div>
-                
-                <div className="flex gap-2">
+                    
                     <div className="relative">
                         <FiCalendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input
                             type="date"
-                            className="pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-800 focus:border-transparent"
                             value={filterDate}
                             onChange={(e) => setFilterDate(e.target.value)}
                         />
                     </div>
+
+                    <select
+                        className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-800 focus:border-transparent"
+                        value={filterAction}
+                        onChange={(e) => setFilterAction(e.target.value)}
+                    >
+                        <option value="">All Actions</option>
+                        <option value="POS Sale">POS Sale</option>
+                        <option value="Stock Received">Stock Received</option>
+                        <option value="Stock Released">Stock Released</option>
+                        <option value="PO Created">PO Created</option>
+                        <option value="User Created">User Created</option>
+                    </select>
                     
-                    <button className="px-4 py-2 bg-white border rounded-lg text-gray-600 hover:bg-gray-50 flex items-center gap-2">
-                        <FiFilter />
-                        Filter
+                    <button 
+                        onClick={exportToCSV}
+                        className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 flex items-center justify-center gap-2 transition-colors"
+                    >
+                        <FiDownload />
+                        Export CSV
                     </button>
                 </div>
             </div>
 
             {/* Audit Log Table */}
-            <div className="bg-white rounded-xl shadow-sm border">
-                <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                        <tr>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Timestamp
-                            </th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                User
-                            </th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Action
-                            </th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Details
-                            </th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                IP Address
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                        {auditLogs.map((log) => (
-                            <tr key={log.id} className="hover:bg-gray-50">
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                    {log.timestamp}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                    <span className="text-sm font-medium text-gray-900">
-                                        {log.user}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                    <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
-                                        {log.action}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-4 text-sm text-gray-500">
-                                    {log.details}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    {log.ipAddress}
-                                </td>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                                    Timestamp
+                                </th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                                    User
+                                </th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                                    Action
+                                </th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                                    Module
+                                </th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                                    Details
+                                </th>
+                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
+                                    IP Address
+                                </th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {filteredLogs.length === 0 ? (
+                                <tr>
+                                    <td colSpan="6" className="px-6 py-12 text-center">
+                                        <div className="text-gray-400">
+                                            <FiFilter className="mx-auto mb-3" size={48} />
+                                            <p className="text-gray-500">No audit logs found</p>
+                                            <p className="text-sm text-gray-400 mt-1">Try adjusting your filters</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ) : (
+                                filteredLogs.map((log) => (
+                                    <tr key={log.id} className="hover:bg-gray-50 transition-colors">
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                            <div>{log.timestamp.toLocaleDateString()}</div>
+                                            <div className="text-xs text-gray-400">{log.timestamp.toLocaleTimeString()}</div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="flex items-center">
+                                                <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center mr-3">
+                                                    <span className="text-xs font-medium text-gray-600">
+                                                        {log.user.substring(0, 2).toUpperCase()}
+                                                    </span>
+                                                </div>
+                                                <span className="text-sm font-medium text-gray-900">
+                                                    {log.user}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <span className={getActionBadge(log.action)}>
+                                                {log.action}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                                            {log.module}
+                                        </td>
+                                        <td className="px-6 py-4 text-sm text-gray-600">
+                                            {log.details}
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 font-mono">
+                                            {log.ipAddress}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+                    <p className="text-sm text-gray-600">
+                        Showing {filteredLogs.length} of {auditLogs.length} total actions
+                    </p>
+                </div>
             </div>
         </div>
     );

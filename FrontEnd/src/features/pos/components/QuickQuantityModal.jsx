@@ -4,7 +4,7 @@ import { FiMinus, FiPlus, FiX } from 'react-icons/fi';
 const QuickQuantityModal = ({
   product,
   onClose,
-  onAddToCart,
+  onAdd,
   maxQuantity
 }) => {
   // Early return if product is null
@@ -151,11 +151,11 @@ const QuickQuantityModal = ({
         {/* Footer */}
         <div className="p-4 border-t">
           <button
-            onClick={() => onAddToCart(product, parseInt(quantity))}
+            onClick={() => onAdd(parseInt(quantity))}
             disabled={quantity === '' || parseInt(quantity) < 1}
             className="w-full py-2.5 rounded-lg font-medium bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Add to Cart
+            Add Item
           </button>
         </div>
       </div>

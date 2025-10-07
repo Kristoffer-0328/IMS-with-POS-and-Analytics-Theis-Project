@@ -371,8 +371,6 @@ const Pos_Quotation = () => {
       const quotationRef = doc(db, 'quotations', quotationData.quotationNumber);
       await setDoc(quotationRef, cleanedDoc);
 
-      console.log('Quotation saved to Firebase:', quotationData.quotationNumber);
-
       // Generate HTML content
       const htmlContent = QuotationGenerator.generate(quotationData);
 

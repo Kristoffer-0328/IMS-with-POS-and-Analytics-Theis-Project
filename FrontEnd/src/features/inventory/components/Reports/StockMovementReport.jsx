@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   LineChart,
   Line,
@@ -9,8 +9,15 @@ import {
   ResponsiveContainer,
   Area,
   AreaChart,
+  BarChart,
+  Bar,
+  Legend
 } from 'recharts';
-import { FiTrendingUp, FiTrendingDown, FiDownload } from 'react-icons/fi';
+import { FiTrendingUp, FiTrendingDown, FiDownload, FiArrowUp, FiArrowDown, FiPackage, FiShoppingCart } from 'react-icons/fi';
+import { getFirestore, collection, query, where, getDocs, orderBy, Timestamp } from 'firebase/firestore';
+import app from '../../../../FirebaseConfig';
+
+const db = getFirestore(app);
 
 const StockMovementReportModalContent = ({ onClose, stockMovementData, yearFilter, monthFilter, setYearFilter, setMonthFilter }) => (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
@@ -24,11 +31,13 @@ const StockMovementReportModalContent = ({ onClose, stockMovementData, yearFilte
               Stock Movement History
             </h1>
           </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-white border border-gray-200 rounded-md text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 transition-colors flex items-center gap-2">
-            Back to Reports
-          </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-white border border-gray-200 rounded-md text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 transition-colors flex items-center gap-2">
+              Back to Reports
+            </button>
+          )}
         </div>
 
         {/* Filter Section */}
@@ -293,75 +302,404 @@ const StockMovementReportModalContent = ({ onClose, stockMovementData, yearFilte
   </div>
 );
 
-const StockMovementReport = ({ onBack }) => {
-  const [yearFilter, setYearFilter] = useState('This year');
-  const [monthFilter, setMonthFilter] = useState('October');
-  const [showModal, setShowModal] = useState(false);
+const StockMovementReport = ({ onClose }) => {
+  const [loading, setLoading] = useState(true);
+  const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
+  const [monthFilter, setMonthFilter] = useState('All Months');
+  const [movementData, setMovementData] = useState([]);
+  const [summary, setSummary] = useState({
+    totalMovements: 0,
+    totalIn: 0,
+    totalOut: 0,
+    netChange: 0,
+    inPercentage: 0,
+    outPercentage: 0
+  });
+  const [chartData, setChartData] = useState([]);
 
-  // Sample data for demonstration
-  const stockMovementData = {
-    totalMovements: 2940,
-    inbound: 1760,
-    inboundChange: 8.3,
-    inboundChangeIsPositive: true,
-    outbound: 2350.0,
-    outboundChange: 5.4,
-    outboundChangeIsPositive: false,
-    timeframe: '30 Days',
-    movements: [
-      {
-        productName: '$4,500',
-        from: '$4,500',
-        to: '2.5',
-        quantity: '2.5',
-        date: 'January',
-      },
-      {
-        productName: '$4,500',
-        from: '$4,500',
-        to: '2.5',
-        quantity: '2.5',
-        date: 'February',
-      },
-      {
-        productName: '$4,500',
-        from: '$4,500',
-        to: '2.5',
-        quantity: '2.5',
-        date: 'March',
-      },
-    ],
-    trendData: [
-      { name: 'Jan', value: 1.5 },
-      { name: 'Feb', value: 2.0 },
-      { name: 'Mar', value: 1.8 },
-      { name: 'Apr', value: 2.2 },
-      { name: 'May', value: 2.8 },
-      { name: 'Jun', value: 2.6 },
-      { name: 'Jul', value: 2.4 },
-      { name: 'Aug', value: 3.8 },
-      { name: 'Sep', value: 3.0 },
-      { name: 'Oct', value: 3.2 },
-      { name: 'Nov', value: 2.8 },
-      { name: 'Dec', value: 3.0 },
-    ],
+  const months = [
+    'All Months', 'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 4 }, (_, i) => (currentYear - i).toString());
+
+  useEffect(() => {
+    fetchMovementData();
+  }, [yearFilter, monthFilter]);
+
+  const fetchMovementData = async () => {
+    setLoading(true);
+    try {
+
+      // Build query based on filters
+      const movementsRef = collection(db, 'stock_movements');
+      let movementQuery = movementsRef;
+      
+      // Apply year filter
+      if (yearFilter && yearFilter !== 'All Years') {
+        const year = parseInt(yearFilter);
+        const startOfYear = new Date(year, 0, 1);
+        const endOfYear = new Date(year, 11, 31, 23, 59, 59);
+        
+        movementQuery = query(
+          movementsRef,
+          where('movementDate', '>=', startOfYear),
+          where('movementDate', '<=', endOfYear),
+          orderBy('movementDate', 'desc')
+        );
+      } else {
+        movementQuery = query(movementsRef, orderBy('movementDate', 'desc'));
+      }
+      
+      // Fetch movements
+      const movementsSnapshot = await getDocs(movementQuery);
+
+      let movements = movementsSnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          date: data.movementDate?.toDate ? data.movementDate.toDate() : new Date(data.movementDate),
+          type: data.movementType || 'OUT',
+          reason: data.reason || 'Unknown',
+          productName: data.productName || 'Unknown Product',
+          quantity: data.quantity || 0,
+          value: data.totalValue || 0,
+          customer: data.customer || null,
+          supplier: data.supplier || null,
+          destination: data.destination || null,
+          requestedBy: data.requestedBy || data.releasedByName || null,
+          reference: data.transactionId || data.referenceId || doc.id,
+          notes: data.notes || data.remarks || ''
+        };
+      });
+      
+      // Apply month filter if not "All Months"
+      if (monthFilter && monthFilter !== 'All Months') {
+        const monthIndex = months.indexOf(monthFilter) - 1; // -1 because "All Months" is index 0
+        movements = movements.filter(m => m.date.getMonth() === monthIndex);
+      }
+
+      setMovementData(movements);
+
+      // Calculate summary
+      const totalIn = movements
+        .filter(m => m.type === 'IN')
+        .reduce((sum, m) => sum + m.quantity, 0);
+      
+      const totalOut = movements
+        .filter(m => m.type === 'OUT')
+        .reduce((sum, m) => sum + m.quantity, 0);
+      
+      const totalMovements = movements.length;
+      const netChange = totalIn - totalOut;
+      
+      setSummary({
+        totalMovements,
+        totalIn,
+        totalOut,
+        netChange,
+        inPercentage: totalMovements > 0 ? ((totalIn / (totalIn + totalOut)) * 100).toFixed(1) : 0,
+        outPercentage: totalMovements > 0 ? ((totalOut / (totalIn + totalOut)) * 100).toFixed(1) : 0
+      });
+
+      // Generate chart data (daily aggregation)
+      const dailyData = {};
+      movements.forEach(movement => {
+        const day = movement.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        if (!dailyData[day]) {
+          dailyData[day] = { day, in: 0, out: 0 };
+        }
+        if (movement.type === 'IN') {
+          dailyData[day].in += movement.quantity;
+        } else {
+          dailyData[day].out += movement.quantity;
+        }
+      });
+
+      setChartData(Object.values(dailyData));
+
+    } catch (error) {
+      console.error('Error fetching movement data:', error);
+      
+      // Fallback to empty data if there's an error
+      setMovementData([]);
+      setSummary({
+        totalMovements: 0,
+        totalIn: 0,
+        totalOut: 0,
+        netChange: 0,
+        inPercentage: 0,
+        outPercentage: 0
+      });
+      setChartData([]);
+      
+      // Show error to user
+      alert(`Error loading stock movements: ${error.message}\n\nPlease check console for details.`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getReasonIcon = (reason) => {
+    // Icons removed for cleaner UI
+    return null;
+  };
+
+  const getReasonColor = (reason) => {
+    const colors = {
+      'POS Sale': 'text-blue-600 bg-blue-50',
+      'Supplier Delivery': 'text-green-600 bg-green-50',
+      'Project Release': 'text-orange-600 bg-orange-50',
+      'Restock Request': 'text-purple-600 bg-purple-50',
+      'Damaged/Shrinkage': 'text-red-600 bg-red-50',
+      'Return': 'text-cyan-600 bg-cyan-50',
+      'Adjustment': 'text-gray-600 bg-gray-50'
+    };
+    return colors[reason] || 'text-gray-600 bg-gray-50';
   };
 
   return (
-    <>
-      <div className='w-full flex justify-center items-center' style={{ minHeight: '200px' }}>
-        <h1 className='text-2xl font-bold text-gray-800'>Not implemented yet</h1>
+    <div className="w-full">
+      {/* Header with optional back button */}
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">
+            Stock Movement History
+          </h1>
+          <p className="text-gray-600">
+            Track all inventory movements and changes over time
+          </p>
+        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-white border border-gray-200 rounded-md text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 transition-colors flex items-center gap-2">
+            Back to Reports
+          </button>
+        )}
       </div>
-      <div className="fixed bottom-20 right-4 z-50">
-        <button
-          onClick={() => setShowModal(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md shadow-lg hover:bg-blue-700 transition-colors"
+
+      {/* Filters */}
+      <div className="flex gap-3 justify-end mb-6">
+        <select
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          value={yearFilter}
+          onChange={(e) => setYearFilter(e.target.value)}
         >
-          Show UI Preview
+          {years.map(year => (
+            <option key={year} value={year}>{year}</option>
+          ))}
+        </select>
+        <select
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          value={monthFilter}
+          onChange={(e) => setMonthFilter(e.target.value)}
+        >
+          {months.map(month => (
+            <option key={month} value={month}>{month}</option>
+          ))}
+        </select>
+        <button className="flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+          <FiDownload size={16} />
+          Export
         </button>
       </div>
-      {showModal && <StockMovementReportModalContent onClose={() => setShowModal(false)} stockMovementData={stockMovementData} yearFilter={yearFilter} monthFilter={monthFilter} setYearFilter={setYearFilter} setMonthFilter={setMonthFilter} />}
-    </>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading movement data...</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            {/* Total Movements */}
+            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-gray-600 uppercase">Total Movements</h3>
+                <FiPackage className="text-gray-600" size={20} />
+              </div>
+              <p className="text-3xl font-bold text-gray-900 mb-1">
+                {summary.totalMovements}
+              </p>
+              <p className="text-xs text-gray-500">All transactions</p>
+            </div>
+
+            {/* Stock IN */}
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-6 border-2 border-green-200 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-green-700 uppercase">Stock IN</h3>
+                <FiArrowDown className="text-green-600" size={20} />
+              </div>
+              <p className="text-3xl font-bold text-green-700 mb-1">
+                {summary.totalIn}
+              </p>
+              <p className="text-xs text-green-600">{summary.inPercentage}% of total</p>
+            </div>
+
+            {/* Stock OUT */}
+            <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-xl p-6 border-2 border-red-200 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-red-700 uppercase">Stock OUT</h3>
+                <FiArrowUp className="text-red-600" size={20} />
+              </div>
+              <p className="text-3xl font-bold text-red-700 mb-1">
+                {summary.totalOut}
+              </p>
+              <p className="text-xs text-red-600">{summary.outPercentage}% of total</p>
+            </div>
+
+            {/* Net Change */}
+            <div className={`rounded-xl p-6 border-2 shadow-sm ${
+              summary.netChange >= 0 
+                ? 'bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-200' 
+                : 'bg-gradient-to-br from-orange-50 to-yellow-50 border-orange-200'
+            }`}>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className={`text-sm font-semibold uppercase ${
+                  summary.netChange >= 0 ? 'text-blue-700' : 'text-orange-700'
+                }`}>
+                  Net Change
+                </h3>
+                {summary.netChange >= 0 ? (
+                  <FiTrendingUp className="text-blue-600" size={20} />
+                ) : (
+                  <FiTrendingDown className="text-orange-600" size={20} />
+                )}
+              </div>
+              <p className={`text-3xl font-bold mb-1 ${
+                summary.netChange >= 0 ? 'text-blue-700' : 'text-orange-700'
+              }`}>
+                {summary.netChange >= 0 ? '+' : ''}{summary.netChange}
+              </p>
+              <p className={`text-xs ${
+                summary.netChange >= 0 ? 'text-blue-600' : 'text-orange-600'
+              }`}>
+                {summary.netChange >= 0 ? 'Inventory increased' : 'Inventory decreased'}
+              </p>
+            </div>
+          </div>
+
+          {/* Movement Chart */}
+          <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm mb-8">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Movement Trends</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={chartData}>
+                <defs>
+                  <linearGradient id="colorIn" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.6}/>
+                  </linearGradient>
+                  <linearGradient id="colorOut" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0.6}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="day" tick={{ fill: '#888', fontSize: 12 }} />
+                <YAxis tick={{ fill: '#888', fontSize: 12 }} />
+                <Tooltip 
+                  contentStyle={{
+                    backgroundColor: 'white',
+                    borderRadius: '8px',
+                    border: 'none',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+                  }}
+                />
+                <Legend />
+                <Bar dataKey="in" fill="url(#colorIn)" name="Stock IN" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="out" fill="url(#colorOut)" name="Stock OUT" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Detailed Transactions Table */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-800">Detailed Transactions</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Type</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Reason</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Product</th>
+                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Quantity</th>
+                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase">Value</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Reference</th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Details</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {movementData.map((movement) => (
+                    <tr key={movement.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {movement.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold ${
+                          movement.type === 'IN' 
+                            ? 'bg-green-100 text-green-700' 
+                            : 'bg-red-100 text-red-700'
+                        }`}>
+                          {movement.type === 'IN' ? <FiArrowDown size={12} /> : <FiArrowUp size={12} />}
+                          {movement.type}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${getReasonColor(movement.reason)}`}>
+                          {movement.reason}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{movement.productName}</td>
+                      <td className={`px-6 py-4 text-sm text-right font-semibold ${
+                        movement.type === 'IN' ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {movement.type === 'IN' ? '+' : '-'}{movement.quantity}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-right text-gray-900">
+                        ₱{movement.value.toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600 font-mono">{movement.reference}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        {movement.customer && `Customer: ${movement.customer}`}
+                        {movement.supplier && `Supplier: ${movement.supplier}`}
+                        {movement.destination && `To: ${movement.destination}`}
+                        {movement.requestedBy && `By: ${movement.requestedBy}`}
+                        {movement.notes && movement.notes}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Info Note */}
+          <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex gap-3">
+              <FiPackage className="text-blue-600 flex-shrink-0 mt-0.5" size={20} />
+              <div>
+                <h4 className="text-sm font-semibold text-blue-900 mb-1">About Stock Movement</h4>
+                <p className="text-xs text-blue-800">
+                  This report tracks all inventory changes including: POS sales, supplier deliveries, project releases, restock requests, and adjustments.
+                </p>
+                <p className="text-xs text-blue-700 mt-2">
+                  <em>Note: Currently showing example data. In production, this will pull from your actual transactions (pos_transactions, receiving_logs, release_logs, etc.)</em>
+                </p>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 };
 

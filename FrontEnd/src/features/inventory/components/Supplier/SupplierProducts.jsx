@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FiX, FiEdit2, FiTrash2, FiSave } from 'react-icons/fi';
-import { getFirestore, collection, getDocs, doc, getDoc, deleteDoc } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, doc, getDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import app from '../../../../FirebaseConfig';
 import CategoryModalIndex from '../Inventory/CategoryModal/CategoryModalIndex';
 import NewVariantForm from '../Inventory/CategoryModal/NewVariantForm';
@@ -25,195 +25,86 @@ const SupplierProducts = ({ supplier, onClose }) => {
 
     setLoading(true);
     try {
+      // Step 1: Get the list of product IDs linked to this supplier
       const supplierProductsRef = collection(db, 'supplier_products', supplier.id, 'products');
       const supplierProductsSnapshot = await getDocs(supplierProductsRef);
       
-      const productsData = await Promise.all(
-        supplierProductsSnapshot.docs.map(async (docSnapshot) => {
-          const productData = docSnapshot.data();
-          
-          try {
-            // Search through the new nested Firebase structure
-            const storageLocationsRef = collection(db, 'Products');
-            const storageLocationsSnapshot = await getDocs(storageLocationsRef);
-            
-            let mainProductData = {};
-            let foundLocation = null;
-            
-            // Search through all storage locations, shelves, rows, and columns
-            for (const storageLocationDoc of storageLocationsSnapshot.docs) {
-              const storageLocation = storageLocationDoc.id;
-              
-              try {
-                const shelvesRef = collection(db, 'Products', storageLocation, 'shelves');
-                const shelvesSnapshot = await getDocs(shelvesRef);
-                
-                for (const shelfDoc of shelvesSnapshot.docs) {
-                  const shelfName = shelfDoc.id;
-                  
-                  const rowsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows');
-                  const rowsSnapshot = await getDocs(rowsRef);
-                  
-                  for (const rowDoc of rowsSnapshot.docs) {
-                    const rowName = rowDoc.id;
-                    
-                    const columnsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns');
-                    const columnsSnapshot = await getDocs(columnsRef);
-                    
-                    for (const columnDoc of columnsSnapshot.docs) {
-                      const columnIndex = columnDoc.id;
-                      
-                      const productRef = doc(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items', productData.productId);
-                      
-                      try {
-                        const productSnap = await getDoc(productRef);
-                        if (productSnap.exists()) {
-                          mainProductData = productSnap.data();
-                          foundLocation = {
-                            storageLocation,
-                            shelfName,
-                            rowName,
-                            columnIndex,
-                            fullLocation: `${storageLocation} - ${shelfName} - ${rowName} - Column ${columnIndex}`
-                          };
-                          // Break out of all loops when product is found
-                          throw new Error('PRODUCT_FOUND'); // Using error to break out of nested loops
-                        }
-                      } catch (err) {
-                        if (err.message === 'PRODUCT_FOUND') {
-                          throw err; // Re-throw to break out of all loops
-                        }
-                        // Continue searching if this specific path fails
-                        continue;
-                      }
-                    }
-                  }
-                }
-              } catch (err) {
-                if (err.message === 'PRODUCT_FOUND') {
-                  break; // Break out of storage location loop
-                }
-                // Continue to next storage location if this one fails
-                continue;
-              }
-            }
-
-            return {
-              id: productData.productId,
-              ...mainProductData,
-              // Map database fields correctly:
-              // Database stores supplierPrice directly, not in unitPrice field
-              supplierPrice: productData.supplierPrice || 0, // This is the actual supplier price from database
-              supplierSKU: productData.supplierSKU || '',
-              lastUpdated: productData.lastUpdated,
-              // Use the found storage location information
-              actualCategory: mainProductData.category || foundLocation?.storageLocation || 'Unknown',
-              storageLocation: foundLocation?.storageLocation,
-              shelfName: foundLocation?.shelfName,
-              rowName: foundLocation?.rowName,
-              columnIndex: foundLocation?.columnIndex,
-              fullLocation: foundLocation?.fullLocation,
-              // Check if this is a variant by looking at the productId structure
-              isVariant: productData.productId.includes('_variant_'),
-              // Extract base product ID for variants
-              baseProductId: productData.productId.includes('_variant_') 
-                ? productData.productId.split('_variant_')[0] 
-                : productData.productId,
-              // Include original unit price if available
-              originalUnitPrice: productData.originalUnitPrice
-            };
-          } catch (error) {
-            if (error.message === 'PRODUCT_FOUND') {
-              // Product was found, proceed with the return statement above
-              return {
-                id: productData.productId,
-                ...mainProductData,
-                // Map database fields correctly:
-                // Database stores supplierPrice directly, not in unitPrice field
-                supplierPrice: productData.supplierPrice || 0, // This is the actual supplier price from database
-                supplierSKU: productData.supplierSKU || '',
-                lastUpdated: productData.lastUpdated,
-                // Use the found storage location information
-                actualCategory: mainProductData.category || foundLocation?.storageLocation || 'Unknown',
-                storageLocation: foundLocation?.storageLocation,
-                shelfName: foundLocation?.shelfName,
-                rowName: foundLocation?.rowName,
-                columnIndex: foundLocation?.columnIndex,
-                fullLocation: foundLocation?.fullLocation,
-                // Check if this is a variant by looking at the productId structure
-                isVariant: productData.productId.includes('_variant_'),
-                // Extract base product ID for variants
-                baseProductId: productData.productId.includes('_variant_') 
-                  ? productData.productId.split('_variant_')[0] 
-                  : productData.productId,
-                // Include original unit price if available
-                originalUnitPrice: productData.originalUnitPrice
-              };
-            }
-            
-            console.error('Error fetching product details:', error);
-            return {
-              id: productData.productId,
-              name: 'Product not found',
-              supplierPrice: productData.supplierPrice || 0, // This is the actual supplier price from database
-              supplierSKU: productData.supplierSKU || '',
-              lastUpdated: productData.lastUpdated,
-              isVariant: productData.productId.includes('_variant_'),
-              baseProductId: productData.productId.includes('_variant_') 
-                ? productData.productId.split('_variant_')[0] 
-                : productData.productId,
-              // Include original unit price if available
-              originalUnitPrice: productData.originalUnitPrice
-            };
-          }
-        })
-      );
-
-      // Group variants under their parent products
-      const groupedProducts = {};
-      
-      productsData.forEach(product => {
-        if (product.isVariant) {
-          // This is a variant, group it under its base product
-          if (!groupedProducts[product.baseProductId]) {
-            // Find the base product
-            const baseProduct = productsData.find(p => p.id === product.baseProductId && !p.isVariant);
-            if (baseProduct) {
-              groupedProducts[product.baseProductId] = {
-                ...baseProduct,
-                variants: []
-              };
-            }
-          }
-          
-          if (groupedProducts[product.baseProductId]) {
-            groupedProducts[product.baseProductId].variants.push({
-              ...product,
-              id: product.id,
-              name: product.name,
-              supplierPrice: product.supplierPrice,
-              supplierSKU: product.supplierSKU,
-              specifications: product.specifications || product.size || '',
-              size: product.size || ''
-            });
-          }
-        } else {
-          // This is a base product
-          if (!groupedProducts[product.id]) {
-            groupedProducts[product.id] = {
-              ...product,
-              variants: []
-            };
-          }
-        }
+      // Create a map of productId -> supplier data (price, SKU, etc.)
+      const supplierDataMap = {};
+      supplierProductsSnapshot.docs.forEach(docSnapshot => {
+        const data = docSnapshot.data();
+        supplierDataMap[data.productId] = {
+          supplierPrice: data.supplierPrice || 0,
+          supplierSKU: data.supplierSKU || '',
+          lastUpdated: data.lastUpdated,
+          isVariant: data.isVariant || false,
+          parentProductId: data.parentProductId || null,
+          variantIndex: data.variantIndex || null
+        };
       });
 
-      // Convert grouped products back to array
-      const finalProducts = Object.values(groupedProducts);
-      setSupplierProducts(finalProducts);
+      // Step 2: Use listenToProducts service to get all products (more efficient)
+      const unsubscribe = listenToProducts((allProducts) => {
+
+        // Step 3: Filter products that are linked to this supplier
+        const linkedProducts = allProducts.filter(product => 
+          supplierDataMap[product.id] !== undefined
+        );
+
+        // Step 4: Process products and their variants
+        const processedProducts = linkedProducts.map(product => {
+          const supplierData = supplierDataMap[product.id];
+          
+          // Check if product has variants in Firebase
+          const productVariants = Array.isArray(product.variants) ? product.variants : [];
+          
+          // Process variants that are linked to this supplier
+          const linkedVariants = productVariants
+            .map((variant, index) => {
+              const variantId = variant.id || `${product.id}_variant_${index}`;
+              const variantSupplierData = supplierDataMap[variantId];
+              
+              if (variantSupplierData) {
+                return {
+                  ...variant,
+                  id: variantId,
+                  variantIndex: index,
+                  parentProductId: product.id,
+                  name: variant.name || product.name,
+                  size: variant.size || variant.specifications || '',
+                  specifications: variant.specifications || '',
+                  supplierPrice: variantSupplierData.supplierPrice || 0,
+                  supplierSKU: variantSupplierData.supplierSKU || '',
+                  unitPrice: variant.unitPrice || 0,
+                  quantity: variant.quantity || 0,
+                  unit: variant.unit || 'pcs'
+                };
+              }
+              return null;
+            })
+            .filter(v => v !== null);
+
+          return {
+            ...product,
+            supplierPrice: supplierData.supplierPrice || 0,
+            supplierSKU: supplierData.supplierSKU || '',
+            lastUpdated: supplierData.lastUpdated,
+            variants: linkedVariants,
+            // Keep original product data
+            actualCategory: product.category || product.storageLocation || 'Unknown',
+            fullLocation: product.fullLocation || ''
+          };
+        });
+
+        setSupplierProducts(processedProducts);
+        setLoading(false);
+      });
+
+      // Store unsubscribe function for cleanup
+      return () => unsubscribe();
+      
     } catch (error) {
       console.error('Error fetching supplier products:', error);
-    } finally {
       setLoading(false);
     }
   };
@@ -287,44 +178,60 @@ const SupplierProducts = ({ supplier, onClose }) => {
     const variantKey = `${productId}-${variantIndex}`;
     setEditingVariant(variantKey);
     setVariantEditData({
-      supplierPrice: variant.supplierPrice || '', // This is the actual supplier price from database
-      supplierSKU: variant.supplier?.code || variant.supplierSKU || '',
-      unitPrice: variant.originalUnitPrice || variant.unitPrice || '' // Use originalUnitPrice if available, otherwise use unitPrice
+      supplierPrice: variant.supplierPrice || 0,
+      supplierSKU: variant.supplierSKU || '',
+      unitPrice: variant.unitPrice || 0
     });
   };
 
   const handleVariantSave = async (productId, variantIndex) => {
     try {
-      // Map UI data to database structure for variants
-      // Database stores supplierPrice directly, not in unitPrice field
-      const updateData = {
-        supplierPrice: variantEditData.supplierPrice, // UI "Supplier Price" maps to database "supplierPrice"
-        supplierSKU: variantEditData.supplierSKU,
-        // Store unit price as a separate field for reference
-        originalUnitPrice: variantEditData.unitPrice
-      };
-      
-      // Here you would implement variant-specific supplier data update
-      // For now, this is a placeholder - you might want to store variant-supplier relationships
-      // in a separate collection or as part of the product document
-      console.log('Saving variant data:', { productId, variantIndex, updateData });
-      
+      // Find the variant in the current product list
+      const product = supplierProducts.find(p => p.id === productId);
+      if (!product || !product.variants || !product.variants[variantIndex]) {
+        throw new Error('Variant not found');
+      }
+
+      const variant = product.variants[variantIndex];
+      const variantId = variant.id;
+
+      // Update supplier-product relationship in supplier_products collection
+      const supplierProductRef = doc(db, 'supplier_products', supplier.id, 'products', variantId);
+      await updateDoc(supplierProductRef, {
+        supplierPrice: parseFloat(variantEditData.supplierPrice) || 0,
+        supplierSKU: variantEditData.supplierSKU || '',
+        lastUpdated: new Date().toISOString()
+      });
+
       setEditingVariant(null);
       await fetchSupplierProducts(); // Refresh the list
     } catch (error) {
       console.error('Error updating variant:', error);
+      alert(`Failed to update variant: ${error.message}`);
     }
   };
 
   const handleVariantUnlink = async (productId, variantIndex, variantName) => {
     if (window.confirm(`Are you sure you want to remove "${variantName}" variant from this supplier?`)) {
       try {
-        // Here you would implement variant-specific unlinking
-        console.log('Unlinking variant:', { productId, variantIndex });
-        
+        // Find the variant in the current product list
+        const product = supplierProducts.find(p => p.id === productId);
+        if (!product || !product.variants || !product.variants[variantIndex]) {
+          throw new Error('Variant not found');
+        }
+
+        const variant = product.variants[variantIndex];
+        const variantId = variant.id;
+
+        // Delete the variant from supplier_products collection
+        const variantRef = doc(db, 'supplier_products', supplier.id, 'products', variantId);
+        await deleteDoc(variantRef);
+
         await fetchSupplierProducts(); // Refresh the list
+        alert('Variant successfully unlinked from supplier!');
       } catch (error) {
         console.error('Error unlinking variant:', error);
+        alert(`Failed to unlink variant: ${error.message}`);
       }
     }
   };
@@ -659,7 +566,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
                                 </div>
                               ) : (
                                 <div className="text-sm text-gray-600 break-words max-w-xs">
-                                  <div className="font-medium text-gray-700">SKU: {variant.supplier?.code || variant.supplierSKU || 'Not set'}</div>
+                                  <div className="font-medium text-gray-700">SKU: {variant.supplierSKU || 'Not set'}</div>
                                   {variant.specifications && (
                                     <div className="text-xs text-gray-500 mt-1">
                                       Specs: {variant.specifications}

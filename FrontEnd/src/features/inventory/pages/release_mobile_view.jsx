@@ -43,12 +43,11 @@ const ReleaseMobileView = () => {
 
   // Read releaseId from URL parameters
   useEffect(() => {
-    console.log('Release mobile view loaded');
-    console.log('Current URL:', window.location.href);
+
+
     const urlParams = new URLSearchParams(window.location.search);
     const releaseIdParam = urlParams.get('releaseId');
-    console.log('Release ID from URL:', releaseIdParam);
-    
+
     if (releaseIdParam) {
       setReleaseId(releaseIdParam);
       setIsLoading(true);
@@ -61,27 +60,20 @@ const ReleaseMobileView = () => {
           
           if (releaseSnap.exists()) {
             const data = releaseSnap.data();
-            console.log('Release data fetched:', data);
+
             setReleaseData(data);
             
             // Initialize products from transaction items
             if (data.items && data.items.length > 0) {
-              console.log('Setting products from transaction items:', data.items);
-              console.log('Sample item structure:', data.items[0]);
+
+
+              
               
               const mappedProducts = data.items.map((item, idx) => {
-                console.log(`Processing item ${idx}:`, {
-                  productId: item.productId,
-                  variantId: item.variantId,
-                  variantName: item.variantName,
-                  productName: item.productName,
-                  storageLocation: item.storageLocation,
-                  shelfName: item.shelfName,
-                  rowName: item.rowName,
-                  columnIndex: item.columnIndex
-                });
+
                 
-                return {
+                
+                const mapped = {
                   id: item.variantId || item.productId || `item-${idx}`,
                   name: item.variantName || item.productName || 'Unknown Product',
                   orderedQty: item.quantity || 0,
@@ -100,9 +92,14 @@ const ReleaseMobileView = () => {
                   category: item.category || '',
                   unitPrice: item.unitPrice || 0
                 };
+                
+                
+                return mapped;
               });
+
+
               
-              console.log('Mapped products:', mappedProducts);
+
               setProducts(mappedProducts);
             }
           } else {
@@ -147,14 +144,25 @@ const ReleaseMobileView = () => {
   };
 
   // Function to find product in inventory
-  const findProductInInventory = async (productId, variantId, variantName, storageLocation, shelfName, rowName, columnIndex) => {
-    console.log(`Searching for product ${variantName} (ID: ${productId}, Variant: ${variantId}) in inventory...`);
-    console.log(`Known location: ${storageLocation}/${shelfName}/${rowName}/${columnIndex}`);
+  const findProductInInventory = async (productId, variantId, variantName, storageLocation, shelfName, rowName, columnIndex, category) => {
+
+
+
+
+
+
+
+    // Check if this is a quotation-based product (temporary ID)
+    const isQuotationProduct = productId && productId.startsWith('quotation-');
+    
+    if (isQuotationProduct) {
+
+    }
     
     try {
-      // If we have the location information, try direct lookup first
-      if (storageLocation && shelfName && rowName && columnIndex !== undefined) {
-        console.log(`Attempting direct lookup at known location...`);
+      // If we have the location information AND a real product ID, try direct lookup first
+      if (!isQuotationProduct && storageLocation && shelfName && rowName && columnIndex !== undefined) {
+
         const productRef = doc(
           db, 
           'Products', 
@@ -168,28 +176,32 @@ const ReleaseMobileView = () => {
           'items', 
           productId
         );
-        
+
         const productDoc = await getDoc(productRef);
         
         if (productDoc.exists()) {
           const productData = productDoc.data();
-          console.log(`✓ Found product at known location:`, productData);
-          console.log('Available variants:', Object.keys(productData.variants || {}));
-          console.log('Looking for variantId:', variantId);
+
           
+
+          if (productData.variants) {
+            
+            
+          }
+
           // Extract the variant index from the full variant ID
           // Format: 'ABC-123-CODE1-Unit_04-PVC_PIP-1696-0' -> '0'
           let actualVariantKey = variantId;
           if (variantId && variantId.includes('-')) {
             const parts = variantId.split('-');
             actualVariantKey = parts[parts.length - 1]; // Get the last part (the index)
-            console.log(`Extracted variant key from '${variantId}' -> '${actualVariantKey}'`);
+
           }
           
           // If variantId is provided, look for that specific variant
           if (actualVariantKey && productData.variants && productData.variants[actualVariantKey]) {
             const variantData = productData.variants[actualVariantKey];
-            console.log(`✓ Found variant ${actualVariantKey}:`, variantData);
+            
             return {
               productRef,
               variantId: actualVariantKey,
@@ -202,30 +214,60 @@ const ReleaseMobileView = () => {
               }
             };
           } else {
-            console.warn(`Variant '${actualVariantKey}' not found at known location. Available variants:`, Object.keys(productData.variants || {}));
+            console.warn(`⚠️ Variant '${actualVariantKey}' NOT found at known location`);
+            console.warn(`Available variants:`, Object.keys(productData.variants || {}));
+            
+            // Try to find variant by name as fallback
+            if (productData.variants) {
+              const matchingVariantKey = Object.keys(productData.variants).find(vKey => {
+                const variant = productData.variants[vKey];
+                const matches = (
+                  variant.name === variantName || 
+                  variant.variantName === variantName ||
+                  variant.name?.includes(variantName) ||
+                  variantName?.includes(variant.name)
+                );
+                
+                return matches;
+              });
+              
+              if (matchingVariantKey) {
+                const variantData = productData.variants[matchingVariantKey];
+                
+                return {
+                  productRef,
+                  variantId: matchingVariantKey,
+                  currentQty: variantData.quantity || 0,
+                  location: {
+                    storageLocation,
+                    shelfName,
+                    rowName,
+                    columnIndex: parseInt(columnIndex)
+                  }
+                };
+              }
+            }
           }
         } else {
-          console.warn(`Product not found at known location, will search all locations...`);
+          console.warn(`⚠️ Product document NOT found at known location`);
+          console.warn(`Will proceed to search all locations...`);
         }
+      } else {
+
       }
       
       // If direct lookup failed or no location info, search all locations
-      console.log(`Searching all storage locations...`);
+      
       const productsCollection = collection(db, 'Products');
       const storageSnapshot = await getDocs(productsCollection);
-      
-      console.log(`Found ${storageSnapshot.docs.length} storage locations to search`);
-      
+
       for (const storageDoc of storageSnapshot.docs) {
         const currentStorageLocation = storageDoc.id;
-        console.log(`Searching in storage location: ${currentStorageLocation}`);
-        
+
         // Get all shelves in this storage location
         const shelvesCollection = collection(db, 'Products', currentStorageLocation, 'shelves');
         const shelvesSnapshot = await getDocs(shelvesCollection);
-        
-        console.log(`Found ${shelvesSnapshot.docs.length} shelves in ${currentStorageLocation}`);
-        
+
         for (const shelfDoc of shelvesSnapshot.docs) {
           const currentShelfName = shelfDoc.id;
           
@@ -243,59 +285,109 @@ const ReleaseMobileView = () => {
             for (const columnDoc of columnsSnapshot.docs) {
               const currentColumnIndex = columnDoc.id;
               
-              // Check if product exists in this column
-              const productRef = doc(db, 'Products', currentStorageLocation, 'shelves', currentShelfName, 'rows', currentRowName, 'columns', currentColumnIndex, 'items', productId);
-              const productDoc = await getDoc(productRef);
-              
-              if (productDoc.exists()) {
-                const productData = productDoc.data();
-                console.log(`✓ Found product ${variantName} at: ${currentStorageLocation}/${currentShelfName}/${currentRowName}/${currentColumnIndex}`);
-                console.log('Product data:', productData);
-                console.log('Available variants:', Object.keys(productData.variants || {}));
-                console.log('Looking for variantId:', variantId);
-                
-                // Extract the variant index from the full variant ID
-                // Format: 'ABC-123-CODE1-Unit_04-PVC_PIP-1696-0' -> '0'
-                let actualVariantKey = variantId;
-                if (variantId && variantId.includes('-')) {
-                  const parts = variantId.split('-');
-                  actualVariantKey = parts[parts.length - 1]; // Get the last part (the index)
-                  console.log(`Extracted variant key from '${variantId}' -> '${actualVariantKey}'`);
+              // Get all items in this column
+              const itemsCollection = collection(db, 'Products', currentStorageLocation, 'shelves', currentShelfName, 'rows', currentRowName, 'columns', currentColumnIndex, 'items');
+              const itemsSnapshot = await getDocs(itemsCollection);
+
+              // Check each product in this column
+              for (const itemDoc of itemsSnapshot.docs) {
+                const productData = itemDoc.data();
+                const currentProductId = itemDoc.id;
+
+
+
+
+                if (productData.variants) {
+                  
+                  // Log first variant details for reference
+                  const firstVariantKey = Object.keys(productData.variants)[0];
+                  if (firstVariantKey) {
+                    const firstVariant = productData.variants[firstVariantKey];
+
+                  }
                 }
                 
-                // If variantId is provided, look for that specific variant
-                if (actualVariantKey && productData.variants && productData.variants[actualVariantKey]) {
-                  const variantData = productData.variants[actualVariantKey];
-                  console.log(`✓ Found variant ${actualVariantKey}:`, variantData);
-                  return {
-                    productRef,
-                    variantId: actualVariantKey,
-                    currentQty: variantData.quantity || 0,
-                    location: {
-                      storageLocation: currentStorageLocation,
-                      shelfName: currentShelfName,
-                      rowName: currentRowName,
-                      columnIndex: parseInt(currentColumnIndex)
-                    }
-                  };
-                } else if (!actualVariantKey) {
-                  // If no variantId, try to find variant by name matching
-                  console.warn(`No variantId provided for ${variantName}. Checking if product has variants...`);
+                // For quotation products, match by name and category
+                if (isQuotationProduct) {
+                  // Check if product name matches (try both exact and partial matches)
+                  const productBaseName = productData.name || productData.productName || '';
                   
-                  if (productData.variants && Object.keys(productData.variants).length > 0) {
-                    // Try to find variant by name matching
-                    const matchingVariantId = Object.keys(productData.variants).find(vId => {
-                      const variant = productData.variants[vId];
-                      return variant.name === variantName || variant.variantName === variantName;
-                    });
+                  // Normalize names for comparison (remove extra spaces, lowercase)
+                  const normalizeStr = (str) => str.toLowerCase().trim().replace(/\s+/g, ' ');
+                  const normalizedSearchName = normalizeStr(variantName);
+                  const normalizedProductName = normalizeStr(productBaseName);
+                  
+                  // Try different matching strategies
+                  const exactMatch = normalizedProductName === normalizedSearchName;
+                  const containsMatch = normalizedProductName.includes(normalizedSearchName) || 
+                                       normalizedSearchName.includes(normalizedProductName);
+                  
+                  // Extract key parts (e.g., "Cement Portland Type 1" from "Cement Portland Type 1 (40kg Bag)")
+                  const extractMainName = (str) => {
+                    const match = str.match(/^([^(]+)/); // Get everything before first parenthesis
+                    return match ? match[1].trim() : str;
+                  };
+                  
+                  const mainSearchName = normalizeStr(extractMainName(variantName));
+                  const mainProductName = normalizeStr(extractMainName(productBaseName));
+                  const mainNameMatch = mainSearchName === mainProductName || 
+                                       mainProductName.includes(mainSearchName) ||
+                                       mainSearchName.includes(mainProductName);
+                  
+                  const productNameMatches = exactMatch || containsMatch || mainNameMatch;
+
+
+                  // Check if category matches
+                  const categoryMatches = !category || productData.category === category;
+                  
+                  
+                  
+                  if (productNameMatches && categoryMatches) {
+
                     
-                    if (matchingVariantId) {
-                      const variantData = productData.variants[matchingVariantId];
-                      console.log(`✓ Found matching variant by name: ${matchingVariantId}`, variantData);
+                    
+                    const productRef = doc(db, 'Products', currentStorageLocation, 'shelves', currentShelfName, 'rows', currentRowName, 'columns', currentColumnIndex, 'items', currentProductId);
+                    
+                    // If product has variants, find matching variant
+                    if (productData.variants && Object.keys(productData.variants).length > 0) {
+
+                      // Try to find variant by name
+                      const matchingVariantKey = Object.keys(productData.variants).find(vKey => {
+                        const variant = productData.variants[vKey];
+                        const matches = (
+                          variant.name === variantName || 
+                          variant.variantName === variantName ||
+                          variant.name?.includes(variantName) ||
+                          variantName?.includes(variant.name)
+                        );
+                        
+                        return matches;
+                      });
+                      
+                      if (matchingVariantKey) {
+                        const variantData = productData.variants[matchingVariantKey];
+                        
+                        return {
+                          productRef,
+                          variantId: matchingVariantKey,
+                          currentQty: variantData.quantity || 0,
+                          location: {
+                            storageLocation: currentStorageLocation,
+                            shelfName: currentShelfName,
+                            rowName: currentRowName,
+                            columnIndex: parseInt(currentColumnIndex)
+                          }
+                        };
+                      } else {
+                        console.warn(`Product found but no matching variant for: ${variantName}`);
+                      }
+                    } else {
+                      // Product has no variants, return the product itself
+
                       return {
                         productRef,
-                        variantId: matchingVariantId,
-                        currentQty: variantData.quantity || 0,
+                        variantId: null,
+                        currentQty: productData.quantity || 0,
                         location: {
                           storageLocation: currentStorageLocation,
                           shelfName: currentShelfName,
@@ -305,8 +397,77 @@ const ReleaseMobileView = () => {
                       };
                     }
                   }
-                } else {
-                  console.error(`Variant '${actualVariantKey}' not found. Available variants:`, Object.keys(productData.variants || {}));
+                  continue; // Skip ID-based matching for quotation products
+                }
+                
+                // For regular products, check by ID first
+                if (currentProductId === productId) {
+
+                  
+                  
+
+                  const productRef = doc(db, 'Products', currentStorageLocation, 'shelves', currentShelfName, 'rows', currentRowName, 'columns', currentColumnIndex, 'items', currentProductId);
+                  
+                  // Extract the variant index from the full variant ID
+                  let actualVariantKey = variantId;
+                  if (variantId && variantId.includes('-')) {
+                    const parts = variantId.split('-');
+                    actualVariantKey = parts[parts.length - 1];
+
+                  }
+                  
+                  // If variantId is provided, look for that specific variant
+                  if (actualVariantKey && productData.variants && productData.variants[actualVariantKey]) {
+                    const variantData = productData.variants[actualVariantKey];
+                    
+                    return {
+                      productRef,
+                      variantId: actualVariantKey,
+                      currentQty: variantData.quantity || 0,
+                      location: {
+                        storageLocation: currentStorageLocation,
+                        shelfName: currentShelfName,
+                        rowName: currentRowName,
+                        columnIndex: parseInt(currentColumnIndex)
+                      }
+                    };
+                  } else if (!actualVariantKey) {
+                    // If no variantId, try to find variant by name matching
+                    console.warn(`No variantId provided for ${variantName}. Checking if product has variants...`);
+                    
+                    if (productData.variants && Object.keys(productData.variants).length > 0) {
+                      // Try to find variant by name matching
+                      const matchingVariantId = Object.keys(productData.variants).find(vId => {
+                        const variant = productData.variants[vId];
+                        const matches = (
+                          variant.name === variantName || 
+                          variant.variantName === variantName ||
+                          variant.name?.includes(variantName) ||
+                          variantName?.includes(variant.name)
+                        );
+                        
+                        return matches;
+                      });
+                      
+                      if (matchingVariantId) {
+                        const variantData = productData.variants[matchingVariantId];
+                        
+                        return {
+                          productRef,
+                          variantId: matchingVariantId,
+                          currentQty: variantData.quantity || 0,
+                          location: {
+                            storageLocation: currentStorageLocation,
+                            shelfName: currentShelfName,
+                            rowName: currentRowName,
+                            columnIndex: parseInt(currentColumnIndex)
+                          }
+                        };
+                      }
+                    }
+                  } else {
+                    console.error(`❌ Variant '${actualVariantKey}' not found. Available variants:`, Object.keys(productData.variants || {}));
+                  }
                 }
               }
             }
@@ -314,8 +475,12 @@ const ReleaseMobileView = () => {
         }
       }
       
-      console.error(`❌ Product ${variantName} not found in any inventory location`);
-      console.error(`Search parameters - ProductID: ${productId}, VariantID: ${variantId}, VariantName: ${variantName}`);
+      console.error(`\n❌ PRODUCT NOT FOUND IN ANY LOCATION`);
+      console.error(`Search parameters:`);
+      console.error(`  - Product Name: ${variantName}`);
+      console.error(`  - Product ID: ${productId}`);
+      console.error(`  - Variant ID: ${variantId}`);
+      console.error(`  - Expected Location: ${storageLocation}/${shelfName}/${rowName}/${columnIndex}`);
       return null;
     } catch (error) {
       console.error(`Error searching for product ${variantName}:`, error);
@@ -326,32 +491,19 @@ const ReleaseMobileView = () => {
   // Function to update inventory by deducting released items
   const updateInventoryQuantities = async (releasedProducts) => {
     try {
-      console.log('Starting inventory deduction for released products:', releasedProducts);
-      
+
       for (const product of releasedProducts) {
         if (product.status !== 'released') {
-          console.log(`Skipping product ${product.name} - status is ${product.status}`);
+
           continue;
         }
 
         const releasedQty = Number(product.releasedQty);
         if (isNaN(releasedQty) || releasedQty <= 0) {
-          console.log(`Skipping product ${product.name} - invalid quantity: ${product.releasedQty}`);
+
           continue;
         }
 
-        console.log(`Processing release for ${product.name}, quantity: ${releasedQty}`);
-        console.log('Product data for inventory search:', {
-          productId: product.productId,
-          variantId: product.variantId,
-          variantName: product.variantName,
-          productName: product.productName,
-          storageLocation: product.storageLocation,
-          shelfName: product.shelfName,
-          rowName: product.rowName,
-          columnIndex: product.columnIndex,
-          category: product.category
-        });
 
         // Find the product in inventory
         const inventoryLocation = await findProductInInventory(
@@ -361,7 +513,8 @@ const ReleaseMobileView = () => {
           product.storageLocation,
           product.shelfName,
           product.rowName,
-          product.columnIndex
+          product.columnIndex,
+          product.category
         );
 
         if (!inventoryLocation) {
@@ -378,67 +531,107 @@ const ReleaseMobileView = () => {
           }
 
           const productData = productDoc.data();
-          const variantData = productData.variants?.[inventoryLocation.variantId];
+          
+          // Handle products with variants
+          if (inventoryLocation.variantId) {
+            const variantData = productData.variants?.[inventoryLocation.variantId];
 
-          if (!variantData) {
-            throw new Error(`Variant not found for ${product.name}`);
-          }
-
-          const currentQty = Number(variantData.quantity) || 0;
-          const newQty = currentQty - releasedQty;
-
-          if (newQty < 0) {
-            throw new Error(`Insufficient stock for ${product.name}. Available: ${currentQty}, Requested: ${releasedQty}`);
-          }
-
-          console.log(`Deducting ${releasedQty} from ${product.name}. Current: ${currentQty}, New: ${newQty}`);
-
-          // Update the variant quantity
-          const updatedVariants = {
-            ...productData.variants,
-            [inventoryLocation.variantId]: {
-              ...variantData,
-              quantity: newQty
+            if (!variantData) {
+              throw new Error(`Variant not found for ${product.name}`);
             }
-          };
 
-          transaction.update(inventoryLocation.productRef, {
-            variants: updatedVariants,
-            updatedAt: serverTimestamp()
-          });
+            const currentQty = Number(variantData.quantity) || 0;
+            const newQty = currentQty - releasedQty;
 
-          // Generate restock request if quantity is low
-          if (newQty <= (variantData.reorderPoint || 10)) {
-            console.log(`Low stock detected for ${product.name}. Generating restock request.`);
-            
-            const restockRequestRef = doc(collection(db, 'RestockingRequests'));
-            transaction.set(restockRequestRef, {
-              productId: product.productId,
-              productName: product.name,
-              variantId: inventoryLocation.variantId,
-              variantName: product.variantName || product.name,
-              currentQuantity: newQty,
-              requestedQuantity: (variantData.reorderPoint || 10) * 2,
-              storageLocation: inventoryLocation.location.storageLocation,
-              shelfName: inventoryLocation.location.shelfName,
-              rowName: inventoryLocation.location.rowName,
-              columnIndex: inventoryLocation.location.columnIndex,
-              category: product.category,
-              status: 'pending',
-              priority: newQty === 0 ? 'high' : 'medium',
-              reason: `Stock depleted after release (Release ID: ${releaseId})`,
-              requestedBy: currentUser?.uid || 'system',
-              requestedByName: currentUser?.displayName || currentUser?.email || 'System',
-              createdAt: serverTimestamp(),
+            if (newQty < 0) {
+              throw new Error(`Insufficient stock for ${product.name}. Available: ${currentQty}, Requested: ${releasedQty}`);
+            }
+
+            // Update the variant quantity
+            const updatedVariants = {
+              ...productData.variants,
+              [inventoryLocation.variantId]: {
+                ...variantData,
+                quantity: newQty
+              }
+            };
+
+            transaction.update(inventoryLocation.productRef, {
+              variants: updatedVariants,
               updatedAt: serverTimestamp()
             });
+
+            // Generate restock request if quantity is low
+            if (newQty <= (variantData.reorderPoint || 10)) {
+
+              const restockRequestRef = doc(collection(db, 'RestockingRequests'));
+              transaction.set(restockRequestRef, {
+                productId: product.productId,
+                productName: product.name,
+                variantId: inventoryLocation.variantId,
+                variantName: product.variantName || product.name,
+                currentQuantity: newQty,
+                requestedQuantity: (variantData.reorderPoint || 10) * 2,
+                storageLocation: inventoryLocation.location.storageLocation,
+                shelfName: inventoryLocation.location.shelfName,
+                rowName: inventoryLocation.location.rowName,
+                columnIndex: inventoryLocation.location.columnIndex,
+                category: product.category,
+                status: 'pending',
+                priority: newQty === 0 ? 'high' : 'medium',
+                reason: `Stock depleted after release (Release ID: ${releaseId})`,
+                requestedBy: currentUser?.uid || 'system',
+                requestedByName: currentUser?.displayName || currentUser?.email || 'System',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+              });
+            }
+          } else {
+            // Handle products without variants (main product quantity)
+            const currentQty = Number(productData.quantity) || 0;
+            const newQty = currentQty - releasedQty;
+
+            if (newQty < 0) {
+              throw new Error(`Insufficient stock for ${product.name}. Available: ${currentQty}, Requested: ${releasedQty}`);
+            }
+
+            
+
+            transaction.update(inventoryLocation.productRef, {
+              quantity: newQty,
+              updatedAt: serverTimestamp()
+            });
+
+            // Generate restock request if quantity is low
+            if (newQty <= (productData.reorderPoint || 10)) {
+
+              const restockRequestRef = doc(collection(db, 'RestockingRequests'));
+              transaction.set(restockRequestRef, {
+                productId: product.productId,
+                productName: product.name,
+                variantId: null,
+                variantName: product.name,
+                currentQuantity: newQty,
+                requestedQuantity: (productData.reorderPoint || 10) * 2,
+                storageLocation: inventoryLocation.location.storageLocation,
+                shelfName: inventoryLocation.location.shelfName,
+                rowName: inventoryLocation.location.rowName,
+                columnIndex: inventoryLocation.location.columnIndex,
+                category: product.category,
+                status: 'pending',
+                priority: newQty === 0 ? 'high' : 'medium',
+                reason: `Stock depleted after release (Release ID: ${releaseId})`,
+                requestedBy: currentUser?.uid || 'system',
+                requestedByName: currentUser?.displayName || currentUser?.email || 'System',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+              });
+            }
           }
         });
 
-        console.log(`Successfully deducted ${releasedQty} from ${product.name}`);
       }
-      
-      console.log('All inventory deductions completed successfully');
+
     } catch (error) {
       console.error('Error in inventory deduction:', error);
       throw new Error(`Failed to update inventory: ${error.message}`);
@@ -477,12 +670,12 @@ const ReleaseMobileView = () => {
       }
 
       // Update inventory quantities (deduct released items)
-      console.log('Deducting inventory quantities...');
+
       setProcessingStep('Updating inventory...');
       await updateInventoryQuantities(products);
 
       // Update the release transaction document
-      console.log('Updating release status...');
+
       setProcessingStep('Updating release status...');
       
       const releaseRef = doc(db, 'posTransactions', releaseId);
@@ -495,44 +688,147 @@ const ReleaseMobileView = () => {
           releasedDate: releaseDetails.releasedDate,
           releasedTime: releaseDetails.releasedTime,
           releaseDateTime: new Date(`${releaseDetails.releasedDate}T${releaseDetails.releasedTime}`),
-          notes: releaseDetails.notes
+          notes: releaseDetails.notes || ''
         },
-        releasedProducts: products.map(p => ({
-          ...p,
-          releasedQty: Number(p.releasedQty)
-        })),
+        releasedProducts: products.map(p => {
+          // Create a clean object without undefined values
+          const cleanProduct = {
+            id: p.id,
+            name: p.name,
+            orderedQty: Number(p.orderedQty) || 0,
+            releasedQty: Number(p.releasedQty) || 0,
+            status: p.status || 'pending',
+            condition: p.condition || 'complete',
+            remarks: p.remarks || '',
+            productId: p.productId,
+            productName: p.productName || p.name,
+            category: p.category || '',
+            unitPrice: Number(p.unitPrice) || 0
+          };
+          
+          // Only add optional fields if they have values
+          if (p.variantId) cleanProduct.variantId = p.variantId;
+          if (p.variantName) cleanProduct.variantName = p.variantName;
+          if (p.storageLocation) cleanProduct.storageLocation = p.storageLocation;
+          if (p.shelfName) cleanProduct.shelfName = p.shelfName;
+          if (p.rowName) cleanProduct.rowName = p.rowName;
+          if (p.columnIndex !== undefined && p.columnIndex !== null) cleanProduct.columnIndex = p.columnIndex;
+          
+          return cleanProduct;
+        }),
         updatedAt: serverTimestamp()
       });
 
-      // Create a release log entry
-      console.log('Creating release log...');
+      // Create a release log entry for Stock Movement tracking
+
       setProcessingStep('Creating release log...');
       
-      const releaseLogRef = doc(collection(db, 'ReleaseLogs'));
+      const releaseTimestamp = new Date(`${releaseDetails.releasedDate}T${releaseDetails.releasedTime}`);
+      
+      // Main release log
+      const releaseLogRef = doc(collection(db, 'release_logs'));
       await setDoc(releaseLogRef, {
         releaseId: releaseId,
-        transactionId: releaseData.transactionId,
+        transactionId: releaseData.transactionId || '',
         releasedBy: currentUser?.uid || 'unknown',
         releasedByName: releaseDetails.releasedBy,
-        releaseDate: new Date(`${releaseDetails.releasedDate}T${releaseDetails.releasedTime}`),
-        products: products.filter(p => p.status === 'released').map(p => ({
-          productId: p.productId,
-          productName: p.name,
-          variantId: p.variantId,
-          variantName: p.variantName,
-          quantity: Number(p.releasedQty),
-          storageLocation: p.storageLocation,
-          condition: p.condition,
-          remarks: p.remarks
-        })),
-        customerInfo: releaseData.customerInfo,
-        cashier: releaseData.cashier,
+        releaseDate: releaseTimestamp,
+        products: products.filter(p => p.status === 'released').map(p => {
+          const logProduct = {
+            productId: p.productId || '',
+            productName: p.name || '',
+            quantity: Number(p.releasedQty) || 0,
+            orderedQty: Number(p.orderedQty) || 0,
+            condition: p.condition || 'complete',
+            remarks: p.remarks || '',
+            unitPrice: Number(p.unitPrice) || 0,
+            totalValue: (Number(p.releasedQty) || 0) * (Number(p.unitPrice) || 0),
+            category: p.category || ''
+          };
+          
+          // Add optional fields only if they exist
+          if (p.variantId) logProduct.variantId = p.variantId;
+          if (p.variantName) logProduct.variantName = p.variantName;
+          if (p.storageLocation) logProduct.storageLocation = p.storageLocation;
+          if (p.shelfName) logProduct.shelf = p.shelfName;
+          if (p.rowName) logProduct.row = p.rowName;
+          if (p.columnIndex !== undefined && p.columnIndex !== null) logProduct.column = p.columnIndex;
+          
+          return logProduct;
+        }),
+        customerInfo: releaseData.customerInfo || {},
+        cashier: releaseData.cashier || {},
         totalValue: releaseData.totals?.total || 0,
-        notes: releaseDetails.notes,
+        totalItems: products.filter(p => p.status === 'released').reduce((sum, p) => sum + Number(p.releasedQty), 0),
+        notes: releaseDetails.notes || '',
+        releaseType: 'POS Sale',
+        status: 'completed',
         createdAt: serverTimestamp()
       });
 
-      console.log('Release completed successfully!');
+      // Create individual stock movement entries for each released product
+      setProcessingStep('Recording stock movements...');
+      const stockMovementPromises = products
+        .filter(p => p.status === 'released' && Number(p.releasedQty) > 0)
+        .map(async (product) => {
+          const movementRef = doc(collection(db, 'stock_movements'));
+          
+          // Build movement object without undefined values
+          const movementData = {
+            // Movement Details
+            movementType: 'OUT',
+            reason: 'POS Sale',
+            
+            // Product Information
+            productId: product.productId || '',
+            productName: product.name || '',
+            category: product.category || '',
+            
+            // Quantity & Value
+            quantity: Number(product.releasedQty) || 0,
+            unitPrice: Number(product.unitPrice) || 0,
+            totalValue: (Number(product.releasedQty) || 0) * (Number(product.unitPrice) || 0),
+            
+            // Transaction References
+            referenceType: 'pos_transaction',
+            referenceId: releaseId,
+            transactionId: releaseData.transactionId || '',
+            releaseLogId: releaseLogRef.id,
+            
+            // Customer/Release Information
+            customer: releaseData.customerInfo?.name || 'Walk-in Customer',
+            customerPhone: releaseData.customerInfo?.phone || '',
+            releasedBy: currentUser?.uid || 'unknown',
+            releasedByName: releaseDetails.releasedBy,
+            cashier: releaseData.cashier?.name || 'Unknown',
+            
+            // Condition & Status
+            condition: product.condition || 'complete',
+            remarks: product.remarks || '',
+            status: 'completed',
+            
+            // Timestamps
+            movementDate: releaseTimestamp,
+            createdAt: serverTimestamp(),
+            
+            // Additional Context
+            notes: releaseDetails.notes || ''
+          };
+          
+          // Add optional location fields only if they exist
+          if (product.variantId) movementData.variantId = product.variantId;
+          if (product.variantName) movementData.variantName = product.variantName;
+          if (product.storageLocation) movementData.storageLocation = product.storageLocation;
+          if (product.shelfName) movementData.shelf = product.shelfName;
+          if (product.rowName) movementData.row = product.rowName;
+          if (product.columnIndex !== undefined && product.columnIndex !== null) movementData.column = product.columnIndex;
+          
+          return setDoc(movementRef, movementData);
+        });
+
+      await Promise.all(stockMovementPromises);
+
+
       setIsCompleted(true);
       setIsSubmitting(false);
 

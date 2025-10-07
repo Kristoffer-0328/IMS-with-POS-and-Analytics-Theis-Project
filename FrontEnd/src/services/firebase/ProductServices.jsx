@@ -17,7 +17,7 @@ export const ServicesProvider = ({ children }) => {
     // Simplified approach: recursively fetch all products from the nested structure
     const fetchAllProducts = async () => {
       try {
-        console.log('Fetching products from new nested structure...');
+
         const storageLocationsRef = collection(db, "Products");
         const storageLocationsSnapshot = await getDocs(storageLocationsRef);
         
@@ -25,13 +25,11 @@ export const ServicesProvider = ({ children }) => {
         
         for (const storageLocationDoc of storageLocationsSnapshot.docs) {
           const storageLocation = storageLocationDoc.id;
-          console.log(`Fetching from storage location: ${storageLocation}`);
-          
+
           // Fetch the storage unit's category
           const storageLocationData = storageLocationDoc.data();
           const unitCategory = storageLocationData.category || storageLocation;
-          console.log(`Storage unit ${storageLocation} has category: ${unitCategory}`);
-          
+
           const shelvesRef = collection(db, "Products", storageLocation, "shelves");
           const shelvesSnapshot = await getDocs(shelvesRef);
           
@@ -56,8 +54,7 @@ export const ServicesProvider = ({ children }) => {
                   getDocs(productsRef).then(productsSnapshot => {
                     return productsSnapshot.docs.map(doc => {
                       const data = doc.data();
-                      console.log(`Found product: ${data.name} in ${storageLocation}/${shelfName}/${rowName}/${columnIndex}`);
-                      
+
                       return {
                         ...data,
                         id: doc.id,
@@ -84,7 +81,8 @@ export const ServicesProvider = ({ children }) => {
                           phone: '',
                           email: ''
                         },
-                        variants: Array.isArray(data.variants) && data.variants.length > 0 ? data.variants.map((variant, index) => ({
+                        variants: (Array.isArray(data.variants) && data.variants.length > 0) || (data.variants && typeof data.variants === 'object' && Object.keys(data.variants).length > 0)
+                          ? (Array.isArray(data.variants) ? data.variants : Object.values(data.variants)).map((variant, index) => ({
                           ...variant,
                           id: `${doc.id}-${index}`,
                           variantId: variant.variantId || `${doc.id}-${index}`,
@@ -154,9 +152,8 @@ export const ServicesProvider = ({ children }) => {
         
         const productArrays = await Promise.all(productPromises);
         const allProducts = productArrays.flat();
+
         
-        console.log(`Total products found: ${allProducts.length}`);
-        console.log('Sample products:', allProducts.slice(0, 3));
         
         setProducts(allProducts);
         if (onUpdate) onUpdate(allProducts);
@@ -176,7 +173,7 @@ export const ServicesProvider = ({ children }) => {
       collection(db, "Products"),
       (snapshot) => {
         if (!isFirstLoad) {
-          console.log('Products collection changed, refetching...');
+
           fetchAllProducts();
         }
         isFirstLoad = false;
@@ -188,7 +185,7 @@ export const ServicesProvider = ({ children }) => {
 
     // Return cleanup function
     return () => {
-      console.log("Cleaning up product listeners");
+
       unsubscribe();
     };
   }, []); // Empty dependency array since it doesn't depend on any external values
@@ -295,8 +292,7 @@ const updateProductVariantsWithSupplier = async (productId, supplierId, supplier
                     variants: updatedVariants,
                     lastUpdated: new Date().toISOString()
                   });
-                  
-                  console.log(`Updated product ${productId} in ${storageLocation}/${shelfName}/${rowName}/${columnIndex} with supplier information`);
+
                   return; // Found and updated, no need to continue searching
                 }
               }
@@ -377,8 +373,7 @@ const removeSupplierFromProductVariants = async (productId, supplierId) => {
                     variants: updatedVariants,
                     lastUpdated: new Date().toISOString()
                   });
-                  
-                  console.log(`Removed supplier ${supplierId} from product ${productId} in ${storageLocation}/${shelfName}/${rowName}/${columnIndex}`);
+
                   return; // Found and updated, no need to continue searching
                 }
               }

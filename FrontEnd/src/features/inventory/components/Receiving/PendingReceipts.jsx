@@ -113,8 +113,8 @@ const PendingReceipts = () => {
     setSelectedPO(po);
     const base = `${window.location.protocol}//${window.location.host}`;
     const url = `${base}/receiving_mobile?poId=${encodeURIComponent(po.id)}`;
-    console.log('Generated QR URL:', url);
-    console.log('PO ID:', po.id);
+
+
     setQrUrl(url);
     setShowQRModal(true);
   };

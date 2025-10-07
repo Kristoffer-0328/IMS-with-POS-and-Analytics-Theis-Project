@@ -116,13 +116,12 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
 
     useEffect(() => {
         if (!selectedCategory?.name) {
-            console.log('No category selected');
+
             return;
         }
 
         try {
             const unsubscribe = listenToProducts((allProducts) => {
-                console.log('Raw products received:', allProducts);
 
                 if (!Array.isArray(allProducts)) {
                     console.error('allProducts is not an array:', allProducts);
@@ -134,13 +133,6 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                         typeof product === 'object' &&
                         product.category === selectedCategory.name &&
                         !product.isVariant;
-
-                    console.log(`Checking product: ${product?.name || 'unnamed'}`, {
-                        hasProduct: !!product,
-                        category: product?.category,
-                        expectedCategory: selectedCategory.name,
-                        isValidProduct
-                    });
 
                     return isValidProduct;
                 });
@@ -158,12 +150,10 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                     lastUpdated: product.lastUpdated || new Date().toISOString()
                 }));
 
-                console.log('Formatted products:', formattedProducts);
-
                 if (formattedProducts.length > 0) {
                     setExistingProducts(formattedProducts);
                 } else {
-                    console.log('No products found for category:', selectedCategory.name);
+
                     setExistingProducts([]);
                 }
             });
@@ -176,15 +166,11 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
     }, [selectedCategory?.name, listenToProducts]);
 
     useEffect(() => {
-        console.log('ExistingProducts updated:', {
-            length: existingProducts.length,
-            products: existingProducts
-        });
+
     }, [existingProducts]);
 
     const handleProductSelect = (productId) => {
         const product = existingProducts.find(p => p.id === productId);
-        console.log('Selected product:', product);
 
         if (product) {
             setSelectedProduct(product);
@@ -215,9 +201,8 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
         }
 
         try {
-            console.log('=== ADD VARIANT DEBUG START ===');
-            console.log('Selected Product:', selectedProduct);
-            console.log('Selected Category:', selectedCategory);
+
+
 
             // Filter out weight and type from category values and ensure no undefined values
             const filteredCategoryValues = localCategoryFields.reduce((acc, field) => {
@@ -256,8 +241,6 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                 imageUrl: variantImage || null
             };
 
-            console.log('Variant Data to Add:', variantData);
-
             // Find the correct product document first
             let productRef = null;
             let docSnap = null;
@@ -265,14 +248,13 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
 
             // First try with the provided category - search through all storage locations
             if (selectedCategory?.name) {
-                console.log('Searching for product in storage locations...');
+
                 const storageLocationsRef = collection(db, 'Products');
                 const storageLocationsSnapshot = await getDocs(storageLocationsRef);
                 
                 for (const storageDoc of storageLocationsSnapshot.docs) {
                     const storageLocation = storageDoc.id;
-                    console.log('Checking storage location:', storageLocation);
-                    
+
                     // Check if this storage location has shelves
                     try {
                         const shelvesRef = collection(db, 'Products', storageLocation, 'shelves');
@@ -280,22 +262,19 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                         
                         for (const shelfDoc of shelvesSnapshot.docs) {
                             const shelfName = shelfDoc.id;
-                            console.log('Checking shelf:', shelfName);
-                            
+
                             const rowsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows');
                             const rowsSnapshot = await getDocs(rowsRef);
                             
                             for (const rowDoc of rowsSnapshot.docs) {
                                 const rowName = rowDoc.id;
-                                console.log('Checking row:', rowName);
-                                
+
                                 const columnsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns');
                                 const columnsSnapshot = await getDocs(columnsRef);
                                 
                                 for (const columnDoc of columnsSnapshot.docs) {
                                     const columnIndex = columnDoc.id;
-                                    console.log('Checking column:', columnIndex);
-                                    
+
                                     const itemsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items');
                                     const itemsSnapshot = await getDocs(itemsRef);
                                     
@@ -304,7 +283,7 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                                             productRef = doc(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items', selectedProduct.id);
                                             docSnap = itemDoc;
                                             foundCategory = selectedCategory.name;
-                                            console.log('Found product in:', { storageLocation, shelfName, rowName, columnIndex });
+
                                             break;
                                         }
                                     }
@@ -316,7 +295,7 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                         }
                         if (productRef) break;
                     } catch (storageError) {
-                        console.log('Storage location structure not found for:', storageLocation);
+
                         continue;
                     }
                 }
@@ -328,12 +307,10 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
 
             // Get the current document data
             const currentData = docSnap.data();
-            console.log('Current Product Data:', currentData);
 
             // Get existing variants and ensure it's an array - CRITICAL FIX
             const existingVariants = Array.isArray(currentData.variants) ? [...currentData.variants] : [];
-            console.log('Existing Variants:', existingVariants);
-            
+
             // Create new variant with unique ID
             const newVariant = {
                 id: `${selectedProduct.id}_variant_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -357,12 +334,9 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                 lastUpdated: new Date().toISOString(),
                 isVariant: true
             };
-            
-            console.log('New Variant to Add:', newVariant);
-            
+
             // Add to variants array
             const updatedVariants = [...existingVariants, newVariant];
-            console.log('Updated Variants Array:', updatedVariants);
 
             // Calculate new total quantity (existing base quantity + all variant quantities)
             const variantQuantityTotal = updatedVariants.reduce((sum, variant) => 
@@ -372,12 +346,6 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
             // Preserve the original product's base quantity and add variant quantities
             const originalBaseQuantity = Number(currentData.quantity) || 0;
             const totalQuantity = originalBaseQuantity + variantQuantityTotal;
-            
-            console.log('Quantity Calculation:', {
-                originalBaseQuantity,
-                variantQuantityTotal,
-                totalQuantity
-            });
 
             // CRITICAL: Only update variants and quantity, preserve all other fields
             const updateData = {
@@ -385,19 +353,15 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                 quantity: totalQuantity,
                 lastUpdated: new Date().toISOString()
             };
-            
-            console.log('Update Data to Firebase:', updateData);
 
             // Update the document with only the necessary fields
             await updateDoc(productRef, updateData);
-
-            console.log('Product updated successfully in Firebase');
 
             // If supplier is provided, also create a supplier-product relationship record for the variant
             const currentSupplier = supplier || selectedSupplier;
             if (currentSupplier) {
                 try {
-                    console.log('Creating supplier-product link for variant...');
+
                     const variantProductId = newVariant.id; // Use the unique variant ID
                     await linkProductToSupplier(variantProductId, currentSupplier.id, {
                         supplierPrice: Number(supplierPrice) || Number(variantValue.unitPrice) || 0,
@@ -407,14 +371,12 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                         variantIndex: updatedVariants.length - 1,
                         lastUpdated: new Date().toISOString()
                     });
-                    console.log('Supplier-product link created successfully');
+
                 } catch (linkError) {
                     console.error('Error linking variant to supplier:', linkError);
                     // Don't fail the whole operation if linking fails
                 }
             }
-
-            console.log('=== ADD VARIANT DEBUG END ===');
 
             alert('Variant added successfully!');
             onBack();

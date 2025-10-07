@@ -193,15 +193,15 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
 
   // Function to handle report generation and display
   const handleGenerateReport = () => {
-    console.log('Generate Report clicked');
+
     const report = generateAnalysisReport();
-    console.log('Report generated:', !!report);
+
     if (!report) return;
 
     // Set the report content and show modal
     setReportContent(report);
     setShowReportModal(true);
-    console.log('Modal should be visible now');
+
   };
 
   // Function to download as PDF
@@ -240,15 +240,12 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
             monthNumber = (monthIndex).toString().padStart(2, '0');
           }
         }
-        
-        console.log('Fetching turnover data:', { yearFilter, monthFilter, monthNumber });
-        
+
         const result = await ReportingService.getInventoryTurnover(
           yearFilter,
           monthNumber
         );
-        
-        console.log('Received turnover data:', result);
+
         setData(result);
       } catch (err) {
         console.error('Error fetching turnover data:', err);
@@ -381,11 +378,13 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
             View and analyze your inventory turnover metrics
           </p>
         </div>
-        <button
-          onClick={onBack}
-          className="px-4 py-2 bg-white border border-gray-200 rounded-md text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 transition-colors flex items-center gap-2">
-          Back to Reports
-        </button>
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="px-4 py-2 bg-white border border-gray-200 rounded-md text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 transition-colors flex items-center gap-2">
+            Back to Reports
+          </button>
+        )}
       </div>
 
       {/* Filter Section */}

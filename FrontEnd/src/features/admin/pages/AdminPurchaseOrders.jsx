@@ -21,9 +21,9 @@ const AdminPurchaseOrders = () => {
 
   // Load POs
   useEffect(() => {
-    console.log('Setting up PO listener...');
+
     const unsubscribe = poServices.listenToPurchaseOrders((pos) => {
-      console.log('Received POs:', pos);
+
       setPurchaseOrders(pos);
       setLoading(false);
     });
@@ -33,20 +33,20 @@ const AdminPurchaseOrders = () => {
 
   // Filter POs
   const filteredPOs = purchaseOrders.filter(po => {
-    console.log('Filtering PO:', po);
+
     if (selectedStatus !== 'all' && po.status !== selectedStatus) {
-      console.log('Filtered out due to status:', po.status, 'vs', selectedStatus);
+
       return false;
     }
     if (dateRange.start && new Date(po.createdAt?.toDate()) < new Date(dateRange.start)) {
-      console.log('Filtered out due to start date');
+
       return false;
     }
     if (dateRange.end && new Date(po.createdAt?.toDate()) > new Date(dateRange.end)) {
-      console.log('Filtered out due to end date');
+
       return false;
     }
-    console.log('PO passed filters');
+
     return true;
   });
 

@@ -22,7 +22,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log('onAuthStateChanged triggered'); // Debugging
+       // Debugging
 
       setLoading(true);  // Set loading to true while checking user
 
@@ -56,7 +56,7 @@ export const AuthProvider = ({ children }) => {
       } catch (error) {
         console.error('Error fetching user data:', error);
       } finally {
-        console.log('Finally block triggered');
+
         setLoading(false);  // Always set loading to false after the async operation
       }
     });

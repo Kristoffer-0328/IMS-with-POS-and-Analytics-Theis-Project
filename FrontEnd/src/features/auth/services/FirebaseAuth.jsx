@@ -22,8 +22,6 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log('onAuthStateChanged triggered'); // Debugging
-
       setLoading(true);  // Set loading to true while checking user
 
       try {
@@ -33,6 +31,18 @@ export const AuthProvider = ({ children }) => {
 
           if (docSnap.exists()) {
             const data = docSnap.data();
+            
+            // Check if user account is deleted
+            if (data.status === 'deleted') {
+              console.error('Account has been deleted - signing out');
+              await signOut(auth);
+              setCurrentUser(null);
+              localStorage.removeItem('isAuthenticated');
+              localStorage.removeItem('userRole');
+              localStorage.removeItem('user');
+              return;
+            }
+            
             const userData = {
               uid: user.uid,
               email: data.email,
@@ -46,7 +56,13 @@ export const AuthProvider = ({ children }) => {
             localStorage.setItem('userRole', data.role);
             localStorage.setItem('user', JSON.stringify(userData));
           } else {
-            console.error('User data not found in Firestore');
+            console.error('User data not found in Firestore - signing out');
+            // If user is authenticated but has no Firestore document, sign them out
+            await signOut(auth);
+            setCurrentUser(null);
+            localStorage.removeItem('isAuthenticated');
+            localStorage.removeItem('userRole');
+            localStorage.removeItem('user');
           }
         } else {
           setCurrentUser(null);
@@ -56,8 +72,12 @@ export const AuthProvider = ({ children }) => {
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
+        // On error, clear the auth state
+        setCurrentUser(null);
+        localStorage.removeItem('isAuthenticated');
+        localStorage.removeItem('userRole');
+        localStorage.removeItem('user');
       } finally {
-        console.log('Finally block triggered');
         setLoading(false);  // Always set loading to false after the async operation
       }
     });
@@ -75,6 +95,14 @@ export const AuthProvider = ({ children }) => {
 
       if (docSnap.exists()) {
         const data = docSnap.data();
+        
+        // Check if user account is deleted
+        if (data.status === 'deleted') {
+          await signOut(auth);
+          setLoading(false);
+          return { success: false, error: 'This account has been deactivated. Please contact administrator.' };
+        }
+        
         const userData = {
           uid: user.uid,
           email: data.email,
@@ -91,12 +119,31 @@ export const AuthProvider = ({ children }) => {
         setLoading(false);  
         return { success: true, user: userData };
       } else {
-        setLoading(false);  // Make sure to set loading false in case of failure
-        return { success: false, error: 'User not found in database' };
+        // User authenticated but no Firestore document exists - sign them out
+        console.error('User authenticated but not found in Firestore database');
+        await signOut(auth);
+        setLoading(false);
+        return { success: false, error: 'Account not properly configured. Please contact administrator.' };
       }
     } catch (error) {
+      console.error('Login error in FirebaseAuth:', error);
       setLoading(false);  // Make sure to set loading false in case of error
-      return { success: false, error: 'Invalid credentials' };
+      
+      // Provide specific error messages based on error code
+      let errorMessage = 'Invalid credentials';
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email';
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = 'Incorrect password';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Invalid email format';
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = 'Too many failed attempts. Please try again later';
+      } else if (error.code === 'auth/invalid-credential') {
+        errorMessage = 'Invalid email or password';
+      }
+      
+      return { success: false, error: errorMessage };
     }
   };
 

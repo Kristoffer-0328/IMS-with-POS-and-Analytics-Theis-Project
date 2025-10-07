@@ -158,8 +158,7 @@ const ProductImageHolder = () => {
 
 // Update the ProductVerification component
 const ProductVerification = ({ products, updateProduct }) => {
-  console.log('ProductVerification rendered with products:', products);
-  
+
   if (!products || products.length === 0) {
     return (
       <div className="space-y-4">
@@ -492,11 +491,11 @@ const ReceivingMobileView = () => {
 
   // Read poId from URL parameters
   useEffect(() => {
-    console.log('Mobile receiving view loaded');
-    console.log('Current URL:', window.location.href);
+
+
     const urlParams = new URLSearchParams(window.location.search);
     const poIdParam = urlParams.get('poId');
-    console.log('PO ID from URL:', poIdParam);
+
     if (poIdParam) {
       setPoId(poIdParam);
       setIsLoading(true);
@@ -504,28 +503,28 @@ const ReceivingMobileView = () => {
       // Fetch PO data from Firestore
       const fetchPO = async () => {
         try {
-          console.log('Fetching PO data for:', poIdParam);
+
           const poRef = doc(db, 'purchase_orders', poIdParam);
           const poDoc = await getDoc(poRef);
           
           if (poDoc.exists()) {
             const poData = poDoc.data();
-            console.log('PO Data:', poData);
+
             setPoData(poData);
             
             // Update PO status to 'receiving_in_progress' if not already
             if (poData.status !== 'receiving_in_progress' && poData.status !== 'received') {
-              console.log('Updating PO status to receiving_in_progress');
+
               await updateDoc(poRef, {
                 status: 'receiving_in_progress',
                 receivingStartedAt: serverTimestamp(),
                 receivingStartedBy: 'mobile_user', // You can get actual user if auth is implemented
                 updatedAt: serverTimestamp()
               });
-              console.log('PO status updated to receiving_in_progress');
+
             }
           } else {
-            console.log('PO document does not exist');
+
           }
         } catch (err) {
           console.error('Error fetching PO:', err);
@@ -542,7 +541,7 @@ const ReceivingMobileView = () => {
   // Separate effect to handle setting products when PoData is available
   useEffect(() => {
     if (PoData && PoData.items && PoData.items.length > 0) {
-      console.log('Setting products from PO items:', PoData.items);
+
       setProducts(
         PoData.items.map((item, idx) => ({
           id: item.productId || `item-${idx}`,
@@ -558,7 +557,7 @@ const ReceivingMobileView = () => {
         }))
       );
     } else if (PoData) {
-      console.log('No items found in PO data');
+
     }
   }, [PoData]);
 
@@ -592,7 +591,7 @@ const ReceivingMobileView = () => {
             
             // Retry logic
             if (retryCount < RETRY_ATTEMPTS) {
-              console.log(`Retrying upload (${retryCount + 1}/${RETRY_ATTEMPTS}) for ${file.name}`);
+              
               setTimeout(() => {
                 uploadFileToFirebase(file, onProgress, retryCount + 1)
                   .then(resolve)
@@ -662,7 +661,7 @@ const ReceivingMobileView = () => {
 
   // Function to find product in inventory by searching all locations
   const findProductInInventory = async (productId, productName) => {
-    console.log(`Searching for product ${productName} (ID: ${productId}) in inventory...`);
+    
     
     try {
       // Get all storage locations
@@ -671,8 +670,7 @@ const ReceivingMobileView = () => {
       
       for (const storageDoc of storageSnapshot.docs) {
         const storageLocation = storageDoc.id;
-        console.log(`Searching in storage location: ${storageLocation}`);
-        
+
         // Get all shelves in this storage location
         const shelvesCollection = collection(db, 'Products', storageLocation, 'shelves');
         const shelvesSnapshot = await getDocs(shelvesCollection);
@@ -699,7 +697,7 @@ const ReceivingMobileView = () => {
               const productDoc = await getDoc(productRef);
               
               if (productDoc.exists()) {
-                console.log(`Found product ${productName} at: ${storageLocation}/${shelfName}/${rowName}/${columnIndex}`);
+
                 return {
                   ref: productRef,
                   data: productDoc.data(),
@@ -715,8 +713,7 @@ const ReceivingMobileView = () => {
           }
         }
       }
-      
-      console.log(`Product ${productName} not found in any inventory location`);
+
       return null;
       
     } catch (error) {
@@ -728,16 +725,15 @@ const ReceivingMobileView = () => {
   // Function to update inventory quantities by adding received items
   const updateInventoryQuantities = async (receivedProducts) => {
     try {
-      console.log('Starting inventory update for received products:', receivedProducts);
-      
+
       for (const product of receivedProducts) {
         // Skip if no quantity delivered
         if (!product.deliveredQty || product.deliveredQty <= 0) {
-          console.log(`Skipping ${product.name} - no quantity delivered`);
+
           continue;
         }
 
-        console.log(`Processing product: ${product.name} (ID: ${product.productId})`);
+        
         
         // Find the product in inventory
         const productInfo = await findProductInInventory(product.productId, product.name);
@@ -756,8 +752,7 @@ const ReceivingMobileView = () => {
           }
           
           const productData = currentProductDoc.data();
-          console.log(`Current product data for ${product.name}:`, productData);
-          
+
           // Update the appropriate variant (assuming first variant for now, could be enhanced)
           let updatedVariants = [...(productData.variants || [])];
           
@@ -768,7 +763,7 @@ const ReceivingMobileView = () => {
             const newVariantQty = currentVariantQty + deliveredQty;
             updatedVariants[0].quantity = newVariantQty;
             
-            console.log(`Updated variant for ${product.name}: ${currentVariantQty} -> ${newVariantQty} (+${deliveredQty})`);
+            
             
             // Calculate new total quantity
             const totalQuantity = updatedVariants.reduce((sum, variant) => sum + (variant.quantity || 0), 0);
@@ -781,8 +776,7 @@ const ReceivingMobileView = () => {
               totalReceived: (productData.totalReceived || 0) + deliveredQty,
               lastUpdated: serverTimestamp()
             });
-            
-            console.log(`Successfully updated ${product.name} - Total quantity now: ${totalQuantity}`);
+
           } else {
             // Create a default variant with received quantity
             const deliveredQty = parseInt(product.deliveredQty);
@@ -798,14 +792,11 @@ const ReceivingMobileView = () => {
               totalReceived: (productData.totalReceived || 0) + deliveredQty,
               lastUpdated: serverTimestamp()
             });
-            
-            console.log(`Created default variant for ${product.name} with quantity ${deliveredQty}`);
+
           }
         });
       }
-      
-      console.log('All inventory updates completed successfully');
-      
+
     } catch (error) {
       console.error('Error in inventory update:', error);
       throw new Error(`Failed to update inventory: ${error.message}`);
@@ -822,10 +813,9 @@ const ReceivingMobileView = () => {
     try {
       setIsSubmitting(true);
       setProcessingStep('Initializing...');
-      console.log('Starting receiving data save process...');
 
       // TEMPORARILY DISABLED: Skip file uploads due to Firebase Storage issues
-      console.log('File uploads temporarily disabled - skipping upload process');
+
       setProcessingStep('Skipping file uploads (temporarily disabled)...');
       
       // Create empty array for uploaded file URLs since we're not uploading
@@ -833,7 +823,7 @@ const ReceivingMobileView = () => {
       
       // Log what would have been uploaded
       if (uploadedFiles.length > 0) {
-        console.log('Files that would have been uploaded:', uploadedFiles.map(f => f.name));
+        
       }
 
       // Prepare data for Firestore
@@ -858,12 +848,12 @@ const ReceivingMobileView = () => {
       };
 
       // Update inventory quantities with received products
-      console.log('Updating inventory quantities...');
+
       setProcessingStep('Updating inventory...');
       await updateInventoryQuantities(receivingData.products);
       
       // Update Purchase Order status and received quantities
-      console.log('Updating Purchase Order status...');
+
       setProcessingStep('Updating Purchase Order...');
       if (poId) {
         const poRef = doc(db, 'purchase_orders', poId);
@@ -886,12 +876,11 @@ const ReceivingMobileView = () => {
           deliveryDetails: receivingData.deliveryDetails,
           updatedAt: serverTimestamp()
         });
-        
-        console.log('Purchase Order updated with received status and summary:', orderSummary);
+
       }
 
       // Save receiving transaction record (similar to POS transactions)
-      console.log('Logging receiving transaction...');
+
       setProcessingStep('Logging transaction...');
       const receivingTransactionData = {
         transactionId: `REC-${Date.now()}`,
@@ -921,14 +910,74 @@ const ReceivingMobileView = () => {
       };
       
       await addDoc(collection(db, 'receivingTransactions'), receivingTransactionData);
-      console.log('Receiving transaction logged with ID:', receivingTransactionData.transactionId);
 
       // Save to Firestore
-      console.log('Saving receiving record...');
+
       setProcessingStep('Saving record...');
       const docRef = await addDoc(collection(db, 'receivingRecords'), receivingData);
+
+      // Create stock movement entries for each received product
+
+      setProcessingStep('Recording stock movements...');
       
-      console.log('Receiving data saved with ID:', docRef.id);
+      const receivingTimestamp = new Date(`${deliveryDetails.deliveryDate}T${deliveryDetails.deliveryTime}`);
+      
+      const stockMovementPromises = acceptedProducts.map(async (product) => {
+        const movementRef = collection(db, 'stock_movements');
+        return addDoc(movementRef, {
+          // Movement Type
+          movementType: 'IN',
+          reason: 'Supplier Delivery',
+          
+          // Product Information
+          productId: product.productId,
+          productName: product.name,
+          variantId: product.variantId || null,
+          variantName: product.variantName || null,
+          
+          // Quantity & Value
+          quantity: Number(product.deliveredQty),
+          orderedQty: Number(product.orderedQty),
+          unitPrice: product.unitPrice || 0,
+          totalValue: (Number(product.deliveredQty) * (product.unitPrice || 0)),
+          
+          // Location Information (will be filled when inventory is updated)
+          storageLocation: null,
+          shelf: null,
+          row: null,
+          column: null,
+          
+          // Transaction References
+          referenceType: 'receiving_record',
+          referenceId: docRef.id,
+          poId: poId,
+          drNumber: deliveryDetails.drNumber,
+          invoiceNumber: deliveryDetails.invoiceNumber || null,
+          
+          // Supplier Information
+          supplier: PoData?.supplier?.name || 'Unknown Supplier',
+          supplierContact: PoData?.supplier?.contact || '',
+          
+          // Delivery Information
+          driverName: deliveryDetails.driverName,
+          deliveryDate: receivingTimestamp,
+          
+          // Condition & Status
+          condition: product.condition,
+          remarks: product.remarks || '',
+          status: 'completed',
+          
+          // Timestamps
+          movementDate: receivingTimestamp,
+          createdAt: new Date(),
+          
+          // Additional Context
+          notes: deliveryDetails.notes || ''
+        });
+      });
+      
+      await Promise.all(stockMovementPromises);
+
       setProcessingStep('Completed!');
       clearTimeout(timeoutId); // Clear timeout since we succeeded
       return docRef.id;

@@ -183,9 +183,7 @@ export const printReceiptContent = (data) => {
         time: data.time,
         cashier: data.cashier || 'Unknown Cashier'
     };
-    
-    console.log('Generating receipt with data:', receiptData);
-    
+
     const htmlContent = generateReceiptHtml(receiptData); // Generate the HTML first
 
     // Check if HTML generation failed (e.g., due to invalid data)

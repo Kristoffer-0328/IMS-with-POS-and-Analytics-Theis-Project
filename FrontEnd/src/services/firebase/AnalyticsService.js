@@ -67,7 +67,6 @@ export const AnalyticsService = {
         snapshot_type: 'daily'
       });
 
-      console.log(`Created inventory snapshot for ${dateId}`);
       return { dateId, totalValue, totalQuantity };
     } catch (error) {
       console.error('Error creating inventory snapshot:', error);
@@ -143,7 +142,6 @@ export const AnalyticsService = {
         timestamp: serverTimestamp()
       });
 
-      console.log(`Created sales aggregation for ${dateId}`);
       return { dateId, ...salesData };
     } catch (error) {
       console.error('Error creating sales aggregation:', error);
@@ -255,7 +253,7 @@ export const AnalyticsService = {
           timestamp: serverTimestamp(),
           snapshot_type: 'daily'
         });
-        console.log(`Created test inventory snapshot for ${snapshot.date}`);
+
       }
 
       return testData;
@@ -268,8 +266,7 @@ export const AnalyticsService = {
   // Update inventory snapshot after receiving products
   async updateInventorySnapshotAfterReceiving(receivedItems) {
     try {
-      console.log('Updating inventory snapshot after receiving:', receivedItems);
-      
+
       // Get today's date in YYYYMMDD format
       const dateId = formatDate(new Date());
       const snapshotRef = doc(db, 'inventory_snapshots', dateId);
@@ -340,7 +337,6 @@ export const AnalyticsService = {
           lastUpdated: serverTimestamp()
         }, { merge: true });
 
-        console.log('Updated inventory snapshot after receiving');
       } else {
         // If no snapshot exists for today, create a new one
         await this.createInventorySnapshot();
@@ -356,8 +352,7 @@ export const AnalyticsService = {
   // Record sale transaction for analytics
   async recordSale(saleData) {
     try {
-      console.log('Recording sale analytics:', saleData);
-      
+
       // Create a simplified analytics record
       const analyticsRecord = {
         transactionId: saleData.transactionId,
@@ -377,8 +372,7 @@ export const AnalyticsService = {
       // Save to analytics collection
       const analyticsRef = doc(db, 'salesAnalytics', saleData.transactionId);
       await setDoc(analyticsRef, analyticsRecord);
-      
-      console.log('Sale analytics recorded successfully');
+
       return true;
     } catch (error) {
       console.error('Error recording sale analytics:', error);

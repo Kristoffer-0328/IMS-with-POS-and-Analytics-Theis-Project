@@ -131,13 +131,13 @@ export default function Pos_NewSale() {
 
   // --- Products loading effect ---
   useEffect(() => {
-    console.log('POS: Setting up product listener...');
+
     setProductsLoading(true);
     setProductsError(null);
     
     const unsubscribe = listenToProducts((loadedProducts) => {
-      console.log('POS: Products loaded:', loadedProducts.length);
-      console.log('POS: Sample product structure:', loadedProducts[0]); // Log the first product structure
+
+       // Log the first product structure
       setProducts(loadedProducts);
       setProductsLoading(false);
       setProductsError(null);
@@ -145,7 +145,7 @@ export default function Pos_NewSale() {
     
     return () => {
       if (unsubscribe) {
-        console.log('POS: Cleaning up product listener');
+
         unsubscribe();
       }
     };
@@ -205,13 +205,7 @@ export default function Pos_NewSale() {
 
   // --- Add Product Functions ---
   const addProduct = useCallback((productData) => {
-    console.log('Adding product to cart:', {
-      name: productData.name,
-      price: productData.price,
-      qty: productData.qty,
-      unit: productData.unit
-    });
-    
+
     const newItem = {
       ...productData,
       cartId: `${productData.id || productData.variantId}_${Date.now()}_${Math.random()}`
@@ -241,8 +235,7 @@ export default function Pos_NewSale() {
     // Reset states
     setQuantity(1);
     setSelectedUnit('');
-    
-    console.log('Product added successfully');
+
   }, []);
 
   // Enhanced variant handling
@@ -268,16 +261,7 @@ export default function Pos_NewSale() {
       columnIndex: activeVariant.columnIndex || selectedProductForModal.columnIndex,
       fullLocation: activeVariant.fullLocation || selectedProductForModal.fullLocation
     };
-    
-    console.log('Adding variant to cart with location data:', {
-      name: cartItem.name,
-      storageLocation: cartItem.storageLocation,
-      shelfName: cartItem.shelfName,
-      rowName: cartItem.rowName,
-      columnIndex: cartItem.columnIndex,
-      fullLocation: cartItem.fullLocation
-    });
-    
+
     addProduct(cartItem);
     
     // Close modal
@@ -349,7 +333,7 @@ export default function Pos_NewSale() {
 
       // Send to analytics service
       AnalyticsService.recordSale(analyticsData);
-      console.log('Analytics data collected:', analyticsData);
+
     } catch (error) {
       console.error('Error collecting analytics:', error);
     }
@@ -382,8 +366,7 @@ export default function Pos_NewSale() {
 
       // Close modal
       setShowQuotationModal(false);
-      
-      console.log('Quotation generated successfully:', quotationData.quotationNumber);
+
     } catch (error) {
       console.error('Error generating quotation:', error);
       alert('Error generating quotation. Please try again.');
@@ -522,17 +505,7 @@ export default function Pos_NewSale() {
     setIsPaymentProcessing(true);
 
     try {
-      console.log('Processing transaction with products:', addedProducts.map(item => ({
-        name: item.name,
-        id: item.id,
-        variantId: item.variantId,
-        storageLocation: item.storageLocation,
-        shelfName: item.shelfName,
-        rowName: item.rowName,
-        columnIndex: item.columnIndex,
-        qty: item.qty,
-        price: item.price
-      })));
+      
       
       const transactionId = `TXN-${Date.now()}`;
       const { formattedDate, formattedTime } = getFormattedDateTime();
@@ -575,22 +548,11 @@ export default function Pos_NewSale() {
       await runTransaction(db, async (transaction) => {
         // Update inventory quantities using the correct Firebase structure
         for (const item of addedProducts) {
-          console.log('Processing inventory update for item:', {
-            name: item.name,
-            id: item.id,
-            variantId: item.variantId,
-            storageLocation: item.storageLocation,
-            shelfName: item.shelfName,
-            rowName: item.rowName,
-            columnIndex: item.columnIndex,
-            qty: item.qty
-          });
-          
+
           if (item.storageLocation && item.shelfName && item.rowName && item.columnIndex) {
             // Construct the correct path: Products/{storageLocation}/shelves/{shelfName}/rows/{rowName}/columns/{columnIndex}/items/{productId}
             const productRef = doc(db, 'Products', item.storageLocation, 'shelves', item.shelfName, 'rows', item.rowName, 'columns', item.columnIndex.toString(), 'items', item.variantId || item.id);
-            console.log('Attempting to update product at path:', `Products/${item.storageLocation}/shelves/${item.shelfName}/rows/${item.rowName}/columns/${item.columnIndex}/items/${item.variantId || item.id}`);
-            
+
             const productDoc = await transaction.get(productRef);
             
             if (productDoc.exists()) {
@@ -603,8 +565,7 @@ export default function Pos_NewSale() {
                 totalSold: (productDoc.data().totalSold || 0) + item.qty,
                 lastUpdated: serverTimestamp()
               });
-              
-              console.log(`Updated inventory for ${item.name}: ${currentQty} -> ${newQty}`);
+
             } else {
               console.warn(`Product not found at path: Products/${item.storageLocation}/shelves/${item.shelfName}/rows/${item.rowName}/columns/${item.columnIndex}/items/${item.variantId || item.id}`);
             }
@@ -750,15 +711,7 @@ export default function Pos_NewSale() {
               products={filteredProducts}
               onProductSelect={(product) => {
                 // Always open variant selection modal for quantity input
-                console.log('Product selected for modal:', {
-                  name: product.name,
-                  id: product.id,
-                  storageLocation: product.storageLocation,
-                  shelfName: product.shelfName,
-                  rowName: product.rowName,
-                  columnIndex: product.columnIndex,
-                  variants: product.variants
-                });
+
                 setSelectedProductForModal(product);
                 setVariantModalOpen(true);
               }}

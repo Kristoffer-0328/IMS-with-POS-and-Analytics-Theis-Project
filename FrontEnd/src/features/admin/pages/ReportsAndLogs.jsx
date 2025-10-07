@@ -1,39 +1,34 @@
 import React, { useState } from 'react';
 import { FiActivity, FiBarChart, FiFileText } from 'react-icons/fi';
-
-import ReportCard from '../../inventory/components/Reports/ReportCard';
-import ReportHeader from '../../inventory/components/Reports/ReportHeader';
+import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
 import InventoryTurnoverReport from '../../inventory/components/Reports/InventoryTurnOverReport';
 import StockMovementReport from '../../inventory/components/Reports/StockMovementReport';
 import ShrinkageReport from '../../inventory/components/Reports/ShrinkageReport';
 import TestDataGenerator from '../../inventory/components/Reports/TestDataGenerator';
 
 const ReportsAndLogs = () => {
-  const [selectedReport, setSelectedReport] = useState(null);
+  const [activeTab, setActiveTab] = useState('inventory-turnover');
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
   const [monthFilter, setMonthFilter] = useState(
     new Date().toLocaleString('default', { month: 'long' })
   );
 
-  // Report data
-  const reports = [
+  // Tabs configuration
+  const tabs = [
     {
       id: 'inventory-turnover',
-      title: 'Inventory Turnover Report',
-      description: 'View the turnover rate of your inventory',
-      icon: <FiActivity size={24} className="text-green-500" />,
+      label: 'Inventory Turnover',
+      icon: <FiActivity size={20} />,
     },
     {
       id: 'stock-movement',
-      title: 'Stock Movement History',
-      description: 'Track past movements of stocks',
-      icon: <FiBarChart size={24} className="text-blue-500" />,
+      label: 'Stock Movement',
+      icon: <FiBarChart size={20} />,
     },
     {
       id: 'shrinkage',
-      title: 'Shrinkage & Adjustment Report',
-      description: 'Analyze Inventory Shrinkage and adjustments',
-      icon: <FiFileText size={24} className="text-indigo-500" />,
+      label: 'Shrinkage & Adjustments',
+      icon: <FiFileText size={20} />,
     },
   ];
 
@@ -67,47 +62,9 @@ const ReportsAndLogs = () => {
     ],
   };
 
-  // Handle report selection
-  const handleSelectReport = (reportId) => {
-    setSelectedReport(reportId);
-  };
-
-  // Handle going back to the reports dashboard
-  const handleBack = () => {
-    setSelectedReport(null);
-  };
-
-  // Render main reports dashboard
-  const renderReportsDashboard = () => {
-    return (
-      <div className="w-full">
-        <div className="bg-gradient-to-r from-orange-100/60 to-amber-100/30 rounded-xl p-8 mb-8">
-          <h1 className="text-3xl font-bold text-gray-800 mb-1">
-            Monthly Reports
-          </h1>
-          <p className="text-gray-600">
-            View and generate reports for your inventory management
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {reports.map((report) => (
-            <ReportCard
-              key={report.id}
-              title={report.title}
-              description={report.description}
-              icon={report.icon}
-              onClick={() => handleSelectReport(report.id)}
-            />
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  // Render specific report based on selection
-  const renderReport = () => {
-    switch (selectedReport) {
+  // Render content based on active tab
+  const renderTabContent = () => {
+    switch (activeTab) {
       case 'inventory-turnover':
         return (
           <InventoryTurnoverReport
@@ -116,23 +73,51 @@ const ReportsAndLogs = () => {
             monthFilter={monthFilter}
             setYearFilter={setYearFilter}
             setMonthFilter={setMonthFilter}
-            onBack={handleBack}
+            onBack={() => {}} // No back button needed in tab view
           />
         );
       case 'stock-movement':
-        return <StockMovementReport onBack={handleBack} />;
+        return <StockMovementReport onBack={() => {}} />;
       case 'shrinkage':
-        return <ShrinkageReport onBack={handleBack} />;
+        return <ShrinkageReport onBack={() => {}} />;
       default:
-        return renderReportsDashboard();
+        return null;
     }
   };
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto p-6 bg-gray-50">
-      <ReportHeader />
-      {renderReport()}
-      <TestDataGenerator />
+    <div className="min-h-screen bg-gray-50">
+      <DashboardHeader />
+      
+      <div className="p-6">
+        {/* Tab Navigation */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
+          <div className="flex border-b border-gray-200">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors border-b-2 ${
+                  activeTab === tab.id
+                    ? 'border-orange-500 text-orange-600 bg-orange-50'
+                    : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                {tab.icon}
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Tab Content */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          {renderTabContent()}
+        </div>
+
+        {/* Test Data Generator */}
+        <TestDataGenerator />
+      </div>
     </div>
   );
 };

@@ -37,7 +37,7 @@ const DashboardHeader = () => {
   const location = useLocation();
 
   // Debug: Log when component renders
-  console.log('🔍 DashboardHeader rendering at:', new Date().toISOString(), 'for path:', location.pathname);
+  
 
   useClickOutside(notificationsRef, () => setShowNotifications(false));
 
@@ -48,8 +48,6 @@ const DashboardHeader = () => {
       where('status', '==', 'pending'),
       where('type', '==', 'restock_alert')
     );
-
-    console.log("Setting up notifications listener...");
 
     // Set up real-time listener with error handling
     const unsubscribe = onSnapshot(
