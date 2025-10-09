@@ -28,32 +28,70 @@ const AdminSidebar = () => {
   };
 
   const navItems = [
-   {
-      path: '/admin',
-      icon: <FiBox size={20} />,
-      label: 'Products Stock',
-    },
+    // Inventory Management Section
     {
-      path: '/admin/purchase-orders',
-      icon: <FiShoppingBag size={20} />,
-      label: 'Purchase Orders',
+      section: 'Inventory',
+      items: [
+        {
+          path: '/admin',
+          icon: <FiBox size={20} />,
+          label: 'Products Stock',
+        },
+        {
+          path: '/admin/purchase-orders',
+          icon: <FiShoppingBag size={20} />,
+          label: 'Purchase Orders',
+        },
+      ]
     },
+    // Sales Section
     {
-      path: '/admin/audit-trail',
-      icon: <FiActivity size={20} />,
-      label: 'Audit Trail',
+      section: 'Sales',
+      items: [
+        {
+          path: '/admin/transaction-history',
+          icon: <FiShoppingCart size={20} />,
+          label: 'Transaction History',
+        },
+      ]
     },
+    // Reports Section
     {
-      path: '/admin/system-logs',
-      icon: <FiList size={20} />,
-      label: 'System Logs',
+      section: 'Reports',
+      items: [
+        {
+          path: '/admin/reports',
+          icon: <FiFileText size={20} />,
+          label: 'Reports & Logs',
+        },
+      ]
     },
-    { path: '/admin/team', icon: <FiUsers size={20} />, label: 'Team' },
+    // System Section
     {
-      path: '#',
-      icon: <FiLogOut size={20} />,
-      label: 'Logout',
-      onClick: handleLogout,
+      section: 'System',
+      items: [
+        {
+          path: '/admin/audit-trail',
+          icon: <FiActivity size={20} />,
+          label: 'Audit Trail',
+        },
+        {
+          path: '/admin/system-logs',
+          icon: <FiList size={20} />,
+          label: 'System Logs',
+        },
+      ]
+    },
+    // Users Section
+    {
+      section: 'Users',
+      items: [
+        {
+          path: '/admin/team',
+          icon: <FiUsers size={20} />,
+          label: 'Team',
+        },
+      ]
     },
   ];
 
@@ -80,42 +118,68 @@ const AdminSidebar = () => {
       </div>
 
       <ul className="mt-2">
-        {navItems.map((item) => (
-          <li key={item.path} className="mb-1">
-            {item.onClick ? (
-              <button
-                onClick={item.onClick}
-                className={`w-full flex items-center px-4 py-3 text-gray-700 transition-colors hover:bg-gray-50 
-                         border-l-4 border-transparent`}>
-                <span className="text-lg text-gray-500">{item.icon}</span>
-                {!collapsed && (
-                  <span className="ml-3 truncate">{item.label}</span>
-                )}
-              </button>
-            ) : (
-              <Link
-                to={item.path}
-                className={`flex items-center px-4 py-3 text-gray-700 transition-colors hover:bg-gray-50 
-                         ${
-                           location.pathname === item.path
-                             ? 'bg-orange-50 text-[#ff7b54] font-medium border-l-4 border-[#ff7b54]'
-                             : 'border-l-4 border-transparent'
-                         }`}>
-                <span
-                  className={`text-lg ${
-                    location.pathname === item.path
-                      ? 'text-[#ff7b54]'
-                      : 'text-gray-500'
-                  }`}>
-                  {item.icon}
-                </span>
-                {!collapsed && (
-                  <span className="ml-3 truncate">{item.label}</span>
-                )}
-              </Link>
+        {navItems.map((section, sectionIndex) => (
+          <div key={sectionIndex}>
+            {/* Section Header */}
+            {!collapsed && (
+              <div className="px-4 pt-4 pb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                {section.section}
+              </div>
             )}
-          </li>
+            {collapsed && sectionIndex > 0 && (
+              <div className="mx-4 my-2 border-t border-gray-200"></div>
+            )}
+            
+            {/* Section Items */}
+            {section.items.map((item) => (
+              <li key={item.path} className="mb-1">
+                <Link
+                  to={item.path}
+                  className={`flex items-center px-4 py-3 text-gray-700 transition-colors hover:bg-gray-50 
+                           ${
+                             location.pathname === item.path
+                               ? 'bg-orange-50 text-[#ff7b54] font-medium border-l-4 border-[#ff7b54]'
+                               : 'border-l-4 border-transparent'
+                           }`}>
+                  <span
+                    className={`text-lg ${
+                      location.pathname === item.path
+                        ? 'text-[#ff7b54]'
+                        : 'text-gray-500'
+                    }`}>
+                    {item.icon}
+                  </span>
+                  {!collapsed && (
+                    <span className="ml-3 truncate">{item.label}</span>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </div>
         ))}
+        
+        {/* Logout Button - Separate from grouped items */}
+        {!collapsed && (
+          <div className="px-4 pt-4 pb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider border-t border-gray-200 mt-4">
+            Account
+          </div>
+        )}
+        {collapsed && (
+          <div className="mx-4 my-2 border-t border-gray-200"></div>
+        )}
+        <li className="mb-1">
+          <button
+            onClick={handleLogout}
+            className={`w-full flex items-center px-4 py-3 text-gray-700 transition-colors hover:bg-gray-50 
+                     border-l-4 border-transparent`}>
+            <span className="text-lg text-gray-500">
+              <FiLogOut size={20} />
+            </span>
+            {!collapsed && (
+              <span className="ml-3 truncate">Logout</span>
+            )}
+          </button>
+        </li>
       </ul>
     </div>
   );

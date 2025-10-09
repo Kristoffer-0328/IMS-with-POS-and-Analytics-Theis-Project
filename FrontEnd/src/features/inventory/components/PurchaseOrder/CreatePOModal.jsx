@@ -43,7 +43,7 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
           id: doc.id,
           ...doc.data()
         }));
-        console.log('Restock requests:', requests);
+
         setRestockRequests(requests);
 
         // Load suppliers
@@ -83,8 +83,7 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
       );
 
       if (product && product.supplier) {
-        console.log('Product supplier structure:', product.supplier);
-        
+
         // Properly extract supplier name (handle both string and object cases)
         const supplierName = typeof product.supplier.name === 'string' 
           ? product.supplier.name 
@@ -102,7 +101,7 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
             restockCount: 0,
             products: []
           });
-          console.log('Created supplier map entry:', supplierMap.get(supplierKey));
+          
         }
         
         const supplierData = supplierMap.get(supplierKey);
@@ -193,13 +192,12 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
 
     try {
       // Debug logging to see what we have
-      console.log('Selected supplier object:', selectedSupplier);
-      console.log('Selected supplier keys:', Object.keys(selectedSupplier || {}));
+
+      
       
       // Ensure we have a valid supplier ID
       const supplierIdToUse = selectedSupplier.primaryCode || selectedSupplier.code;
-      console.log('Supplier ID to use:', supplierIdToUse);
-      
+
       if (!supplierIdToUse) {
         console.error('No supplier ID found in:', selectedSupplier);
         throw new Error('Supplier ID (primaryCode or code) is missing');
@@ -227,10 +225,8 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
         }
       };
 
-      console.log('Creating PO with data:', poData);
       const result = await poServices.createPurchaseOrder(poData);
-      console.log('PO creation result:', result);
-      
+
       if (!result.success) {
         throw new Error(result.error);
       }

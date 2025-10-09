@@ -21,13 +21,13 @@ import SystemLogs from './features/admin/pages/System_log';
 import Team from './features/admin/pages/Team';
 import AdminSidebar from './features/admin/pages/AdminSidebar';
 import AdminPurchaseOrders from './features/admin/pages/AdminPurchaseOrders';
+import ReportsAndLogs from './features/admin/pages/ReportsAndLogs';
 
 // IM Interface
 import IMDashboard from './features/inventory/pages/IMDashboard';
 import Inventory from './features/inventory/pages/Inventory';
 import StockTransfer from './features/inventory/pages/StockTransfer';
 import RestockingRequest from './features/inventory/pages/RestockingRequest';
-import ReportsAndLogs from './features/inventory/pages/ReportsAndLogs';
 import Settings from './features/inventory/pages/Settings';
 import IMSidebar from './features/inventory/pages/IMSidebar';
 import LoadingScreen from './features/inventory/components/LoadingScreen';
@@ -35,11 +35,12 @@ import PurchaseOrders from './features/inventory/pages/PurchaseOrders';
 import ReceivingManagement from './features/inventory/pages/ReceivingManagement';
 import SupplierManagement from './features/inventory/pages/SupplierManagement';
 import ReceivingMobileView from './features/inventory/pages/receiving_mobile_view';
+import ReleaseMobileView from './features/inventory/pages/release_mobile_view';
 // POS cashier Interface
 
 import Pos_Sidebar from './features/pos/pages/Pos_Sidebar';
 import Pos_NewSale from './features/pos/pages/Pos_NewSale';
-import Pos_SalesReport from './features/pos/pages/Pos_SalesReport';
+import Pos_Quotation from './features/pos/pages/Pos_Quotation';
 import Pos_Settings from './features/pos/pages/Pos_Settings';
 import Pos_Transaction_History from './features/pos/pages/Pos_TransactionHistory';
 // Layouts
@@ -56,7 +57,7 @@ const IMLayout = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
 
   // Debug: Log when IMLayout renders
-  console.log('🏗️ IMLayout rendering at:', new Date().toISOString());
+  
 
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
@@ -80,7 +81,7 @@ const pos_CashierLayout = ({ children }) => {
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
       <Pos_Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
-      {console.log("Sidebar collapsed:", collapsed)}
+      
       <main
         id="content"
         className={`flex-1 transition-all duration-300
@@ -101,10 +102,7 @@ const ProtectedRoute = ({ allowedRole, layout: Layout, children }) => {
   
   // Check if user is logged in and has the correct role
   if (!currentUser || currentUser.role !== allowedRole) {
-    console.log('Access denied:', { 
-      userRole: currentUser?.role, 
-      requiredRole: allowedRole 
-    });
+
     return <Navigate to="/unauthorized" />;
   }
   
@@ -138,6 +136,7 @@ const AppRoutes = () => {
       <Route path="/logout" element={<Logout />} />
       <Route path="/loading" element={<LoadingScreen />}/>
       <Route path="/receiving_mobile" element={<ReceivingMobileView/>}/>
+      <Route path="/release_mobile" element={<ReleaseMobileView/>}/>
       
       {/* Admin */}
       <Route
@@ -178,6 +177,22 @@ const AppRoutes = () => {
         element={
           <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
             <AdminPurchaseOrders />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/reports"
+        element={
+          <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
+            <ReportsAndLogs />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/transaction-history"
+        element={
+          <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
+            <Pos_Transaction_History />
           </ProtectedRoute>
         }
       />
@@ -241,14 +256,6 @@ const AppRoutes = () => {
         }
       />
       <Route
-        path="/im/reports"
-        element={
-          <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
-            <ReportsAndLogs />
-          </ProtectedRoute>
-        }
-      />
-      <Route
         path="/im/settings"
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
@@ -266,18 +273,10 @@ const AppRoutes = () => {
         }
         />
          <Route
-        path='/pos/salesreport'
+        path='/pos/quotation'
         element={
           <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
-            <Pos_SalesReport/>
-          </ProtectedRoute>
-        }
-        />
-         <Route
-        path='/pos/THistory'
-        element={
-          <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
-            <Pos_Transaction_History/>
+            <Pos_Quotation/>
           </ProtectedRoute>
         }
         />

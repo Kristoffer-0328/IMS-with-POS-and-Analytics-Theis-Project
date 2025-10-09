@@ -48,7 +48,6 @@ export const TransferFormModal = ({ isOpen, onClose }) => {
       };
 
       const docRef = await addDoc(collection(db, "StockTransfers"), newTransfer);
-      console.log("Transfer created with ID: ", docRef.id);
 
       alert("Transfer Form Submitted. QR Code will be generated next.");
       onClose();

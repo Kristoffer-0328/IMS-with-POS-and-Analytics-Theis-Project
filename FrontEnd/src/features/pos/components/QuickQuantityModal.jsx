@@ -7,6 +7,11 @@ const QuickQuantityModal = ({
   onAdd,
   maxQuantity
 }) => {
+  // Early return if product is null
+  if (!product) {
+    return null;
+  }
+
   const [quantity, setQuantity] = useState('1');
   
   const handleQuantityChange = (e) => {
@@ -150,7 +155,7 @@ const QuickQuantityModal = ({
             disabled={quantity === '' || parseInt(quantity) < 1}
             className="w-full py-2.5 rounded-lg font-medium bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Add to Cart
+            Add Item
           </button>
         </div>
       </div>

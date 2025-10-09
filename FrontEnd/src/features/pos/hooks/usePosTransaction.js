@@ -111,7 +111,7 @@ export function usePosTransaction() {
     };
 
     // --- Pre-fetch Product Data ---
-    console.log("--- Starting Pre-fetch (within hook) ---");
+    
     const productDocsToFetch = new Map();
     let preFetchErrorMsg = null;
     for (const item of transactionData.items) {
@@ -145,7 +145,7 @@ export function usePosTransaction() {
             fetchedProductData.set(path, { docRef: docRef, data: productDoc.data() });
         });
         await Promise.all(fetchPromises);
-        console.log("--- Pre-fetch Complete (within hook) ---");
+        
     } catch (error) {
         setError(`Pre-fetch Error: ${error.message}`);
         console.error("processSale pre-fetch error:", error);
@@ -156,7 +156,7 @@ export function usePosTransaction() {
     // --- Firestore Transaction ---
     try {
         await runTransaction(db, async (transaction) => {
-            console.log("--- Starting Firestore Transaction (within hook) ---");
+            
             const productUpdates = new Map();
 
             for (const item of transactionData.items) {
@@ -198,22 +198,22 @@ export function usePosTransaction() {
                     docRef: preFetchedInfo.docRef,
                     updatedVariantsData: currentVariantsData
                 });
-                console.log(`Prepared stock update (hook): ${item.name} (${item.variantId}) -> ${newStock}`);
+                
             }
 
-            console.log("--- Applying Firestore Updates (within hook) ---");
+            
             for (const [path, { docRef, updatedVariantsData }] of productUpdates.entries()) {
                 transaction.update(docRef, { variants: updatedVariantsData });
             }
 
             const finalTransactionRef = doc(collection(db, "Transactions"));
-            console.log("Creating transaction doc (hook):", finalTransactionRef.id);
+            
             transaction.set(finalTransactionRef, transactionData); // Use prepared data with server timestamp
 
-            console.log("--- Firestore Transaction Commit Attempt (within hook) ---");
+            
         }); // End runTransaction
 
-        console.log("Transaction successful (hook)!");
+        
         setIsProcessing(false);
         // Return the final transaction data (with client timestamp added for receipt use)
         return { ...transactionData, timestamp: now }; // Use 'now' for receipt

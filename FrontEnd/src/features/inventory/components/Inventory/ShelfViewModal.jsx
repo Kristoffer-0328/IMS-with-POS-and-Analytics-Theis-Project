@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { getFirestore, collection, getDocs } from 'firebase/firestore';
 import app from '../../../../FirebaseConfig';
 
-const ShelfViewModal = ({ isOpen, onClose, selectedUnit, onLocationSelect }) => {
+const ShelfViewModal = ({ isOpen, onClose, selectedUnit, onLocationSelect, highlightedProduct }) => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const db = getFirestore(app);
@@ -28,48 +28,50 @@ const ShelfViewModal = ({ isOpen, onClose, selectedUnit, onLocationSelect }) => 
     setLoading(true);
     try {
       const unitName = selectedUnit.title.split(' - ')[0]; // Extract "Unit 01" from "Unit 01 - Steel & Heavy Materials"
-      console.log('Fetching products for unit:', unitName);
-      
+
+
       const products = [];
       
       // Traverse the nested Firebase structure for this specific unit
       const shelvesRef = collection(db, 'Products', unitName, 'shelves');
       const shelvesSnapshot = await getDocs(shelvesRef);
-      
+
       for (const shelfDoc of shelvesSnapshot.docs) {
         const shelfName = shelfDoc.id;
-        
+
         const rowsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows');
         const rowsSnapshot = await getDocs(rowsRef);
-        
+
         for (const rowDoc of rowsSnapshot.docs) {
           const rowName = rowDoc.id;
           
           const columnsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows', rowName, 'columns');
           const columnsSnapshot = await getDocs(columnsRef);
-          
+
           for (const columnDoc of columnsSnapshot.docs) {
             const columnIndex = columnDoc.id;
             
             const itemsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items');
             const itemsSnapshot = await getDocs(itemsRef);
-            
+
             itemsSnapshot.docs.forEach(itemDoc => {
               const productData = itemDoc.data();
-              products.push({
+              const productInfo = {
                 ...productData,
                 id: itemDoc.id,
                 shelfName,
                 rowName,
-                columnIndex: parseInt(columnIndex),
+                columnIndex: columnIndex, // Keep as string to match
+                columnIndexNumber: parseInt(columnIndex), // Also store as number
                 locationKey: `${shelfName}-${rowName}-${columnIndex}`
-              });
+              };
+
+              products.push(productInfo);
             });
           }
         }
       }
-      
-      console.log('Found products:', products);
+
       setProducts(products);
     } catch (error) {
       console.error('Error fetching unit products:', error);
@@ -87,8 +89,41 @@ const ShelfViewModal = ({ isOpen, onClose, selectedUnit, onLocationSelect }) => 
 
   // Get product for a specific location
   const getProductAtLocation = (shelfName, rowName, columnIndex) => {
-    const locationKey = `${shelfName}-${rowName}-${columnIndex}`;
-    return products.find(product => product.locationKey === locationKey);
+    // Try matching with different column index formats
+    const locationKey1 = `${shelfName}-${rowName}-${columnIndex}`;
+    const locationKey2 = `${shelfName}-${rowName}-${String(columnIndex)}`;
+    
+    const found = products.find(product => 
+      product.locationKey === locationKey1 || 
+      product.locationKey === locationKey2 ||
+      (product.shelfName === shelfName && 
+       product.rowName === rowName && 
+       (product.columnIndex === columnIndex || 
+        product.columnIndex === String(columnIndex) ||
+        product.columnIndexNumber === columnIndex))
+    );
+    
+    if (found) {
+
+    }
+    
+    return found;
+  };
+
+  // Check if this is the highlighted product
+  const isHighlightedLocation = (shelfName, rowName, columnIndex) => {
+    if (!highlightedProduct) return false;
+    
+    
+    
+    // Match by shelf, row, and column (handle both string and number formats)
+    return (
+      highlightedProduct.shelfName === shelfName &&
+      highlightedProduct.rowName === rowName &&
+      (highlightedProduct.columnIndex === columnIndex || 
+       highlightedProduct.columnIndex === String(columnIndex) ||
+       parseInt(highlightedProduct.columnIndex) === columnIndex)
+    );
   };
 
   if (!isOpen || !selectedUnit) return null;
@@ -119,6 +154,30 @@ const ShelfViewModal = ({ isOpen, onClose, selectedUnit, onLocationSelect }) => 
               {products.length} product{products.length !== 1 ? 's' : ''} found in this unit
             </p>
           )}
+          {highlightedProduct && (
+            <div className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-orange-100 text-orange-700 rounded-lg border border-orange-300">
+              <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
+              <span className="text-sm font-medium">
+                Highlighting: {highlightedProduct.name} at {highlightedProduct.shelfName} - {highlightedProduct.rowName}
+              </span>
+            </div>
+          )}
+          
+          {/* Debug Info - Remove after fixing */}
+          {products.length > 0 && (
+            <details className="mt-4 text-left bg-gray-100 p-3 rounded">
+              <summary className="cursor-pointer text-sm font-medium text-gray-700">🔍 Debug: Show Products Data</summary>
+              <div className="mt-2 text-xs space-y-1 max-h-40 overflow-y-auto">
+                {products.map((p, i) => (
+                  <div key={i} className="bg-white p-2 rounded mb-1">
+                    <div><strong>Name:</strong> {p.name}</div>
+                    <div><strong>Location:</strong> {p.shelfName} - {p.rowName} - Col {p.columnIndex}</div>
+                    <div><strong>LocationKey:</strong> {p.locationKey}</div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </div>
         
         {/* Side by side layout for all units */}
@@ -135,6 +194,10 @@ const ShelfViewModal = ({ isOpen, onClose, selectedUnit, onLocationSelect }) => 
               </h3>
               
               {shelf.rows.map((row, rowIndex) => {
+                // Use the actual row string, not row.name
+                const rowName = typeof row === 'string' ? row : row.name || row;
+                
+                
                 // Determine the number of columns based on unit and shelf
                 const getColumnCount = () => {
                   if (selectedUnit.title.includes('Unit 01')) {
@@ -182,13 +245,14 @@ const ShelfViewModal = ({ isOpen, onClose, selectedUnit, onLocationSelect }) => 
 
                 return (
                   <div key={rowIndex} className="flex flex-col gap-2 p-2 bg-gray-50 rounded-lg border-l-4 border-blue-500 mb-3">
-                    <h4 className="mb-2 text-slate-800 text-sm font-semibold">{row.name}</h4>
+                    <h4 className="mb-2 text-slate-800 text-sm font-semibold">{rowName}</h4>
                     
                     {/* Display slots with products or empty */}
                     <div className={`grid gap-1.5 ${getGridClass(columnCount)}`}>
                       {emptySlots.map((slotIndex) => {
-                        const product = getProductAtLocation(shelf.name, row.name, slotIndex);
+                        const product = getProductAtLocation(shelf.name, rowName, slotIndex);
                         const isOccupied = !!product;
+                        const isHighlighted = isHighlightedLocation(shelf.name, rowName, slotIndex);
                         
                         return (
                           <div 
@@ -199,25 +263,36 @@ const ShelfViewModal = ({ isOpen, onClose, selectedUnit, onLocationSelect }) => 
                               }
                             }}
                             className={`border-2 rounded-md p-1.5 text-center text-xs min-h-[50px] flex flex-col items-center justify-center transition-all duration-200 ${
-                              isOccupied 
+                              isHighlighted
+                                ? 'bg-orange-100 border-orange-500 border-4 shadow-lg ring-4 ring-orange-300 animate-pulse cursor-pointer'
+                                : isOccupied 
                                 ? 'bg-green-50 border-green-300 cursor-not-allowed opacity-80' 
                                 : 'bg-white border-gray-300 hover:border-blue-500 hover:bg-blue-50 cursor-pointer hover:shadow-md'
                             }`}
                             title={
                               isOccupied 
                                 ? `${product.name} - Qty: ${product.quantity || 0} - Slot is occupied`
-                                : `Click to select ${shelf.name} - ${row.name} - Column ${slotIndex + 1}`
+                                : `Click to select ${shelf.name} - ${rowName} - Column ${slotIndex + 1}`
                             }
                           >
                             {isOccupied ? (
                               <>
-                                <span className="text-green-700 text-xs font-medium truncate w-full">
+                                <span className={`text-xs font-medium truncate w-full ${
+                                  isHighlighted ? 'text-orange-700' : 'text-green-700'
+                                }`}>
                                   {product.name.length > 8 ? product.name.substring(0, 8) + '...' : product.name}
                                 </span>
-                                <span className="text-green-600 text-[10px] mt-1">
+                                <span className={`text-[10px] mt-1 ${
+                                  isHighlighted ? 'text-orange-600' : 'text-green-600'
+                                }`}>
                                   Qty: {product.quantity || 0}
                                 </span>
                                 <span className="text-gray-400 text-[9px]">Col {slotIndex + 1}</span>
+                                {isHighlighted && (
+                                  <span className="text-orange-600 text-[10px] font-bold mt-1">
+                                    📍 HERE
+                                  </span>
+                                )}
                               </>
                             ) : (
                               <>

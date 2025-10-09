@@ -9,7 +9,6 @@ import {
   FiEye,
   FiPlus,
 } from 'react-icons/fi';
-import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import RestockRequestModal from '../components/Inventory/RequestStockModal';
 
 import { useServices } from '../../../services/firebase/ProductServices';
@@ -38,8 +37,7 @@ const RestockingRequest = () => {
       const unsubscribe = onSnapshot(restockRequestsRef, (snapshot) => {
         const requestsData = snapshot.docs.map(doc => {
           const data = doc.data();
-          console.log('Restock request data:', { id: doc.id, ...data });
-          
+
           // Handle different date formats
           let createdAtDate;
           if (data.timestamp?.toDate) {
@@ -62,7 +60,7 @@ const RestockingRequest = () => {
         });
         
         // Sort manually by createdAt in descending order
-        requestsData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));      console.log('Processed restock requests:', requestsData);
+        requestsData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));      
       setRequests(requestsData);
     }, (error) => {
       console.error('Error fetching restock requests:', error);
@@ -129,9 +127,7 @@ const RestockingRequest = () => {
   };
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto p-6 bg-gray-50">
-      <DashboardHeader />
-
+    <div className="w-full max-w-[1600px] mx-auto p-6">
       {/* Background gradient design element */}
       <div className="relative mb-6">
         <div className="absolute top-10 bottom-5 inset-0 bg-gradient-to-r from-amber-100/60 to-amber-300/40 rounded-3xl transform -skew-y-3"></div>

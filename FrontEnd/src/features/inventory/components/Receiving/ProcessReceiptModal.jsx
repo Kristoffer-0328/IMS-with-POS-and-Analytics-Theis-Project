@@ -60,7 +60,7 @@ const ProcessReceiptModal = ({ po, onClose, onProcess }) => {
       });
       
       await Promise.all(updatePromises);
-      console.log(`Updated restock request status for product: ${productId}`);
+
     } catch (error) {
       console.error('Error updating restock request status:', error);
     }

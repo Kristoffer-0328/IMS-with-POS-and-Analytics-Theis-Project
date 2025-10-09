@@ -20,19 +20,17 @@ const Login = () => {
       const result = await login(email, password);
       
       if (result.success) {
-        // Simulate a brief loading time for better UX
-        setTimeout(() => {
-          if (result.user.role === "Admin") {
-            navigate('/admin');
-          } else if (result.user.role === 'InventoryManager') {
-            navigate('/im');
-          } else if (result.user.role === 'Cashier') {
-            navigate('/pos/newsale');
-          } else {
-            setError('Invalid user role. Please contact administrator.');
-            setIsLoading(false);
-          }
-        }, 1500);
+        // Navigate based on user role
+        if (result.user.role === "Admin") {
+          navigate('/admin');
+        } else if (result.user.role === 'InventoryManager') {
+          navigate('/im');
+        } else if (result.user.role === 'Cashier') {
+          navigate('/pos/newsale');
+        } else {
+          setError('Invalid user role. Please contact administrator.');
+          setIsLoading(false);
+        }
       } else {
         setError(result.error || 'Invalid email or password. Please try again.');
         setIsLoading(false);

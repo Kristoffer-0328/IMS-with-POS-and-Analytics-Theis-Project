@@ -9,6 +9,7 @@ import {
   getDoc,
   addDoc,
   collection,
+  setDoc,
 } from 'firebase/firestore';
 import app from  '../../../FirebaseConfig';
 import { useAuth } from '../../auth/services/FirebaseAuth';
@@ -17,7 +18,6 @@ import { AnalyticsService } from '../../../services/firebase/AnalyticsService';
 // Import Components from new locations
 import SearchBar from '../components/SearchBar';
 import ProductGrid from '../components/ProductGrid';
-import CustomerInfo from '../components/CustomerInfo';
 import ProductList from '../components/Cart';
 import OrderSummary from '../components/OrderSummary';
 import PaymentSection from '../components/PaymentSection';
@@ -27,12 +27,9 @@ import UnitConversionModal from '../components/UnitConversionModal';
 // Import Modals from new locations
 import VariantSelectionModal from '../components/Modals/VariantSelectionModal';
 import QuickQuantityModal from '../components/QuickQuantityModal';
-import CustomerInfoModal from '../components/quotation/CustomerInfoModal';
 
 // Import utilities
 import { printReceiptContent } from '../utils/ReceiptGenerator';
-import QuotationGenerator from '../components/quotation/QuotationGenerator';
-import QuotationUtils from '../utils/quotationUtils';
 
 const db = getFirestore(app);
 
@@ -141,8 +138,7 @@ const generateRestockingRequest = async (productData, variantIndex, locationInfo
     
     // Save to restocking requests collection
     await addDoc(collection(db, 'restockingRequests'), restockingRequest);
-    console.log('Restocking request generated:', requestId);
-    
+
     return restockingRequest;
   } catch (error) {
     console.error('Error generating restocking request:', error);
@@ -184,8 +180,7 @@ const generateNotification = async (restockingRequest, currentUser) => {
     
     // Save to notifications collection
     await addDoc(collection(db, 'Notifications'), notification);
-    console.log('Notification generated:', notificationId);
-    
+
     return notification;
   } catch (error) {
     console.error('Error generating notification:', error);
@@ -204,6 +199,7 @@ export default function Pos_NewSale() {
   const [searchQuery, setSearchQuery] = useState('');
   const [amountPaid, setAmountPaid] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [paymentReference, setPaymentReference] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [restockingAlerts, setRestockingAlerts] = useState([]); // Track restocking alerts
 
@@ -218,17 +214,18 @@ export default function Pos_NewSale() {
   const [activeVariantIndex, setActiveVariantIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
 
-  // Customer State - Enhanced for quotation support
+  // Customer State
   const [customerDetails, setCustomerDetails] = useState({ 
-    name: '', 
+    name: 'Walk-in Customer', 
     phone: '', 
     address: '',
     email: '' 
   });
   const [customerDisplayName, setCustomerDisplayName] = useState('Walk-in Customer');
 
-  // Transaction Type State
-  const [transactionType, setTransactionType] = useState('walk-in'); // 'walk-in' or 'quotation'
+  // Quotation Lookup State
+  const [quotationNumber, setQuotationNumber] = useState('');
+  const [loadingQuotation, setLoadingQuotation] = useState(false);
 
   // Filter State
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -247,8 +244,112 @@ export default function Pos_NewSale() {
   const [quickQuantityModalOpen, setQuickQuantityModalOpen] = useState(false);
   const [selectedProductForQuantity, setSelectedProductForQuantity] = useState(null);
 
-  // Add new state for quotation modal
-  const [showQuotationModal, setShowQuotationModal] = useState(false);
+  // Function to load quotation from Firebase
+  const handleLoadQuotation = async () => {
+    if (!quotationNumber.trim()) {
+      alert('Please enter a quotation number');
+      return;
+    }
+
+    setLoadingQuotation(true);
+    try {
+      const quotationRef = doc(db, 'quotations', quotationNumber.trim());
+      const quotationSnap = await getDoc(quotationRef);
+
+      if (!quotationSnap.exists()) {
+        alert(`Quotation ${quotationNumber} not found`);
+        setLoadingQuotation(false);
+        return;
+      }
+
+      const quotationData = quotationSnap.data();
+
+      // Load customer information
+      if (quotationData.customer) {
+        setCustomerDetails({
+          name: quotationData.customer.name || 'Walk-in Customer',
+          phone: quotationData.customer.phone || '',
+          address: quotationData.customer.address || '',
+          email: quotationData.customer.email || '',
+          company: quotationData.customer.company || '',
+          projectName: quotationData.customer.projectName || ''
+        });
+        setCustomerDisplayName(quotationData.customer.name || 'Walk-in Customer');
+      }
+
+      // Load products from quotation
+      if (quotationData.items && Array.isArray(quotationData.items)) {
+        const loadedProducts = [];
+        
+        for (const item of quotationData.items) {
+           // Debug log
+          
+          // Extract price and quantity - handle both old format (price/qty) and new format (unitPrice/quantity)
+          const itemPrice = Number(item.unitPrice || item.price || 0);
+          const itemQty = Number(item.quantity || item.qty || 1);
+          const itemName = item.description || item.name || 'Unknown Product';
+          
+          // Try to find the product in the current products list
+          const productMatch = products.find(p => 
+            p.name.toLowerCase() === itemName.toLowerCase()
+          );
+
+          if (productMatch) {
+            // Add to cart with quotation details
+            loadedProducts.push({
+              id: productMatch.id || `temp-${Date.now()}-${Math.random()}`,
+              name: itemName,
+              baseName: productMatch.name,
+              price: itemPrice,
+              qty: itemQty,
+              category: item.category || productMatch.category,
+              unit: item.unit || 'pcs',
+              variantDetails: item.variantDetails || {},
+              fromQuotation: quotationNumber.trim(),
+              originalProductId: productMatch.id // Store original product ID for inventory tracking
+            });
+          } else {
+            // Product not found in inventory, still add it for reference
+            console.warn(`Product "${itemName}" not found in current inventory`);
+            loadedProducts.push({
+              id: `quotation-${Date.now()}-${Math.random()}`,
+              name: itemName,
+              baseName: itemName,
+              price: itemPrice,
+              qty: itemQty,
+              category: item.category || 'Other',
+              unit: item.unit || 'pcs',
+              variantDetails: item.variantDetails || {},
+              fromQuotation: quotationNumber.trim(),
+              notInInventory: true // Flag for products not in current inventory
+            });
+          }
+        }
+
+         // Debug log
+        setAddedProducts(loadedProducts);
+        alert(`Quotation ${quotationNumber} loaded successfully!\n${loadedProducts.length} items added to cart.`);
+      } else {
+        alert('No items found in this quotation');
+      }
+
+      // Update quotation status to 'processing' or 'converted'
+      await setDoc(quotationRef, {
+        ...quotationData,
+        status: 'processing',
+        convertedToInvoice: true,
+        convertedAt: serverTimestamp(),
+        convertedBy: currentUser?.uid || 'unknown',
+        lastUpdated: serverTimestamp()
+      }, { merge: true });
+
+    } catch (error) {
+      console.error('Error loading quotation:', error);
+      alert('Failed to load quotation. Please try again.');
+    } finally {
+      setLoadingQuotation(false);
+    }
+  };
 
   // Helper function to check if a product variant is low on stock
   const isLowStock = useCallback((productGroup) => {
@@ -278,22 +379,8 @@ export default function Pos_NewSale() {
     return cartItem ? cartItem.qty : 0;
   }, [addedProducts]);
 
-  // --- Auto-set customer name for walk-in transactions ---
-  useEffect(() => {
-    if (transactionType === 'walk-in') {
-      setCustomerDetails(prev => ({
-        ...prev,
-        name: 'Walk-in Customer'
-      }));
-      setCustomerDisplayName('Walk-in Customer');
-    } else if (transactionType === 'quotation') {
-      setCustomerDetails(prev => ({
-        ...prev,
-        name: ''
-      }));
-      setCustomerDisplayName('');
-    }
-  }, [transactionType]);
+  // Walk-in customers have default name
+  // No need for transaction type logic as this is invoice-only page
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -399,7 +486,7 @@ export default function Pos_NewSale() {
                 brand: product.brand || 'Generic', // Add brand information
                 quantity: product.quantity || 0,
                 variants: [],
-                image: product.image || null,
+                image: product.image || product.imageUrl || null, // Check both image and imageUrl fields
                 hasVariants: false
             };
         }
@@ -415,7 +502,7 @@ export default function Pos_NewSale() {
                     unit: variant.unit || 'pcs',
                     price: Number(variant.unitPrice) || 0,
                     quantity: Number(variant.quantity) || 0,
-                    image: variant.image || product.image || null,
+                    image: variant.image || variant.imageUrl || product.image || product.imageUrl || null, // Check all possible image fields
                     // Add location fields from the parent product
                     storageLocation: product.storageLocation,
                     shelfName: product.shelfName,
@@ -439,13 +526,13 @@ export default function Pos_NewSale() {
     // First filter by category if one is selected
     if (selectedCategory) {
       filtered = filtered.filter(p => p.category === selectedCategory);
-      console.log('After category filter:', { selectedCategory, count: filtered.length });
+
     }
     
     // Then filter by brand if one is selected
     if (selectedBrand) {
       filtered = filtered.filter(p => p.brand === selectedBrand);
-      console.log('After brand filter:', { selectedBrand, count: filtered.length, products: filtered });
+
     }
     
     // Then apply search query if exists
@@ -456,7 +543,7 @@ export default function Pos_NewSale() {
         p.category.toLowerCase().includes(query) ||
         p.brand?.toLowerCase().includes(query)
       );
-      console.log('After search filter:', { query, count: filtered.length });
+
     }
     
     return filtered;
@@ -635,6 +722,7 @@ export default function Pos_NewSale() {
        setAddedProducts([]); // This line clears the cart
        setAmountPaid('');
        setPaymentMethod('Cash');
+       setPaymentReference('');
        setCustomerDetails({ name: '', phone: '', address: '', email: '' });
        setCustomerDisplayName('Walk-in Customer');
        setSearchQuery('');
@@ -642,8 +730,6 @@ export default function Pos_NewSale() {
        setSelectedProductForModal(null);
        setVariantModalOpen(false);
        setActiveVariantIndex(0);
-       setTransactionType('walk-in');
-       setShowQuotationModal(false);
        setRestockingAlerts([]); // Clear restocking alerts
   }, []);
 
@@ -689,46 +775,11 @@ export default function Pos_NewSale() {
 
       // Send to analytics service
       AnalyticsService.recordSale(analyticsData);
-      console.log('Analytics data collected:', analyticsData);
+
     } catch (error) {
       console.error('Error collecting analytics:', error);
     }
   }, []);
-
-  // Quotation generation function
-  const handleQuotationSubmit = useCallback((customerInfo) => {
-    if (addedProducts.length === 0) {
-      alert("Cannot create quotation: Cart is empty");
-      return;
-    }
-
-    try {
-      // Create quotation data using utility
-      const quotationData = QuotationUtils.createQuotationData(
-        customerInfo,
-        addedProducts,
-        currentUser,
-        {
-          discountPercent: 0,
-          deliveryFee: 150
-        }
-      );
-
-      // Generate HTML content
-      const htmlContent = QuotationGenerator.generate(quotationData);
-
-      // Print quotation
-      QuotationGenerator.print(htmlContent);
-
-      // Close modal
-      setShowQuotationModal(false);
-      
-      console.log('Quotation generated successfully:', quotationData.quotationNumber);
-    } catch (error) {
-      console.error('Error generating quotation:', error);
-      alert('Error generating quotation. Please try again.');
-    }
-  }, [addedProducts, currentUser]);
 
   // --- Transaction Logic ---
   const validateStockBeforeTransaction = async () => {
@@ -783,34 +834,11 @@ export default function Pos_NewSale() {
         return;
     }
 
-    // Only require customer name for quotations, not for walk-in sales
-    if (transactionType === 'quotation' && !customerDetails.name.trim()) {
-      alert('Please enter customer name for quotation');
-      return;
-    }
-
-    if (transactionType === 'quotation') {
-      // Open customer info modal for quotation
-      setShowQuotationModal(true);
-      return;
-    }
-
     setIsProcessing(true);
 
     try {
-        console.log('Processing transaction with products:', addedProducts.map(item => ({
-          name: item.name,
-          id: item.id,
-          variantId: item.variantId,
-          storageLocation: item.storageLocation,
-          shelfName: item.shelfName,
-          rowName: item.rowName,
-          columnIndex: item.columnIndex,
-          qty: item.qty,
-          price: item.price
-        })));
+        
 
-        await validateStockBeforeTransaction();
         const { formattedDate, formattedTime } = getFormattedDateTime();
         const receiptNumber = `GS-${Date.now()}`;
 
@@ -840,7 +868,9 @@ export default function Pos_NewSale() {
             total: total
           },
           paymentMethod,
+          paymentReference: paymentReference || null,
           status: 'completed',
+          releaseStatus: 'pending_release', // Add release status for inventory tracking
           createdAt: serverTimestamp(),
           createdBy: currentUser?.uid || 'unknown',
           saleDate: formattedDate,
@@ -848,173 +878,11 @@ export default function Pos_NewSale() {
           cashier: currentUser?.displayName || currentUser?.email || 'Unknown Cashier'
         };
 
-        await runTransaction(db, async (transaction) => {
-            const restockingRequestsToGenerate = []; // Track items that need restocking
-            const notificationWrites = [];
-            const restockWrites = [];
-            
-            // Update inventory quantities using the correct Firebase structure
-            for (const item of addedProducts) {
-              console.log('Processing inventory update for item:', {
-                name: item.name,
-                id: item.id,
-                variantId: item.variantId,
-                storageLocation: item.storageLocation,
-                shelfName: item.shelfName,
-                rowName: item.rowName,
-                columnIndex: item.columnIndex,
-                qty: item.qty
-              });
-              
-              if (item.storageLocation && item.shelfName && item.rowName && item.columnIndex !== undefined) {
-                // Construct the correct path: Products/{storageLocation}/shelves/{shelfName}/rows/{rowName}/columns/{columnIndex}/items/{baseProductId}
-                const productRef = doc(db, 'Products', item.storageLocation, 'shelves', item.shelfName, 'rows', item.rowName, 'columns', item.columnIndex.toString(), 'items', item.baseProductId);
-                console.log('Attempting to update product at path:', `Products/${item.storageLocation}/shelves/${item.shelfName}/rows/${item.rowName}/columns/${item.columnIndex}/items/${item.baseProductId}`);
-                
-                const productDoc = await transaction.get(productRef);
-                
-                if (productDoc.exists()) {
-                  const productData = productDoc.data();
-                  console.log('Current product data:', productData);
-                  
-                  // Update the specific variant quantity
-                  let updatedVariants = [...(productData.variants || [])];
-                  
-                  // Find the variant index from variantId (e.g., "Building-Plywood-0" -> index 0)
-                  const variantIndex = parseInt(item.variantId.split('-').pop(), 10);
-                  
-                  if (updatedVariants[variantIndex]) {
-                    const currentVariantQty = updatedVariants[variantIndex].quantity || 0;
-                    const newVariantQty = Math.max(0, currentVariantQty - item.qty);
-                    updatedVariants[variantIndex].quantity = newVariantQty;
-                    
-                    console.log(`Updated variant ${variantIndex} for ${item.name}: ${currentVariantQty} -> ${newVariantQty}`);
-                    
-                    // Check if restocking is needed after the sale
-                    const restockLevel = Number(productData.restockLevel || 0);
-                    const maximumStockLevel = Number(productData.maximumStockLevel || 0);
-                    
-                    if (newVariantQty <= restockLevel) {
-                      console.log(`Item ${item.name} needs restocking: Current=${newVariantQty}, Threshold=${restockLevel}`);
-                      
-                      // Create a deterministic restock request ID
-                      const restockRequestId = `Restock-${item.category}-${item.baseProductId}-active`;
-                      const restockRequestRef = doc(db, 'RestockRequests', restockRequestId);
-                      
-                      // Check if restock request already exists
-                      const existingRestockDoc = await transaction.get(restockRequestRef);
-                      
-                      if (!existingRestockDoc.exists() || existingRestockDoc.data().status !== 'pending') {
-                        const timestamp = Date.now();
-                        
-                        // Calculate suggested order quantity
-                        const suggestedOrderQuantity = maximumStockLevel > 0 
-                          ? maximumStockLevel - newVariantQty 
-                          : Math.max(restockLevel * 2, 10);
-                        
-                        // Get supplier information
-                        const productSupplierCode = productData.supplier?.primaryCode || productData.supplier?.code || productData.supplierCode || 'UNKNOWN';
-                        const productSupplierName = typeof productData.supplier?.name === 'string' 
-                          ? productData.supplier.name 
-                          : (typeof productData.supplier?.name === 'object' ? productData.supplier.name?.name : 'Unknown Supplier');
-                        
-                        // Create notification data
-                        const notificationId = `Notify-${item.category}-${item.baseProductId}-${timestamp}`;
-                        const notificationRef = doc(db, 'Notifications', notificationId);
-                        
-                        const notificationData = {
-                          message: `Low stock alert for ${item.name}`,
-                          productId: item.baseProductId,
-                          variantId: item.variantId,
-                          currentQuantity: newVariantQty,
-                          restockLevel: restockLevel,
-                          maximumStockLevel: maximumStockLevel,
-                          category: item.category,
-                          productName: item.name,
-                          status: 'pending',
-                          timestamp: serverTimestamp(),
-                          type: 'restock_alert',
-                          createdAt: new Date().toISOString(),
-                          supplierName: String(productSupplierName),
-                          supplierCode: String(productSupplierCode),
-                          storageLocation: item.storageLocation || 'Unknown',
-                          shelfName: item.shelfName || 'Unknown',
-                          rowName: item.rowName || 'Unknown',
-                          columnIndex: item.columnIndex !== undefined ? item.columnIndex : 'Unknown',
-                          fullLocation: item.fullLocation || 'Unknown Location'
-                        };
-                        
-                        // Create restock request data
-                        const restockData = {
-                          ...notificationData,
-                          requestedQuantity: suggestedOrderQuantity,
-                          type: 'restock_request',
-                          supplier: {
-                            name: String(productSupplierName),
-                            code: String(productSupplierCode),
-                            primaryCode: String(productSupplierCode)
-                          },
-                          priority: newVariantQty <= 0 ? 'urgent' : (restockLevel > 0 && newVariantQty <= (restockLevel * 0.5)) ? 'high' : 'normal'
-                        };
-                        
-                        // Add to write arrays for batch processing
-                        notificationWrites.push({
-                          ref: notificationRef,
-                          data: notificationData
-                        });
-                        
-                        restockWrites.push({
-                          ref: restockRequestRef,
-                          data: restockData
-                        });
-                        
-                        console.log('Restock request and notification prepared for:', item.name);
-                      }
-                    }
-                    
-                    // Update the main product quantity as sum of all variants
-                    const totalQuantity = updatedVariants.reduce((sum, variant) => sum + (variant.quantity || 0), 0);
-                    
-                    transaction.update(productRef, {
-                      variants: updatedVariants,
-                      quantity: totalQuantity,
-                      lastSold: serverTimestamp(),
-                      totalSold: (productData.totalSold || 0) + item.qty,
-                      lastUpdated: serverTimestamp()
-                    });
-                    
-                    console.log(`Updated total product quantity to ${totalQuantity}`);
-                  } else {
-                    console.warn(`Variant index ${variantIndex} not found for product ${item.name}`);
-                  }
-                } else {
-                  console.warn(`Product not found at path: Products/${item.storageLocation}/shelves/${item.shelfName}/rows/${item.rowName}/columns/${item.columnIndex}/items/${item.baseProductId}`);
-                }
-              } else {
-                console.warn(`Missing location data for product: ${item.name}`, {
-                  storageLocation: item.storageLocation,
-                  shelfName: item.shelfName,
-                  rowName: item.rowName,
-                  columnIndex: item.columnIndex
-                });
-              }
-            }
+        // Save transaction to Firestore
+        // NOTE: Inventory deduction will happen in Release Management when items are actually released
+        const transactionRef = doc(db, 'posTransactions', receiptNumber);
+        await setDoc(transactionRef, transactionData);
 
-            // Save transaction
-            const transactionRef = doc(db, 'posTransactions', receiptNumber);
-            transaction.set(transactionRef, transactionData);
-            
-            // Write all notifications and restock requests within the transaction
-            for (const { ref, data } of notificationWrites) {
-              transaction.set(ref, data);
-            }
-            
-            for (const { ref, data } of restockWrites) {
-              transaction.set(ref, data);
-            }
-            
-            console.log(`Transaction completed with ${notificationWrites.length} notifications and ${restockWrites.length} restock requests`);
-        });
 
         // Collect analytics
         collectAnalyticsData({
@@ -1033,6 +901,7 @@ export default function Pos_NewSale() {
             items: addedProducts,
             totals: { subTotal, tax, total },
             paymentMethod,
+            paymentReference: paymentReference || null,
             date: formattedDate,
             time: formattedTime,
             cashier: currentUser?.displayName || currentUser?.email || 'Unknown Cashier'
@@ -1052,7 +921,7 @@ export default function Pos_NewSale() {
     } finally {
         setIsProcessing(false);
     }
-  }, [addedProducts, products, total, subTotal, tax, amountPaid, paymentMethod, customerDetails, customerDisplayName, transactionType, resetSaleState, currentUser, collectAnalyticsData]);
+  }, [addedProducts, products, total, subTotal, tax, amountPaid, paymentMethod, customerDetails, customerDisplayName, resetSaleState, currentUser, collectAnalyticsData]);
 
   // --- UI ---
   const shouldDisableInteractions = isProcessing;
@@ -1066,7 +935,7 @@ export default function Pos_NewSale() {
             <div className="flex items-center gap-6">
               <div className="space-y-1">
             <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-              New Sale
+              Invoice
               {isProcessing && (
                     <div className="inline-block w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
               )}
@@ -1080,7 +949,7 @@ export default function Pos_NewSale() {
               )}
             </h2>
                 <div className="text-sm text-gray-500">
-                  Create a new sales transaction
+                  Create a new invoice transaction
                 </div>
               </div>
               <div className="h-8 w-px bg-gray-200 hidden md:block" />
@@ -1158,39 +1027,91 @@ export default function Pos_NewSale() {
 
         {/* Right Side: Fixed Panel */}
         <div className="w-[480px] fixed right-0 top-0 h-screen bg-white flex flex-col border-l border-gray-100">
-          {/* Customer Info */}
-          <div className="pt-[73px]">
-            <div className="border-b border-gray-100 bg-gray-50">
-              <div className="p-4 sm:p-6">
-            <CustomerInfo
-              customerInfo={customerDetails}
-              setCustomerInfo={setCustomerDetails}
-              disabled={shouldDisableInteractions}
-              transactionType={transactionType}
-              setTransactionType={setTransactionType}
-            />
+          {/* Header Section - Fixed at top */}
+          <div className="flex-shrink-0 pt-[73px] border-b border-gray-200">
+            <div className="p-4 space-y-4">
+              {/* Quotation Lookup Section - Compact */}
+              <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                <h3 className="text-xs font-semibold text-gray-700 mb-2">Load from Quotation</h3>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={quotationNumber}
+                    onChange={(e) => setQuotationNumber(e.target.value.toUpperCase())}
+                    placeholder="GS-20251006-XXXX"
+                    className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    disabled={loadingQuotation || isProcessing}
+                    onKeyPress={(e) => e.key === 'Enter' && handleLoadQuotation()}
+                  />
+                  <button
+                    onClick={handleLoadQuotation}
+                    disabled={loadingQuotation || isProcessing || !quotationNumber.trim()}
+                    className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {loadingQuotation ? '...' : 'Load'}
+                  </button>
+                </div>
+                {addedProducts.some(p => p.fromQuotation) && (
+                  <div className="mt-2 text-xs text-blue-700">
+                    📄 <span className="font-semibold">{addedProducts[0].fromQuotation}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Customer Info - Compact */}
+              <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-medium text-gray-600">Customer:</span>
+                  <span className="text-xs text-gray-800 font-medium">{customerDisplayName || 'Walk-in Customer'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-medium text-gray-600">Date:</span>
+                  <span className="text-xs text-gray-800">
+                    {new Date().toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric'
+                    })}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Scrollable Product List */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-4 sm:p-6">
-              <ProductList
-                cartItems={addedProducts.map(item => ({
-                    ...item,
-                    formattedPrice: formatCurrency(item.price),
-                    formattedTotal: formatCurrency(item.price * item.qty)
-                }))}
-                onRemoveItem={handleRemoveProduct}
-                onUpdateQuantity={handleUpdateCartQuantity}
-                isProcessing={isProcessing}
-              />
+          {/* Scrollable Product List - Takes remaining space */}
+          <div className="flex-1 overflow-y-auto bg-white">
+            <div className="p-4">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-sm font-semibold text-gray-800">Added Products</h3>
+                <span className="text-xs text-gray-500">
+                  {addedProducts.length} {addedProducts.length === 1 ? 'item' : 'items'}
+                </span>
+              </div>
+              {addedProducts.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                  <svg className="w-16 h-16 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                  </svg>
+                  <p className="text-sm">No products added yet</p>
+                  <p className="text-xs mt-1">Select products from the left</p>
+                </div>
+              ) : (
+                <ProductList
+                  cartItems={addedProducts.map(item => ({
+                      ...item,
+                      formattedPrice: formatCurrency(item.price),
+                      formattedTotal: formatCurrency(item.price * item.qty)
+                  }))}
+                  onRemoveItem={handleRemoveProduct}
+                  onUpdateQuantity={handleUpdateCartQuantity}
+                  isProcessing={isProcessing}
+                />
+              )}
             </div>
           </div>
 
-          {/* Order Summary */}
-          <div className="border-t border-gray-100">
+          {/* Order Summary - Fixed at bottom */}
+          <div className="flex-shrink-0 border-t border-gray-200 bg-white">
             <OrderSummary
               subTotal={subTotal}
               tax={tax}
@@ -1199,13 +1120,15 @@ export default function Pos_NewSale() {
             />
           </div>
 
-          {/* Payment Section */}
-          <div className="border-t border-gray-100">
+          {/* Payment Section - Fixed at bottom */}
+          <div className="flex-shrink-0 border-t border-gray-200 bg-white p-4">
             <PaymentSection
               paymentMethod={paymentMethod}
               setPaymentMethod={setPaymentMethod}
               amountPaid={amountPaid}
               setAmountPaid={setAmountPaid}
+              paymentReference={paymentReference}
+              setPaymentReference={setPaymentReference}
               total={total}
               formattedTotal={formatCurrency(total)}
               formattedChange={formatCurrency(Number(amountPaid) - total)}
@@ -1214,8 +1137,7 @@ export default function Pos_NewSale() {
               isProcessing={isProcessing}
               disabled={shouldDisableInteractions || addedProducts.length === 0}
               hasProducts={addedProducts.length > 0}
-              transactionType={transactionType}
-              checkoutButtonText={transactionType === 'quotation' ? 'Generate Quotation' : 'Complete Sale'}
+              checkoutButtonText="Complete Sale"
             />
           </div>
         </div>
@@ -1223,13 +1145,6 @@ export default function Pos_NewSale() {
 
       {/* Modals */}
       <div className="relative z-50">
-        {/* Quotation Modal */}
-        <CustomerInfoModal
-          isOpen={showQuotationModal}
-          onClose={() => setShowQuotationModal(false)}
-          onSubmit={handleQuotationSubmit}
-        />
-        
         {variantModalOpen && selectedProductForModal && (
           <VariantSelectionModal
             product={selectedProductForModal}

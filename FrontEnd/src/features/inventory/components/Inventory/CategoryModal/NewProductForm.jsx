@@ -6,16 +6,19 @@ import { validateProduct, getStorageOptions, getCategorySpecificFields, updateFi
 import SupplierSelector from '../../Supplier/SupplierSelector';
 import { useServices } from '../../../../../services/firebase/ProductServices';
 import ShelfViewModal from '../ShelfViewModal';
+import { uploadImage } from '../../../../../services/cloudinary/CloudinaryService';
 
 const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
     const { linkProductToSupplier } = useServices();
     const [productName, setProductName] = useState('');
     const [quantity, setQuantity] = useState('');
     const [unitPrice, setUnitPrice] = useState('');
-    const [location, setLocation] = useState('STR A1');
+    const [location, setLocation] = useState(''); // Will be set when storage location is selected
 
     const [restockLevel, setRestockLevel] = useState('');
     const [productImage, setProductImage] = useState(null);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [isUploading, setIsUploading] = useState(false);
 
     const [additionalFields, setAdditionalFields] = useState([]);
     const [newFieldName, setNewFieldName] = useState("");
@@ -190,11 +193,34 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
         }
     };
 
-    const handleImageUpload = (e) => {
+    const handleImageUpload = async (e) => {
         const file = e.target.files[0];
-        if (file) {
-            const imageUrl = URL.createObjectURL(file);
-            setProductImage(imageUrl);
+        if (!file) return;
+
+        try {
+            setIsUploading(true);
+            setUploadProgress(0);
+
+            // Upload to Cloudinary with progress tracking
+            const uploadResult = await uploadImage(
+                file,
+                (progress) => {
+                    setUploadProgress(progress);
+                },
+                {
+                    folder: `ims-products/${selectedCategory}`,
+                    tags: [selectedCategory, productName || 'new-product'],
+                }
+            );
+
+            // Set the permanent Cloudinary URL
+            setProductImage(uploadResult.url);
+        } catch (error) {
+            console.error('Error uploading image:', error);
+            alert('Failed to upload image: ' + error.message);
+        } finally {
+            setIsUploading(false);
+            setUploadProgress(0);
         }
     };
 
@@ -204,14 +230,6 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
     };
 
     const handleAddProduct = async () => {
-        console.log('Starting product creation...', {
-            productName,
-            brand,
-            quantity,
-            unitPrice,
-            selectedCategory: selectedCategory?.name,
-            supplier: supplier?.name
-        });
 
         // Validate required fields
         if (!productName || !brand || !quantity || !unitPrice || !selectedStorageLocation) {
@@ -230,10 +248,10 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
             if (storageUnitDoc.exists()) {
                 const unitData = storageUnitDoc.data();
                 unitCategory = unitData.category || selectedCategory.name;
-                console.log(`Using category "${unitCategory}" from storage unit ${selectedStorageLocation.unit}`);
+
             }
         } catch (error) {
-            console.log('Could not fetch storage unit category, using fallback:', error);
+
         }
 
         const productData = {
@@ -281,10 +299,8 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
             const productId = currentSupplier 
                 ? ProductFactory.generateSupplierProductId(productData.name, selectedCategory.name, currentSupplier.primaryCode || currentSupplier.code)
                 : ProductFactory.generateProductId(productData.name, selectedCategory.name, productData.brand);
-            
-            console.log('Generated product ID:', productId);
-            console.log('Current supplier:', currentSupplier);
-            
+
+
             // Create product with the correct ID
             const newProduct = ProductFactory.createProduct(productData);
             
@@ -293,16 +309,6 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
             
             // Remove any undefined values
             const cleanProduct = JSON.parse(JSON.stringify(newProduct));
-
-            console.log('Creating product in database...', {
-                category: selectedCategory.name,
-                productId,
-                storageLocation: selectedStorageLocation.unit,
-                shelf: selectedStorageLocation.shelf,
-                row: selectedStorageLocation.row,
-                column: selectedStorageLocation.column,
-                productData: cleanProduct
-            });
 
             // Create Firebase path: Products/{storageLocation}/{shelfName}/{rowName}/{columnIndex}/{productId}
             const storageLocation = selectedStorageLocation.unit;
@@ -358,32 +364,18 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
             // 5. Create the actual product document (using 'items' subcollection)
             const productRef = doc(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex.toString(), 'items', productId);
             await setDoc(productRef, cleanProduct);
-            
-            console.log('Product created successfully in database with full hierarchy:', {
-                storageLocation,
-                shelfName,
-                rowName,
-                columnIndex,
-                productId,
-                productPath: `Products/${storageLocation}/shelves/${shelfName}/rows/${rowName}/columns/${columnIndex}/items/${productId}`
-            });
 
             // If supplier is provided, automatically link the product
             if (currentSupplier) {
                 try {
-                    console.log('Linking product to supplier...', {
-                        productId,
-                        supplierId: currentSupplier.id,
-                        supplierPrice: Number(supplierPrice) || Number(unitPrice) || 0
-                    });
+                    
                     
                     const linkResult = await linkProductToSupplier(productId, currentSupplier.id, {
                         supplierPrice: Number(supplierPrice) || Number(unitPrice) || 0,
                         supplierSKU: productId,
                         lastUpdated: new Date().toISOString()
                     });
-                    
-                    console.log('Link result:', linkResult);
+
                 } catch (error) {
                     console.error('Error linking product to supplier:', error);
                     alert('Product created but failed to link to supplier: ' + error.message);
@@ -399,65 +391,110 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
     };
 
     return (
-        <div className="space-y-6 max-h-[80vh] overflow-y-auto modal-content">
-            <div className="sticky top-0 bg-white pb-4 z-10">
+        <div className="space-y-6 max-h-[85vh] overflow-y-auto modal-content px-1">
+            {/* Enhanced Header with Gradient Background */}
+            <div className="sticky top-0 bg-gradient-to-r from-blue-50 to-indigo-50 -mx-1 px-6 py-5 z-10 rounded-t-xl border-b border-blue-100 shadow-sm">
                 {onBack && (
                     <button
                         onClick={onBack}
-                        className="mb-4 px-4 py-2 text-gray-600 hover:text-gray-800 flex items-center gap-2"
+                        className="mb-3 px-3 py-1.5 text-gray-600 hover:text-blue-600 hover:bg-white/50 rounded-lg flex items-center gap-2 transition-all font-medium"
                     >
-                        <span>← Back</span>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                        <span>Back</span>
                     </button>
                 )}
-                <h2 className="text-xl font-semibold text-gray-800">Add Product</h2>
-                <p className="text-sm text-gray-600">Storage Location: 
-                    <span className="ml-1 px-2 py-1 bg-blue-50 text-blue-600 rounded-full text-sm font-medium">
-                        {selectedCategory?.name}
-                    </span>
-                </p>
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-500 rounded-lg">
+                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 className="text-2xl font-bold text-gray-800">Add New Product</h2>
+                        <div className="flex items-center gap-2 mt-1">
+                            <span className="text-sm text-gray-600">Storage Unit:</span>
+                            <span className="px-3 py-1 bg-white border border-blue-200 text-blue-700 rounded-full text-sm font-semibold shadow-sm">
+                                {selectedCategory?.name}
+                            </span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <div className="space-y-6">
-                {/* 1. Product Image */}
-                <div className="group relative w-full h-48 border-2 border-dashed border-gray-300 rounded-lg overflow-hidden transition-all hover:border-blue-500">
-                    {productImage ? (
-                        <div className="relative h-full">
-                            <img src={productImage} alt="Preview" className="w-full h-full object-contain" />
-                            <button
-                                onClick={removeImage}
-                                className="absolute top-2 right-2 p-1.5 bg-red-500/90 backdrop-blur-sm text-white rounded-lg 
-                                         hover:bg-red-600 transition-colors group-hover:opacity-100 opacity-0"
-                            >
-                                <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                                </svg>
-                            </button>
-                        </div>
-                    ) : (
+            <div className="space-y-6 px-6 pb-6">
+                {/* Enhanced Product Image Upload Section */}
+                <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-6 border border-gray-200">
+                    <div className="flex items-center gap-2 mb-4">
+                        <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <h3 className="text-base font-semibold text-gray-800">Product Image</h3>
+                    </div>
+                    <div className="group relative w-full h-56 border-2 border-dashed border-gray-300 rounded-xl overflow-hidden transition-all hover:border-blue-400 hover:shadow-md bg-white">
+                        {isUploading ? (
+                            <div className="flex flex-col items-center justify-center h-full gap-3">
+                                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                                <span className="text-sm text-gray-600 font-medium">Uploading to Cloudinary...</span>
+                                <div className="w-48 bg-gray-200 rounded-full h-2.5">
+                                    <div 
+                                        className="bg-blue-500 h-2.5 rounded-full transition-all duration-300" 
+                                        style={{ width: `${uploadProgress}%` }}
+                                    ></div>
+                                </div>
+                                <span className="text-xs text-gray-500">{uploadProgress}%</span>
+                            </div>
+                        ) : productImage ? (
+                            <div className="relative h-full bg-gray-50">
+                                <img src={productImage} alt="Preview" className="w-full h-full object-contain p-4" />
+                                <button
+                                    onClick={removeImage}
+                                    className="absolute top-3 right-3 p-2 bg-red-500 backdrop-blur-sm text-white rounded-lg 
+                                             hover:bg-red-600 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+                                >
+                                    <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                    </svg>
+                                </button>
+                            </div>
+                        ) : (
                         <label
                             htmlFor="productImage"
                             className="flex flex-col items-center justify-center h-full cursor-pointer 
-                                     bg-gray-50 hover:bg-gray-100 transition-colors"
+                                     hover:bg-blue-50/50 transition-all group-hover:scale-[1.02]"
                         >
-                            <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <span className="mt-2 text-sm text-gray-500">Upload Product Image</span>
-                            <span className="mt-1 text-xs text-gray-400">Click or drag and drop</span>
+                            <div className="p-4 bg-blue-100 rounded-full mb-3 group-hover:bg-blue-200 transition-colors">
+                                <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                            </div>
+                            <span className="text-base font-medium text-gray-700 mb-1">Upload Product Image</span>
+                            <span className="text-sm text-gray-500">Click to browse or drag and drop</span>
+                            <span className="text-xs text-gray-400 mt-2">PNG, JPG, GIF up to 10MB</span>
                         </label>
                     )}
-                    <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        className="hidden"
-                        id="productImage"
-                    />
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageUpload}
+                            className="hidden"
+                            id="productImage"
+                        />
+                    </div>
                 </div>
 
-                {/* 2. Basic Product Information */}
-                <div className="space-y-4">
-                    <h3 className="text-lg font-medium text-gray-900 border-b border-gray-200 pb-2">Basic Product Information</h3>
+                {/* Enhanced Basic Product Information Section */}
+                <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-2 mb-5">
+                        <div className="p-1.5 bg-green-100 rounded-lg">
+                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900">Basic Product Information</h3>
+                        <span className="ml-auto text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Required</span>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-700">
@@ -511,9 +548,17 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                     </div>
                 </div>
 
-                {/* 3. Stock Information */}
-                <div className="space-y-4">
-                    <h3 className="text-lg font-medium text-gray-900 border-b border-gray-200 pb-2">Stock Information</h3>
+                {/* Enhanced Stock Information Section */}
+                <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-2 mb-5">
+                        <div className="p-1.5 bg-purple-100 rounded-lg">
+                            <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                            </svg>
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900">Stock Information</h3>
+                        <span className="ml-auto text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Required</span>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-700">
@@ -544,6 +589,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                                 <option value="">Select Unit</option>
                                 <optgroup label="Count">
                                     <option value="pcs">Pieces (pcs)</option>
+                                    <option value="box">Bag</option>
                                     <option value="box">Box</option>
                                     <option value="set">Set</option>
                                     <option value="pack">Pack</option>
@@ -664,10 +710,18 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                     </div>
                 </div>
 
-                {/* 4. Category-Specific Fields */}
+                {/* Enhanced Category-Specific Fields Section */}
                 {localCategoryFields.length > 0 && (
-                    <div className="space-y-4">
-                        <h3 className="text-lg font-medium text-gray-900 border-b border-gray-200 pb-2">Category-Specific Fields</h3>
+                    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-2 mb-5">
+                            <div className="p-1.5 bg-orange-100 rounded-lg">
+                                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Category-Specific Fields</h3>
+                            <span className="ml-auto text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Optional</span>
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {localCategoryFields.map((field, index) => (
                                 <div key={index} className="space-y-2">
@@ -756,9 +810,17 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                     </div>
                 )}
 
-                {/* 5. Custom Fields */}
-                <div className="space-y-4">
-                    <h3 className="text-lg font-medium text-gray-900 border-b border-gray-200 pb-2">Custom Fields</h3>
+                {/* Enhanced Custom Fields Section */}
+                <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-2 mb-5">
+                        <div className="p-1.5 bg-cyan-100 rounded-lg">
+                            <svg className="w-5 h-5 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                            </svg>
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900">Custom Fields</h3>
+                        <span className="ml-auto text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Optional</span>
+                    </div>
                     <div className="space-y-4">
                         <div className="flex items-center gap-2">
                             <input
@@ -812,10 +874,18 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                     </div>
                 </div>
 
-                {/* 6. Supplier Information */}
+                {/* Enhanced Supplier Information Section */}
                 {!supplier && (
-                    <div className="space-y-4">
-                        <h3 className="text-lg font-medium text-gray-900 border-b border-gray-200 pb-2">Supplier Information</h3>
+                    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-2 mb-5">
+                            <div className="p-1.5 bg-indigo-100 rounded-lg">
+                                <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Supplier Information</h3>
+                            <span className="ml-auto text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Optional</span>
+                        </div>
                         <div className="bg-gray-50 p-4 rounded-lg">
                             <SupplierSelector 
                                 onSelect={handleSupplierSelect}
@@ -832,16 +902,21 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                     </div>
                 )}
 
-                <button
-                    onClick={handleAddProduct}
-                    className="w-full py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 
-                             transition-colors flex items-center justify-center gap-2 font-medium"
-                >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                    </svg>
-                    Add Product
-                </button>
+                {/* Enhanced Submit Button */}
+                <div className="sticky bottom-0 bg-white pt-6 pb-2 -mx-1 px-6 border-t border-gray-200 shadow-lg">
+                    <button
+                        onClick={handleAddProduct}
+                        className="w-full py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl 
+                                 hover:from-blue-600 hover:to-blue-700 transition-all shadow-md hover:shadow-xl
+                                 flex items-center justify-center gap-3 font-semibold text-lg
+                                 transform hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                        Add Product to Inventory
+                    </button>
+                </div>
             </div>
             
             {/* Storage Location Selection Modal */}

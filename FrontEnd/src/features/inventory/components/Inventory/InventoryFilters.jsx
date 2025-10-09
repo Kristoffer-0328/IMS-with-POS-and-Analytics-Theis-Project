@@ -56,7 +56,6 @@ const InventoryFilters = ({
 
   useEffect(() => {
     fetchCategories();
-    console.log(category)
   }, []);
 
   const months = [
@@ -85,7 +84,7 @@ const InventoryFilters = ({
             onChange={(e) => {
               const newValue = e.target.value;
               setSelectedChart(newValue);
-              console.log('Selected Chart:', newValue); // Debug log for chart change
+               // Debug log for chart change
             }}
           >
             <option value="Stock Level">Stock Level</option>

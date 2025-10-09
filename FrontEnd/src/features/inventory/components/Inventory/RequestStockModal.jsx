@@ -58,7 +58,7 @@ export const RestockRequestModal = ({ isOpen, onClose }) => {
         productId: selectedProduct?.id,
         category: selectedProduct?.category
       });
-      console.log("Restock request created with ID: ", docRef.id);
+
       alert("Stock restocking request submitted.");
       onClose();
     } catch (error) {

@@ -10,7 +10,7 @@ import {
   IoDocumentTextOutline 
 } from 'react-icons/io5';
 
-const CustomerInfoModal = ({ isOpen, onClose, onSubmit, initialData = {} }) => {
+const CustomerInfoModal = ({ isOpen, onClose, onCancel, onSubmit, initialData = {} }) => {
   const [formData, setFormData] = useState({
     name: initialData.name || '',
     company: initialData.company || '',
@@ -88,7 +88,11 @@ const CustomerInfoModal = ({ isOpen, onClose, onSubmit, initialData = {} }) => {
       notes: ''
     });
     setErrors({});
-    onClose();
+    if (onCancel) {
+      onCancel();
+    } else {
+      onClose();
+    }
   };
 
   if (!isOpen) return null;
@@ -290,7 +294,7 @@ const CustomerInfoModal = ({ isOpen, onClose, onSubmit, initialData = {} }) => {
               className="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors flex items-center justify-center"
             >
               <IoDocumentTextOutline className="h-4 w-4 mr-2" />
-              Generate Quotation
+              Done
             </button>
           </div>
         </form>

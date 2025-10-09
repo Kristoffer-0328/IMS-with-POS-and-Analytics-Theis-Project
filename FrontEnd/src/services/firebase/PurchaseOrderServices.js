@@ -214,17 +214,17 @@ export const usePurchaseOrderServices = () => {
   // Listen to Purchase Orders (real-time updates)
   const listenToPurchaseOrders = (callback) => {
     try {
-      console.log('Setting up PO listener in service...');
+
       const q = query(
         collection(db, 'purchase_orders'),
         orderBy('createdAt', 'desc')
       );
 
       return onSnapshot(q, (snapshot) => {
-        console.log('Snapshot received:', snapshot.size, 'documents');
+
         const pos = snapshot.docs.map(doc => {
           const data = doc.data();
-          console.log('Document data:', { id: doc.id, ...data });
+
           return {
             id: doc.id,
             ...data

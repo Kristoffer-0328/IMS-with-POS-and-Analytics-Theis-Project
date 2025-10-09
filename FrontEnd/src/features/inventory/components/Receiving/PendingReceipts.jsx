@@ -6,7 +6,7 @@ import { useAuth } from '../../../auth/services/FirebaseAuth';
 import ViewPOModal from '../PurchaseOrder/ViewPOModal';
 import ProcessReceiptModal from './ProcessReceiptModal';
 import RejectReceiptModal from './RejectReceiptModal';
-import QRCode from 'react-qr-code';
+import { QRCodeSVG } from 'qrcode.react';
 
 const PendingReceipts = () => {
   const [pendingPOs, setPendingPOs] = useState([]);
@@ -113,8 +113,8 @@ const PendingReceipts = () => {
     setSelectedPO(po);
     const base = `${window.location.protocol}//${window.location.host}`;
     const url = `${base}/receiving_mobile?poId=${encodeURIComponent(po.id)}`;
-    console.log('Generated QR URL:', url);
-    console.log('PO ID:', po.id);
+
+
     setQrUrl(url);
     setShowQRModal(true);
   };
@@ -206,7 +206,7 @@ const PendingReceipts = () => {
             <h3 className="text-lg font-semibold text-gray-800 mb-2">Scan to Receive</h3>
             <p className="text-sm text-gray-500 mb-4">Scan this QR code with your mobile device to open the receiving screen.</p>
             <div className="flex justify-center mb-4">
-              <QRCode value={qrUrl} size={220} includeMargin={true} />
+              <QRCodeSVG value={qrUrl} size={220} />
             </div>
             <div className="bg-gray-50 rounded-md p-2 text-xs text-gray-600 break-all select-all mb-4">
               {qrUrl}

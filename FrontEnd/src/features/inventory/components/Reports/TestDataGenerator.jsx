@@ -11,11 +11,9 @@ const TestDataGenerator = () => {
       setLoading(true);
       setError(null);
       setMessage('Generating test data...');
-      console.log('Starting test data generation...');
-      
+
       const result = await AnalyticsService.createTestInventorySnapshots();
-      console.log('Test data generation result:', result);
-      
+
       setMessage('Test data generated successfully! Please refresh the page to see the results.');
     } catch (error) {
       console.error('Error generating test data:', {
