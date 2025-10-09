@@ -30,7 +30,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 const DashboardBarChart = ({ data, CustomTooltip }) => {
   return (
-    <div className="w-full h-[280px] relative">
+    <div className="w-full h-[350px] relative">
       {/* Background Effects */}
       <div className="absolute inset-0 rounded-xl overflow-hidden">
         <div className="absolute inset-0 bg-[#FFEFD7] opacity-50"></div>

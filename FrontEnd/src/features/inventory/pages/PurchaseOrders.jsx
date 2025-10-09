@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { FiPlus, FiFilter, FiRefreshCw, FiPieChart, FiTruck } from 'react-icons/fi';
+import { FiPlus, FiFilter, FiRefreshCw, FiTruck } from 'react-icons/fi';
 import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import { usePurchaseOrderServices } from '../../../services/firebase/PurchaseOrderServices';
 import { useAuth } from '../../auth/services/FirebaseAuth';
 import CreatePOModal from '../components/PurchaseOrder/CreatePOModal';
 import ViewPOModal from '../components/PurchaseOrder/ViewPOModal';
-import POAnalytics from '../components/PurchaseOrder/POAnalytics';
 
 const PurchaseOrders = () => {
   const { currentUser } = useAuth();
@@ -16,7 +15,6 @@ const PurchaseOrders = () => {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
-  const [showAnalytics, setShowAnalytics] = useState(false);
   const [selectedPO, setSelectedPO] = useState(null);
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedSupplier, setSelectedSupplier] = useState('all');
@@ -111,15 +109,6 @@ const PurchaseOrders = () => {
           </div>
           
           <div className="flex flex-col sm:flex-row gap-3">
-            {/* Analytics Toggle */}
-            <button
-              onClick={() => setShowAnalytics(!showAnalytics)}
-              className="bg-blue-600 text-white px-4 py-2.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 font-medium"
-            >
-              <FiPieChart size={18} />
-              {showAnalytics ? 'Hide Analytics' : 'Show Analytics'}
-            </button>
-            
             {/* Create PO Button */}
             <button
               onClick={() => setShowCreateModal(true)}
@@ -132,13 +121,6 @@ const PurchaseOrders = () => {
           </div>
         </div>
       </div>
-
-      {/* Analytics Section */}
-      {showAnalytics && (
-        <div className="mb-6">
-          <POAnalytics />
-        </div>
-      )}
 
       {/* Filters */}
       <div className="bg-white rounded-lg shadow-sm p-6 mb-6">

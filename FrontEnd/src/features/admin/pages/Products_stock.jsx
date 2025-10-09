@@ -11,7 +11,7 @@ import {
   LineChart,
   Line
 } from 'recharts';
-import { FiBox, FiTrendingDown, FiTrendingUp, FiDollarSign, FiPackage, FiAlertTriangle, FiShoppingCart } from 'react-icons/fi';
+import { FiBox, FiTrendingDown, FiTrendingUp, FiDollarSign, FiPackage, FiAlertTriangle, FiShoppingCart, FiInfo } from 'react-icons/fi';
 import { getFirestore, collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
 
@@ -24,6 +24,7 @@ const Dashboard = () => {
   const [transactions, setTransactions] = useState([]);
   const [restockRequests, setRestockRequests] = useState([]);
   const [salesData, setSalesData] = useState([]);
+  const [showChartInfo, setShowChartInfo] = useState(false);
   
   const [stats, setStats] = useState({
     lowStockCount: 0,
@@ -180,37 +181,55 @@ const Dashboard = () => {
     }
   };
 
-  // Generate sales chart data
+  // Generate sales chart data - Compare this week vs last week
   const generateSalesChartData = (txns) => {
     const last8Days = [];
     const today = new Date();
     
-    // Create array of last 8 days
+    // Create array of last 8 days (current week)
     for (let i = 7; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
+      const currentDate = new Date(today);
+      currentDate.setDate(currentDate.getDate() - i);
+      
+      // Calculate the same day last week (7 days before)
+      const previousDate = new Date(currentDate);
+      previousDate.setDate(previousDate.getDate() - 7);
+      
       last8Days.push({
-        date: date,
-        name: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        current: 0,
-        previous: 0
+        currentDate: currentDate,
+        previousDate: previousDate,
+        name: currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        dayName: currentDate.toLocaleDateString('en-US', { weekday: 'short' }),
+        currentWeekSales: 0,
+        lastWeekSales: 0
       });
     }
 
     // Aggregate sales by day
     txns.forEach(txn => {
-      const txnDate = txn.date.toDateString();
-      const dayData = last8Days.find(d => d.date.toDateString() === txnDate);
-      if (dayData) {
-        dayData.current += txn.total;
+      const txnDateStr = txn.date.toDateString();
+      
+      // Check if transaction matches any day in current week
+      const currentWeekDay = last8Days.find(d => d.currentDate.toDateString() === txnDateStr);
+      if (currentWeekDay) {
+        currentWeekDay.currentWeekSales += txn.total;
+      }
+      
+      // Check if transaction matches any day in previous week
+      const previousWeekDay = last8Days.find(d => d.previousDate.toDateString() === txnDateStr);
+      if (previousWeekDay) {
+        previousWeekDay.lastWeekSales += txn.total;
       }
     });
 
     // Convert to thousands for better chart display
     const chartData = last8Days.map(day => ({
-      name: day.name,
-      current: parseFloat((day.current / 1000).toFixed(2)),
-      previous: parseFloat((day.current * 0.85 / 1000).toFixed(2)) // Mock previous data as 85% of current
+      name: `${day.name} (${day.dayName})`,
+      thisWeek: parseFloat((day.currentWeekSales / 1000).toFixed(2)),
+      lastWeek: parseFloat((day.lastWeekSales / 1000).toFixed(2)),
+      // Store actual values for tooltip
+      thisWeekActual: day.currentWeekSales,
+      lastWeekActual: day.lastWeekSales
     }));
 
     setSalesData(chartData);
@@ -361,16 +380,54 @@ const Dashboard = () => {
         <div className="flex justify-between items-center mb-4">
           <div>
             <h2 className="text-lg font-semibold text-gray-800">Sales Overview</h2>
-            <p className="text-sm text-gray-600 mt-1">Daily sales comparison (in thousands)</p>
+            <p className="text-sm text-gray-600 mt-1">Week-over-week comparison (in thousands)</p>
           </div>
           <div className="flex items-center gap-4 text-sm">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-gray-800 rounded"></div>
-              <span className="text-gray-600">Current Period</span>
+              <span className="text-gray-600">This Week</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-gray-300 rounded"></div>
-              <span className="text-gray-600">Previous Period</span>
+              <span className="text-gray-600">Last Week</span>
+            </div>
+            {/* Info Icon with Tooltip */}
+            <div className="relative">
+              <button
+                onMouseEnter={() => setShowChartInfo(true)}
+                onMouseLeave={() => setShowChartInfo(false)}
+                className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-gray-400 text-gray-400 hover:border-gray-600 hover:text-gray-600 transition-colors"
+              >
+                <FiInfo size={12} />
+              </button>
+              
+              {/* Tooltip */}
+              {showChartInfo && (
+                <div className="absolute right-0 top-8 w-80 bg-white text-gray-800 text-xs rounded-lg shadow-2xl border border-gray-200 p-4 z-10">
+                  <div className="absolute -top-2 right-4 w-4 h-4 bg-white border-l border-t border-gray-200 transform rotate-45"></div>
+                  <h4 className="font-semibold mb-3 text-sm text-gray-900">How This Chart Works</h4>
+                  <div className="space-y-2.5">
+                    <p className="leading-relaxed">
+                      <span className="font-medium text-gray-900">Dark bars (This Week):</span>
+                      <span className="text-gray-600"> Sales for each day in the current week (Oct 2-9, 2025)</span>
+                    </p>
+                    <p className="leading-relaxed">
+                      <span className="font-medium text-gray-900">Light bars (Last Week):</span>
+                      <span className="text-gray-600"> Sales for the same day last week (Sept 25-Oct 2, 2025)</span>
+                    </p>
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <p className="text-gray-600 leading-relaxed">
+                        <strong className="text-gray-900">Example:</strong> For Oct 7 (Tue), the dark bar shows Monday sales this week, and the light bar shows Monday sales last week.
+                      </p>
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-gray-200">
+                      <p className="text-gray-600 leading-relaxed">
+                        <strong className="text-gray-900">Insight:</strong> Compare same days to see if your sales are improving week-over-week!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -384,7 +441,10 @@ const Dashboard = () => {
                 dataKey="name" 
                 axisLine={false} 
                 tickLine={false}
-                tick={{ fill: '#6b7280', fontSize: 12 }}
+                tick={{ fill: '#6b7280', fontSize: 11 }}
+                angle={-15}
+                textAnchor="end"
+                height={60}
               />
               <YAxis 
                 axisLine={false} 
@@ -393,7 +453,11 @@ const Dashboard = () => {
                 label={{ value: 'Sales (₱K)', angle: -90, position: 'insideLeft', style: { fill: '#6b7280' } }}
               />
               <Tooltip 
-                formatter={(value) => [`₱${(value * 1000).toLocaleString()}`, '']}
+                formatter={(value, name, props) => {
+                  // Use the Bar component's name prop instead of dataKey
+                  const displayName = props.dataKey === 'thisWeek' ? 'This Week' : 'Last Week';
+                  return [`₱${(value * 1000).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`, displayName];
+                }}
                 contentStyle={{ 
                   backgroundColor: 'white', 
                   border: '1px solid #e5e7eb',
@@ -401,8 +465,8 @@ const Dashboard = () => {
                   boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                 }}
               />
-              <Bar dataKey="previous" fill="#e5e7eb" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="current" fill="#1f2937" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="lastWeek" fill="#e5e7eb" radius={[4, 4, 0, 0]} name="Last Week" />
+              <Bar dataKey="thisWeek" fill="#1f2937" radius={[4, 4, 0, 0]} name="This Week" />
             </BarChart>
           </ResponsiveContainer>
         </div>
