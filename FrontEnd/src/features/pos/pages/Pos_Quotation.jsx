@@ -58,6 +58,8 @@ const Pos_Quotation = () => {
   }, [listenToProducts]);
 
   // Group Products (Memoized)
+  // UPDATED: Products are now flat - variants are separate products with isVariant: true
+  // Only show ONE card per product group (base product), include variants in variants array
   const groupedProducts = useMemo(() => {
     const grouped = {};
 
@@ -67,37 +69,73 @@ const Pos_Quotation = () => {
         return;
       }
   
-      const baseProductName = product.name;
+      // Skip variant products at the root level - they'll be added to their parent
+      if (product.isVariant) {
+        return;
+      }
   
-      if (!grouped[baseProductName]) {
-        grouped[baseProductName] = {
+      // Use product ID as unique key to avoid duplicates
+      const uniqueKey = product.id;
+  
+      if (!grouped[uniqueKey]) {
+        grouped[uniqueKey] = {
           id: product.id,
           name: product.name,
           category: product.category,
           brand: product.brand || 'Generic',
           quantity: product.quantity || 0,
           variants: [],
-          image: product.image || null,
+          image: product.image || product.imageUrl || null,
           hasVariants: false
         };
+        
+        // Always add base product as first variant
+        grouped[uniqueKey].variants.push({
+          variantId: product.id,
+          baseProductId: product.id,
+          category: product.category,
+          brand: product.brand || 'Generic',
+          size: product.size || '',
+          unit: product.unit || 'pcs',
+          price: Number(product.unitPrice) || 0,
+          quantity: Number(product.quantity) || 0,
+          image: product.image || product.imageUrl || null,
+          storageLocation: product.storageLocation,
+          shelfName: product.shelfName,
+          rowName: product.rowName,
+          columnIndex: product.columnIndex,
+          fullLocation: product.fullLocation
+        });
       }
-  
-      if (product.variants && Array.isArray(product.variants)) {
-        product.variants.forEach((variant, index) => {
-          grouped[baseProductName].variants.push({
-            variantId: `${product.id}-${index}`,
-            baseProductId: product.id,
+    });
+
+    // Second pass: Add variant products to their parent base products
+    products.forEach(product => {
+      if (product.isVariant && product.parentProductId) {
+        // Find the parent base product
+        const parentKey = product.parentProductId;
+        
+        if (grouped[parentKey]) {
+          grouped[parentKey].variants.push({
+            variantId: product.id,
+            baseProductId: product.parentProductId,
             category: product.category,
             brand: product.brand || 'Generic',
-            size: variant.size || '',
-            unit: variant.unit || 'pcs',
-            price: Number(variant.unitPrice) || 0,
-            quantity: Number(variant.quantity) || 0,
-            image: variant.image || product.image || null
+            size: product.size || product.variantName || '',
+            unit: product.unit || 'pcs',
+            price: Number(product.unitPrice) || 0,
+            quantity: Number(product.quantity) || 0,
+            image: product.image || product.imageUrl || grouped[parentKey].image || null,
+            storageLocation: product.storageLocation,
+            shelfName: product.shelfName,
+            rowName: product.rowName,
+            columnIndex: product.columnIndex,
+            fullLocation: product.fullLocation
           });
-        });
-  
-        grouped[baseProductName].hasVariants = product.variants.length > 0;
+          
+          // Mark as having variants if more than 1 variant exists
+          grouped[parentKey].hasVariants = grouped[parentKey].variants.length > 1;
+        }
       }
     });
 

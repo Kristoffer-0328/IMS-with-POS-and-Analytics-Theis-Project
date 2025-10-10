@@ -546,12 +546,13 @@ export default function Pos_NewSale() {
 
       // Update inventory and save transaction
       await runTransaction(db, async (transaction) => {
-        // Update inventory quantities using the correct Firebase structure
+        // Update inventory quantities using the NEW NESTED STRUCTURE
+        // Products are stored at: Products/{storageLocation}/products/{productId}
         for (const item of addedProducts) {
 
-          if (item.storageLocation && item.shelfName && item.rowName && item.columnIndex) {
-            // Construct the correct path: Products/{storageLocation}/shelves/{shelfName}/rows/{rowName}/columns/{columnIndex}/items/{productId}
-            const productRef = doc(db, 'Products', item.storageLocation, 'shelves', item.shelfName, 'rows', item.rowName, 'columns', item.columnIndex.toString(), 'items', item.variantId || item.id);
+          if (item.storageLocation) {
+            // NEW: Construct path using nested structure
+            const productRef = doc(db, 'Products', item.storageLocation, 'products', item.variantId || item.id);
 
             const productDoc = await transaction.get(productRef);
             
@@ -566,16 +567,12 @@ export default function Pos_NewSale() {
                 lastUpdated: serverTimestamp()
               });
 
+              console.log(`✅ Updated ${item.name}: ${currentQty} - ${item.qty} = ${newQty}`);
             } else {
-              console.warn(`Product not found at path: Products/${item.storageLocation}/shelves/${item.shelfName}/rows/${item.rowName}/columns/${item.columnIndex}/items/${item.variantId || item.id}`);
+              console.warn(`Product not found at path: Products/${item.storageLocation}/products/${item.variantId || item.id}`);
             }
           } else {
-            console.warn(`Missing location data for product: ${item.name}`, {
-              storageLocation: item.storageLocation,
-              shelfName: item.shelfName,
-              rowName: item.rowName,
-              columnIndex: item.columnIndex
-            });
+            console.warn(`Missing storageLocation for product: ${item.name}`);
           }
         }
 

@@ -659,61 +659,66 @@ const ReceivingMobileView = () => {
     }
   };
 
-  // Function to find product in inventory by searching all locations
+  // Function to find product in inventory using NEW NESTED STRUCTURE
+  // Products are stored at: Products/{storageUnit}/products/{productId}
   const findProductInInventory = async (productId, productName) => {
-    
-    
     try {
-      // Get all storage locations
+      console.log(`🔍 Searching for product: ${productName} (ID: ${productId})`);
+      
+      // Get all storage units (top-level documents in Products collection)
       const productsCollection = collection(db, 'Products');
       const storageSnapshot = await getDocs(productsCollection);
       
+      // Search through each storage unit's products subcollection
       for (const storageDoc of storageSnapshot.docs) {
         const storageLocation = storageDoc.id;
-
-        // Get all shelves in this storage location
-        const shelvesCollection = collection(db, 'Products', storageLocation, 'shelves');
-        const shelvesSnapshot = await getDocs(shelvesCollection);
         
-        for (const shelfDoc of shelvesSnapshot.docs) {
-          const shelfName = shelfDoc.id;
+        // Access the products subcollection for this storage unit
+        const productsRef = collection(db, 'Products', storageLocation, 'products');
+        
+        // Try to find by exact product ID
+        const productRef = doc(db, 'Products', storageLocation, 'products', productId);
+        const productDoc = await getDoc(productRef);
+        
+        if (productDoc.exists()) {
+          const productData = productDoc.data();
+          console.log(`✅ Found product in ${storageLocation}:`, productData);
           
-          // Get all rows in this shelf
-          const rowsCollection = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows');
-          const rowsSnapshot = await getDocs(rowsCollection);
-          
-          for (const rowDoc of rowsSnapshot.docs) {
-            const rowName = rowDoc.id;
-            
-            // Get all columns in this row
-            const columnsCollection = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns');
-            const columnsSnapshot = await getDocs(columnsCollection);
-            
-            for (const columnDoc of columnsSnapshot.docs) {
-              const columnIndex = columnDoc.id;
-              
-              // Check if product exists in this column
-              const productRef = doc(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items', productId);
-              const productDoc = await getDoc(productRef);
-              
-              if (productDoc.exists()) {
-
-                return {
-                  ref: productRef,
-                  data: productDoc.data(),
-                  location: {
-                    storageLocation,
-                    shelfName,
-                    rowName,
-                    columnIndex: parseInt(columnIndex)
-                  }
-                };
-              }
+          return {
+            ref: productRef,
+            data: productData,
+            location: {
+              storageLocation,
+              shelfName: productData.shelfName,
+              rowName: productData.rowName,
+              columnIndex: productData.columnIndex
             }
-          }
+          };
+        }
+        
+        // If not found by ID, try querying by name in this storage unit
+        const nameQuery = query(productsRef, where('name', '==', productName));
+        const nameSnapshot = await getDocs(nameQuery);
+        
+        if (!nameSnapshot.empty) {
+          const firstDoc = nameSnapshot.docs[0];
+          const productData = firstDoc.data();
+          console.log(`✅ Found product by name in ${storageLocation}:`, productData);
+          
+          return {
+            ref: firstDoc.ref,
+            data: productData,
+            location: {
+              storageLocation,
+              shelfName: productData.shelfName,
+              rowName: productData.rowName,
+              columnIndex: productData.columnIndex
+            }
+          };
         }
       }
 
+      console.log(`❌ Product not found: ${productName} (ID: ${productId})`);
       return null;
       
     } catch (error) {
@@ -723,17 +728,19 @@ const ReceivingMobileView = () => {
   };
 
   // Function to update inventory quantities by adding received items
+  // UPDATED for flat product structure (no variants array)
   const updateInventoryQuantities = async (receivedProducts) => {
     try {
+      console.log('📦 Updating inventory for received products:', receivedProducts);
 
       for (const product of receivedProducts) {
         // Skip if no quantity delivered
         if (!product.deliveredQty || product.deliveredQty <= 0) {
-
+          console.log(`⏭️ Skipping ${product.name} - no quantity delivered`);
           continue;
         }
 
-        
+        console.log(`\n🔄 Processing ${product.name} (${product.deliveredQty} units)`);
         
         // Find the product in inventory
         const productInfo = await findProductInInventory(product.productId, product.name);
@@ -741,6 +748,8 @@ const ReceivingMobileView = () => {
         if (!productInfo) {
           throw new Error(`Product "${product.name}" (ID: ${product.productId}) not found in inventory. Cannot update stock levels.`);
         }
+        
+        console.log(`📍 Found at: Products/${productInfo.location.storageLocation}/products/${product.productId}`);
         
         // Update the product using a transaction
         await runTransaction(db, async (transaction) => {
@@ -752,53 +761,30 @@ const ReceivingMobileView = () => {
           }
           
           const productData = currentProductDoc.data();
-
-          // Update the appropriate variant (assuming first variant for now, could be enhanced)
-          let updatedVariants = [...(productData.variants || [])];
           
-          if (updatedVariants.length > 0) {
-            // Update the first variant quantity
-            const currentVariantQty = updatedVariants[0].quantity || 0;
-            const deliveredQty = parseInt(product.deliveredQty);
-            const newVariantQty = currentVariantQty + deliveredQty;
-            updatedVariants[0].quantity = newVariantQty;
-            
-            
-            
-            // Calculate new total quantity
-            const totalQuantity = updatedVariants.reduce((sum, variant) => sum + (variant.quantity || 0), 0);
-            
-            // Update the product document
-            transaction.update(productInfo.ref, {
-              variants: updatedVariants,
-              quantity: totalQuantity,
-              lastReceived: serverTimestamp(),
-              totalReceived: (productData.totalReceived || 0) + deliveredQty,
-              lastUpdated: serverTimestamp()
-            });
-
-          } else {
-            // Create a default variant with received quantity
-            const deliveredQty = parseInt(product.deliveredQty);
-            updatedVariants = [{
-              quantity: deliveredQty,
-              variant: 'default'
-            }];
-            
-            transaction.update(productInfo.ref, {
-              variants: updatedVariants,
-              quantity: deliveredQty,
-              lastReceived: serverTimestamp(),
-              totalReceived: (productData.totalReceived || 0) + deliveredQty,
-              lastUpdated: serverTimestamp()
-            });
-
-          }
+          // Calculate new quantity (flat structure - products have direct quantity field)
+          const currentQty = parseInt(productData.quantity) || 0;
+          const deliveredQty = parseInt(product.deliveredQty);
+          const newQty = currentQty + deliveredQty;
+          
+          console.log(`📊 Quantity update: ${currentQty} + ${deliveredQty} = ${newQty}`);
+          
+          // Update the product document (no variants array in flat structure)
+          transaction.update(productInfo.ref, {
+            quantity: newQty,
+            lastReceived: serverTimestamp(),
+            totalReceived: (productData.totalReceived || 0) + deliveredQty,
+            lastUpdated: serverTimestamp()
+          });
+          
+          console.log(`✅ Updated ${product.name} quantity to ${newQty}`);
         });
       }
 
+      console.log('✅ All inventory quantities updated successfully');
+
     } catch (error) {
-      console.error('Error in inventory update:', error);
+      console.error('❌ Error in inventory update:', error);
       throw new Error(`Failed to update inventory: ${error.message}`);
     }
   };

@@ -14,6 +14,8 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'variants', 'additional'
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [selectedUnitForMap, setSelectedUnitForMap] = useState(null);
+  const [variants, setVariants] = useState([]); // For flat structure variants
+  const [loadingVariants, setLoadingVariants] = useState(false);
   const db = getFirestore(app);
   
   useEffect(() => {
@@ -22,6 +24,49 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
       setImageUrl(product.imageUrl || product.image || null);
     }
   }, [product]);
+  
+  // Fetch variants from flat structure
+  useEffect(() => {
+    const fetchVariants = async () => {
+      if (!product || product.isVariant) return; // Don't fetch variants for variant products
+      
+      setLoadingVariants(true);
+      try {
+        const storageLocation = product.storageLocation;
+        if (!storageLocation) {
+          console.log('No storage location on product');
+          setVariants([]);
+          return;
+        }
+
+        // Query for all products where parentProductId === this product's ID
+        const productsRef = collection(db, 'Products', storageLocation, 'products');
+        const variantsQuery = query(
+          productsRef,
+          where('parentProductId', '==', product.id),
+          where('isVariant', '==', true)
+        );
+        
+        const variantsSnapshot = await getDocs(variantsQuery);
+        const variantsList = variantsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        console.log(`Found ${variantsList.length} variants for product ${product.id}`);
+        setVariants(variantsList);
+      } catch (error) {
+        console.error('Error fetching variants:', error);
+        setVariants([]);
+      } finally {
+        setLoadingVariants(false);
+      }
+    };
+
+    if (isOpen && product) {
+      fetchVariants();
+    }
+  }, [isOpen, product, db]);
   
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -262,20 +307,14 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
       // Update preview with Cloudinary URL
       setImageUrl(cloudinaryUrl);
       
-      // Update the product in Firebase using the storage structure fields
-      // Path: Products/{storageLocation}/shelves/{shelfName}/rows/{rowName}/columns/{columnIndex}/items/{productId}
+      // Update the product in Firebase using the NEW NESTED structure
+      // Path: Products/{storageLocation}/products/{productId}
       
       const productRef = doc(
         db,
         'Products',
         storageLocation,
-        'shelves',
-        shelfName,
-        'rows',
-        rowName,
-        'columns',
-        String(columnIndex),
-        'items',
+        'products',
         productId
       );
 
@@ -284,6 +323,8 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
         imageUrl: cloudinaryUrl,
         lastUpdated: new Date().toISOString()
       });
+
+      console.log(`✅ Image updated at: Products/${storageLocation}/products/${productId}`);
 
       alert('Image uploaded successfully!');
       setImageUrl(cloudinaryUrl);
@@ -421,14 +462,41 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
       <div className="min-h-screen px-4 py-8 flex items-center justify-center">
         <div className="relative bg-white w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl animate-scaleUp overflow-hidden">
           {/* Header */}
-          <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-6 py-4 flex items-center justify-between">
+          <div className={`bg-gradient-to-r px-6 py-4 flex items-center justify-between ${
+            product.isVariant 
+              ? 'from-purple-500 to-purple-600' 
+              : 'from-orange-500 to-orange-600'
+          }`}>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
-                <FiPackage className="text-white" size={20} />
+                {product.isVariant ? (
+                  <FiLayers className="text-white" size={20} />
+                ) : (
+                  <FiPackage className="text-white" size={20} />
+                )}
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-white">Product Details</h2>
-                <p className="text-xs text-orange-100">{getProductDetail('category')}</p>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold text-white">
+                    {product.isVariant ? 'Product Variant Details' : 'Product Details'}
+                  </h2>
+                  {product.isVariant && (
+                    <span className="px-2 py-0.5 bg-white/20 backdrop-blur-sm text-white text-xs font-bold rounded-full border border-white/30">
+                      VARIANT
+                    </span>
+                  )}
+                  {!product.isVariant && (
+                    <span className="px-2 py-0.5 bg-white/20 backdrop-blur-sm text-white text-xs font-bold rounded-full border border-white/30">
+                      BASE PRODUCT
+                    </span>
+                  )}
+                </div>
+                <p className={`text-xs mt-0.5 ${product.isVariant ? 'text-purple-100' : 'text-orange-100'}`}>
+                  {getProductDetail('category')}
+                  {product.isVariant && product.variantName && (
+                    <span className="ml-2">• {product.variantName}</span>
+                  )}
+                </p>
               </div>
             </div>
             <button
@@ -486,8 +554,33 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
 
               {/* Product Info */}
               <div className="flex-1">
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">{getProductDetail('name')}</h3>
-                <div className="inline-flex items-center gap-2 px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-sm font-medium mb-4">
+                <div className="flex items-start gap-3 mb-2">
+                  <h3 className="text-2xl font-bold text-gray-900 flex-1">{getProductDetail('name')}</h3>
+                  {product.isVariant && (
+                    <div className="flex flex-col gap-1">
+                      <span className="px-3 py-1 bg-purple-500 text-white text-xs font-bold rounded-full flex items-center gap-1.5 shadow-sm">
+                        <FiLayers size={12} />
+                        VARIANT PRODUCT
+                      </span>
+                      {product.variantName && (
+                        <span className="text-xs text-purple-700 font-medium text-right">
+                          {product.variantName}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {!product.isVariant && (
+                    <span className="px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded-full flex items-center gap-1.5 shadow-sm">
+                      <FiPackage size={12} />
+                      BASE PRODUCT
+                    </span>
+                  )}
+                </div>
+                <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium mb-4 ${
+                  product.isVariant 
+                    ? 'bg-purple-100 text-purple-700' 
+                    : 'bg-orange-100 text-orange-700'
+                }`}>
                   <FiLayers size={14} />
                   {getProductDetail('category')}
                 </div>
@@ -498,7 +591,7 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
                     icon={FiPackage}
                     label="Total Stock"
                     value={getProductDetail('quantity')}
-                    color="blue"
+                    color={product.isVariant ? "purple" : "blue"}
                   />
                   <StatCard 
                     icon={FiDollarSign}
@@ -510,16 +603,12 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
                     icon={FiDollarSign}
                     label="Total Value"
                     value={`₱${formatMoney(getProductDetail('totalvalue'))}`}
-                    color="orange"
+                    color={product.isVariant ? "purple" : "orange"}
                   />
                   <StatCard 
                     icon={FiLayers}
                     label="Variants"
-                    value={
-                      product.variants && typeof product.variants === 'object'
-                        ? (Array.isArray(product.variants) ? product.variants.length : Object.keys(product.variants).length)
-                        : 0
-                    }
+                    value={loadingVariants ? '...' : variants.length}
                     color="purple"
                   />
                 </div>
@@ -534,7 +623,7 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
                 onClick={() => setActiveTab('overview')}
                 className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'overview'
-                    ? 'border-orange-500 text-orange-600'
+                    ? (product.isVariant ? 'border-purple-500 text-purple-600' : 'border-orange-500 text-orange-600')
                     : 'border-transparent text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -543,34 +632,25 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
                   Overview
                 </div>
               </button>
-              {product.variants && (
-                (Array.isArray(product.variants) && product.variants.length > 0) || 
-                (typeof product.variants === 'object' && Object.keys(product.variants).length > 0)
-              ) && (
-                <button
-                  onClick={() => setActiveTab('variants')}
-                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    activeTab === 'variants'
-                      ? 'border-orange-500 text-orange-600'
-                      : 'border-transparent text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <FiLayers size={16} />
-                    Variants ({
-                      product.variants && typeof product.variants === 'object' 
-                        ? (Array.isArray(product.variants) ? product.variants.length : Object.keys(product.variants).length)
-                        : 0
-                    })
-                  </div>
-                </button>
-              )}
+              <button
+                onClick={() => setActiveTab('variants')}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'variants'
+                    ? (product.isVariant ? 'border-purple-500 text-purple-600' : 'border-orange-500 text-orange-600')
+                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <FiLayers size={16} />
+                  Variants ({loadingVariants ? '...' : variants.length})
+                </div>
+              </button>
               {additionalFields.length > 0 && (
                 <button
                   onClick={() => setActiveTab('additional')}
                   className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === 'additional'
-                      ? 'border-orange-500 text-orange-600'
+                      ? (product.isVariant ? 'border-purple-500 text-purple-600' : 'border-orange-500 text-orange-600')
                       : 'border-transparent text-gray-600 hover:text-gray-900'
                   }`}
                 >
@@ -613,7 +693,11 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
                     {product.storageLocation && (
                       <button
                         onClick={handleViewLocation}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition-colors"
+                        className={`flex items-center gap-2 px-3 py-1.5 text-white text-xs font-medium rounded-lg transition-colors ${
+                          product.isVariant 
+                            ? 'bg-purple-500 hover:bg-purple-600' 
+                            : 'bg-orange-500 hover:bg-orange-600'
+                        }`}
                       >
                         <FiMap size={14} />
                         View on Map
@@ -647,92 +731,80 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
             {/* Variants Tab */}
             {activeTab === 'variants' && (
               <div className="space-y-4">
-                {(() => {
-                  // Convert variants to array format for consistent rendering
-                  let variantsArray = [];
-                  
-                  if (product.variants && typeof product.variants === 'object') {
-                    if (Array.isArray(product.variants)) {
-                      variantsArray = product.variants;
-                    } else {
-                      // Convert object to array
-                      variantsArray = Object.entries(product.variants).map(([key, variant]) => ({
-                        ...variant,
-                        variantKey: key,
-                        id: variant.id || key
-                      }));
-                    }
-                  }
-                  
-                  return variantsArray.length > 0 ? (
-                    variantsArray.map((variant, index) => (
-                      <div key={variant.id || index} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
-                        <div className="bg-gradient-to-r from-orange-50 to-orange-100/50 px-4 py-3 border-b border-gray-200">
-                          <div className="flex items-center justify-between">
+                {loadingVariants ? (
+                  <div className="text-center py-8">
+                    <div className={`w-8 h-8 border-3 ${product.isVariant ? 'border-purple-500' : 'border-orange-500'} border-t-transparent rounded-full animate-spin mx-auto mb-2`}></div>
+                    <p className="text-gray-500">Loading variants...</p>
+                  </div>
+                ) : variants.length > 0 ? (
+                  variants.map((variant, index) => (
+                    <div key={variant.id || index} className="bg-white rounded-xl border border-purple-200 overflow-hidden hover:shadow-md transition-shadow hover:border-purple-300">
+                      <div className="bg-gradient-to-r from-purple-50 to-purple-100/50 px-4 py-3 border-b border-purple-200">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <FiLayers className="text-purple-600" size={16} />
                             <h4 className="text-sm font-semibold text-gray-800">
-                              Variant {index + 1}: {variant.name || variant.variantName || variant.size || 'Default'} 
-                              {variant.type && ` - ${variant.type}`}
+                              Variant {index + 1}: {variant.variantName || variant.size || variant.specifications || 'Default'} 
                             </h4>
-                            <span className="px-3 py-1 bg-white rounded-full text-xs font-medium text-gray-700 shadow-sm">
-                              {Number(variant.quantity) || 0} {variant.unit || 'pcs'}
-                            </span>
                           </div>
+                          <span className="px-3 py-1 bg-white rounded-full text-xs font-medium text-purple-700 shadow-sm border border-purple-200">
+                            {Number(variant.quantity) || 0} {variant.unit || 'pcs'}
+                          </span>
                         </div>
-                        <div className="p-4">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <div className="text-xs text-gray-500 mb-1">Name</div>
-                              <div className="text-sm font-medium text-gray-900">
-                                {variant.name || variant.variantName || variant.size || 'N/A'}
-                              </div>
+                      </div>
+                      <div className="p-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">Variant Name</div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {variant.variantName || variant.size || 'N/A'}
                             </div>
-                            <div>
-                              <div className="text-xs text-gray-500 mb-1">Type</div>
-                              <div className="text-sm font-medium text-gray-900">{variant.type || 'N/A'}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">Size</div>
+                            <div className="text-sm font-medium text-gray-900">{variant.size || 'N/A'}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">Quantity</div>
+                            <div className="text-sm font-medium text-purple-600">
+                              {Number(variant.quantity) || 0} {variant.unit || 'pcs'}
                             </div>
-                            <div>
-                              <div className="text-xs text-gray-500 mb-1">Quantity</div>
-                              <div className="text-sm font-medium text-blue-600">
-                                {Number(variant.quantity) || 0} {variant.unit || 'pcs'}
-                              </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">Unit Price</div>
+                            <div className="text-sm font-medium text-green-600">
+                              ₱{formatMoney(Number(variant.unitPrice) || 0)}
                             </div>
-                            <div>
-                              <div className="text-xs text-gray-500 mb-1">Unit Price</div>
-                              <div className="text-sm font-medium text-green-600">
-                                ₱{formatMoney(Number(variant.unitPrice) || Number(variant.price) || 0)}
-                              </div>
+                          </div>
+                          <div className="col-span-2">
+                            <div className="text-xs text-gray-500 mb-1">Total Value</div>
+                            <div className="text-sm font-medium text-purple-600">
+                              ₱{formatMoney((Number(variant.quantity) || 0) * (Number(variant.unitPrice) || 0))}
                             </div>
+                          </div>
+                          {variant.specifications && (
                             <div className="col-span-2">
-                              <div className="text-xs text-gray-500 mb-1">Total Value</div>
-                              <div className="text-sm font-medium text-orange-600">
-                                ₱{formatMoney((Number(variant.quantity) || 0) * (Number(variant.unitPrice) || Number(variant.price) || 0))}
-                              </div>
+                              <div className="text-xs text-gray-500 mb-1">Specifications</div>
+                              <div className="text-sm font-medium text-gray-900">{variant.specifications}</div>
                             </div>
-                            {variant.size && (
-                              <div className="col-span-2">
-                                <div className="text-xs text-gray-500 mb-1">Size</div>
-                                <div className="text-sm font-medium text-gray-900">{variant.size}</div>
-                              </div>
-                            )}
-                            {(variant.location || variant.fullLocation) && (
-                              <div className="col-span-2">
-                                <div className="text-xs text-gray-500 mb-1">Location</div>
-                                <div className="text-sm font-medium text-gray-900">
-                                  {variant.fullLocation || variant.location || 'N/A'}
-                                </div>
-                              </div>
-                            )}
+                          )}
+                          <div className="col-span-2">
+                            <div className="text-xs text-gray-500 mb-1">Storage Location</div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {variant.fullLocation || `${variant.storageLocation} - ${variant.shelfName} - ${variant.rowName}` || 'N/A'}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-8 text-gray-500">
-                      <FiLayers className="mx-auto mb-2" size={32} />
-                      <p>No variants available</p>
                     </div>
-                  );
-                })()}
+                  ))
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <FiLayers className="mx-auto mb-2" size={32} />
+                    <p>No variants found for this product</p>
+                    <p className="text-xs mt-1">Variants are separate products linked to this base product</p>
+                  </div>
+                )}
               </div>
             )}
 

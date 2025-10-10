@@ -18,7 +18,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
   const [editingVariant, setEditingVariant] = useState(null);
   const [variantEditData, setVariantEditData] = useState({ supplierPrice: '', supplierSKU: '', unitPrice: '' });
   const db = getFirestore(app);
-  const { updateSupplierProductDetails } = useServices();
+  const { updateSupplierProductDetails, listenToProducts } = useServices();
 
   const fetchSupplierProducts = async () => {
     if (!supplier?.id) return;
@@ -33,7 +33,9 @@ const SupplierProducts = ({ supplier, onClose }) => {
       const supplierDataMap = {};
       supplierProductsSnapshot.docs.forEach(docSnapshot => {
         const data = docSnapshot.data();
-        supplierDataMap[data.productId] = {
+        // Use the document ID as the key (which is the productId)
+        const productId = docSnapshot.id;
+        supplierDataMap[productId] = {
           supplierPrice: data.supplierPrice || 0,
           supplierSKU: data.supplierSKU || '',
           lastUpdated: data.lastUpdated,
@@ -43,13 +45,23 @@ const SupplierProducts = ({ supplier, onClose }) => {
         };
       });
 
+      console.log('Supplier data map:', supplierDataMap);
+      console.log('Product IDs linked to supplier:', Object.keys(supplierDataMap));
+
       // Step 2: Use listenToProducts service to get all products (more efficient)
       const unsubscribe = listenToProducts((allProducts) => {
+        console.log('Total products from listenToProducts:', allProducts.length);
 
         // Step 3: Filter products that are linked to this supplier
-        const linkedProducts = allProducts.filter(product => 
-          supplierDataMap[product.id] !== undefined
-        );
+        const linkedProducts = allProducts.filter(product => {
+          const isLinked = supplierDataMap[product.id] !== undefined;
+          if (isLinked) {
+            console.log('Found linked product:', product.id, product.name);
+          }
+          return isLinked;
+        });
+
+        console.log('Total linked products found:', linkedProducts.length);
 
         // Step 4: Process products and their variants
         const processedProducts = linkedProducts.map(product => {
@@ -89,6 +101,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
             supplierPrice: supplierData.supplierPrice || 0,
             supplierSKU: supplierData.supplierSKU || '',
             lastUpdated: supplierData.lastUpdated,
+            originalUnitPrice: product.unitPrice, // Store original unit price for editing
             variants: linkedVariants,
             // Keep original product data
             actualCategory: product.category || product.storageLocation || 'Unknown',

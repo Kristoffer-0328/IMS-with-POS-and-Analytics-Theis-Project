@@ -28,35 +28,41 @@ export const ProductFactory = {
             name: data.ProductName || data.name,
             brand: data.Brand || data.brand || 'Generic',
             category: data.Category || data.category,
-            subCategory: data.SubCategory || data.subCategory || data.category,
+            
+            // NEW: Storage location fields (nested structure)
+            storageLocation: data.storageLocation || data.Location || '',
+            shelfName: data.shelfName || '',
+            rowName: data.rowName || '',
+            columnIndex: data.columnIndex ?? 0,
+            fullLocation: data.fullLocation || '',
+            location: data.location || data.Location || '', // Backward compatibility
+            
             specifications: data.Specifications || data.specifications || '',
-            storageType: data.StorageType || data.storageType || 'Goods',
+            
             // Supplier information
             supplier: {
-                name: data.Supplier || data.supplier || 'Unknown',
-                code: data.SupplierCode || data.supplierCode || '',
-                address: data.SupplierAddress || data.supplierAddress || '',
-                contactPerson: data.SupplierContactPerson || data.supplierContactPerson || '',
-                phone: data.SupplierPhone || data.supplierPhone || '',
-                email: data.SupplierEmail || data.supplierEmail || ''
+                name: data.Supplier || data.supplier?.name || 'Unknown',
+                code: data.SupplierCode || data.supplier?.code || '',
+                primaryCode: data.supplier?.primaryCode || data.SupplierCode || ''
             },
+            
             // Stock levels
             restockLevel: Number(data.RestockLevel || data.restockLevel || 0),
             maximumStockLevel: Number(data.MaximumStockLevel || data.maximumStockLevel || 0),
-            // Location
-            location: data.Location || 'STR A1',
-            // Additional fields
+            
+            // Product details
             imageUrl: data.imageUrl || null,
-            measurements: {
-                lengthPerUnit: data.LengthPerUnit || null,
-                defaultUnit: data.Unit || data.unit || 'pcs'
-            },
+            size: data.Size || data.size || 'default',
+            unit: data.Unit || data.unit || 'pcs',
+            
             customFields: {
                 ...(data.TotalValue && { totalValue: Number(data.TotalValue) }),
                 ...(data.specifications && { specifications: data.specifications })
             },
+            
             lastUpdated: new Date().toISOString(),
             createdAt: new Date().toISOString(),
+            
             categoryValues: {
                 ...(data.Size && { size: data.Size }),
                 ...(data.categoryValues || {})
@@ -65,45 +71,58 @@ export const ProductFactory = {
     },
 
     createProduct(data) {
-        const normalizedData = this.normalizeProductData(data);
-        const productId = this.generateProductId(
-            normalizedData.name, 
-            normalizedData.category,
-            normalizedData.brand
-        );
         const timestamp = new Date().toISOString();
 
-        // Create the base product
-        const baseProduct = {
-            id: productId,
-            ...normalizedData,
-            variants: [],
-            createdAt: timestamp,
-            lastUpdated: timestamp
+        // Create flat product structure - NO VARIANTS
+        const product = {
+            id: data.id || this.generateProductId(data.name, data.category, data.brand),
+            name: data.name,
+            brand: data.brand || 'Generic',
+            category: data.category,
+            quantity: Number(data.quantity) || 0,
+            unitPrice: Number(data.unitPrice) || 0,
+            unit: data.unit || 'pcs',
+            
+            // NEW: Storage location fields (nested structure compatible)
+            storageLocation: data.storageLocation || '',
+            shelfName: data.shelfName || '',
+            rowName: data.rowName || '',
+            columnIndex: data.columnIndex ?? 0, // 0-based index
+            fullLocation: data.fullLocation || '',
+            location: data.location || data.storageLocation || '', // Backward compatibility
+            
+            // Stock levels
+            restockLevel: Number(data.restockLevel) || 0,
+            maximumStockLevel: Number(data.maximumStockLevel) || 0,
+            
+            // Product details
+            size: data.size || 'default',
+            specifications: data.specifications || '',
+            imageUrl: data.imageUrl || null,
+            
+            // Supplier information
+            supplier: data.supplier || {
+                name: 'Unknown',
+                code: '',
+                primaryCode: ''
+            },
+            
+            // Additional fields
+            categoryValues: data.categoryValues || {},
+            customFields: data.customFields || {},
+            
+            // Flat structure flags
+            isVariant: data.isVariant || false,
+            parentProductId: data.parentProductId || null,
+            variantName: data.variantName || 'Standard',
+            
+            // Timestamps
+            dateStocked: data.dateStocked || new Date().toISOString().split('T')[0],
+            createdAt: data.createdAt || timestamp,
+            lastUpdated: data.lastUpdated || timestamp
         };
 
-        // Create initial variant
-        const initialVariant = this.createVariant(baseProduct, {
-            quantity: data.quantity,
-            unitPrice: data.unitPrice,
-            unit: data.unit,
-            location: data.location,
-            size: data.Size || data.size,
-            specifications: data.Specifications || data.specifications,
-            storageType: data.StorageType || data.storageType,
-            supplier: {
-                name: data.Supplier,
-                code: data.SupplierCode
-            },
-            categoryValues: data.categoryValues || {},
-            createdAt: timestamp,
-            lastUpdated: timestamp
-        });
-
-        baseProduct.variants = [initialVariant];
-        baseProduct.quantity = initialVariant.quantity;
-
-        return baseProduct;
+        return product;
     },
 
     createVariant(parentProduct, variantData) {
@@ -111,7 +130,7 @@ export const ProductFactory = {
             parentProduct.id, 
             variantData.size || 'default',
             variantData.specifications,
-            (parentProduct.variants || []).length
+            0 // Index not needed for flat structure
         );
 
         return {
@@ -120,16 +139,28 @@ export const ProductFactory = {
             name: parentProduct.name,
             brand: parentProduct.brand,
             category: parentProduct.category,
-            subCategory: parentProduct.subCategory,
             quantity: Number(variantData.quantity || 0),
             unitPrice: Number(variantData.unitPrice || 0),
-            unit: variantData.unit || parentProduct.measurements?.defaultUnit || 'pcs',
-            location: variantData.location || 'STR A1',
-            storageType: variantData.storageType || 'Goods',
+            unit: variantData.unit || 'pcs',
+            
+            // NEW: Storage location fields (nested structure compatible)
+            storageLocation: variantData.storageLocation || parentProduct.storageLocation || '',
+            shelfName: variantData.shelfName || parentProduct.shelfName || '',
+            rowName: variantData.rowName || parentProduct.rowName || '',
+            columnIndex: variantData.columnIndex ?? parentProduct.columnIndex ?? 0,
+            fullLocation: variantData.fullLocation || parentProduct.fullLocation || '',
+            location: variantData.location || variantData.storageLocation || '', // Backward compatibility
+            
             size: variantData.size || 'default',
             specifications: variantData.specifications || '',
             supplier: variantData.supplier || parentProduct.supplier,
             customFields: variantData.customFields || {},
+            imageUrl: variantData.imageUrl || parentProduct.imageUrl || null,
+            
+            // Flat structure flags
+            isVariant: true,
+            variantName: variantData.size || variantData.specifications || 'Variant',
+            
             createdAt: new Date().toISOString(),
             lastUpdated: new Date().toISOString()
         };

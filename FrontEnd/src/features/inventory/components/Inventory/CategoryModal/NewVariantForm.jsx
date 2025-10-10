@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useServices } from "../../../../../services/firebase/ProductServices";
-import { getFirestore, doc, updateDoc, arrayUnion, getDoc, collection, getDocs } from "firebase/firestore";
+import { getFirestore, doc, setDoc, updateDoc, arrayUnion, getDoc, collection, getDocs } from "firebase/firestore";
 import app from "../../../../../FirebaseConfig";
 import { getCategorySpecificFields } from "./Utils";
 import ProductFactory from "../../Factory/productFactory";
@@ -35,42 +35,31 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
     // Storage location modal states
     const [isStorageModalOpen, setIsStorageModalOpen] = useState(false);
     const [selectedStorageLocation, setSelectedStorageLocation] = useState(null);
+    const [selectedUnit, setSelectedUnit] = useState('Unit 01'); // Add state for unit selection
 
     const { listenToProducts, linkProductToSupplier } = useServices();
     const db = getFirestore(app);
     
     // Mock storage unit data for the modal
     const getStorageUnitData = () => {
-        const unitName = selectedCategory?.name || 'Unit 01';
+        const unitName = selectedUnit || 'Unit 01'; // Use selectedUnit instead of category
         return {
             title: unitName,
             type: "Storage Unit",
             shelves: [
                 {
                     name: "Shelf A",
-                    rows: [
-                        { name: "Row 1", items: [] },
-                        { name: "Row 2", items: [] },
-                        { name: "Row 3", items: [] },
-                        { name: "Row 4", items: [] },
-                        { name: "Row 5", items: [] },
-                        { name: "Row 6", items: [] },
-                        { name: "Row 7", items: [] },
-                        { name: "Row 8", items: [] }
-                    ]
+                    rows: Array.from({ length: 8 }, (_, i) => ({ 
+                        name: `Row ${i + 1}`, 
+                        columns: 4 
+                    }))
                 },
                 {
                     name: "Shelf B",
-                    rows: [
-                        { name: "Row 1", items: [] },
-                        { name: "Row 2", items: [] },
-                        { name: "Row 3", items: [] },
-                        { name: "Row 4", items: [] },
-                        { name: "Row 5", items: [] },
-                        { name: "Row 6", items: [] },
-                        { name: "Row 7", items: [] },
-                        { name: "Row 8", items: [] }
-                    ]
+                    rows: Array.from({ length: 8 }, (_, i) => ({ 
+                        name: `Row ${i + 1}`, 
+                        columns: 4 
+                    }))
                 }
             ]
         };
@@ -78,12 +67,13 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
     
     // Handle storage location selection
     const handleStorageLocationSelect = (shelfName, rowName, columnIndex) => {
-        const locationString = `${selectedCategory?.name} - ${shelfName} - ${rowName} - Column ${columnIndex + 1}`;
+        const locationString = `${selectedUnit} - ${shelfName} - ${rowName} - Column ${columnIndex + 1}`;
         setSelectedStorageLocation({
-            unit: selectedCategory?.name,
+            unit: selectedUnit, // Use selectedUnit instead of category name
             shelf: shelfName,
             row: rowName,
-            column: columnIndex + 1,
+            column: columnIndex, // Store 0-based index (0, 1, 2, 3) to match ShelfViewModal
+            columnDisplay: columnIndex + 1, // Keep display value (1, 2, 3, 4) for UI
             fullLocation: locationString
         });
         setVariantValue(prev => ({
@@ -201,8 +191,7 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
         }
 
         try {
-
-
+            const db = getFirestore(app);
 
             // Filter out weight and type from category values and ensure no undefined values
             const filteredCategoryValues = localCategoryFields.reduce((acc, field) => {
@@ -213,172 +202,104 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                 return acc;
             }, {});
 
-            // Create variant data with enhanced fields (keeping all new attributes)
-            const variantData = {
+            // Get current supplier
+            const currentSupplier = supplier || selectedSupplier;
+
+            // Generate unique variant ID
+            const variantId = `${selectedProduct.id}_VAR_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+            // Create variant as a separate product document with FLAT STRUCTURE
+            const variantProductData = {
+                id: variantId,
+                name: selectedProduct.name,
+                brand: selectedProduct.brand || 'Generic',
+                category: selectedProduct.category || selectedCategory?.name,
+                subCategory: selectedProduct.subCategory || selectedProduct.category,
+                
+                // Variant-specific data
                 quantity: Number(variantValue.quantity) || 0,
                 unitPrice: Number(variantValue.unitPrice) || 0,
                 unit: variantValue.unit || unit || 'pcs',
-                location: variantValue.location || storageLocation || 'STR A1',
                 size: variantValue.size || 'default',
-                type: variantValue.type || 'standard',
                 specifications: specifications || '',
-                // Add supplier information if available
-                ...(supplier || selectedSupplier ? {
-                    supplier: {
-                        name: (supplier || selectedSupplier).name,
-                        code: (supplier || selectedSupplier).primaryCode || (supplier || selectedSupplier).code,
-                        id: (supplier || selectedSupplier).id,
-                        price: Number(supplierPrice) || Number(variantValue.unitPrice) || 0
-                    }
-                } : {}),
-                categoryValues: filteredCategoryValues || {},
-                ...(additionalVariantFields.length > 0 && {
-                    customFields: additionalVariantFields.reduce((acc, field) => ({
-                        ...acc,
-                        [field.name]: field.value || ''
-                    }), {})
-                }),
-                imageUrl: variantImage || null
-            };
-
-            // Find the correct product document first
-            let productRef = null;
-            let docSnap = null;
-            let foundCategory = null;
-
-            // First try with the provided category - search through all storage locations
-            if (selectedCategory?.name) {
-
-                const storageLocationsRef = collection(db, 'Products');
-                const storageLocationsSnapshot = await getDocs(storageLocationsRef);
+                variantName: variantValue.size || 'Variant',
                 
-                for (const storageDoc of storageLocationsSnapshot.docs) {
-                    const storageLocation = storageDoc.id;
-
-                    // Check if this storage location has shelves
-                    try {
-                        const shelvesRef = collection(db, 'Products', storageLocation, 'shelves');
-                        const shelvesSnapshot = await getDocs(shelvesRef);
-                        
-                        for (const shelfDoc of shelvesSnapshot.docs) {
-                            const shelfName = shelfDoc.id;
-
-                            const rowsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows');
-                            const rowsSnapshot = await getDocs(rowsRef);
-                            
-                            for (const rowDoc of rowsSnapshot.docs) {
-                                const rowName = rowDoc.id;
-
-                                const columnsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns');
-                                const columnsSnapshot = await getDocs(columnsRef);
-                                
-                                for (const columnDoc of columnsSnapshot.docs) {
-                                    const columnIndex = columnDoc.id;
-
-                                    const itemsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items');
-                                    const itemsSnapshot = await getDocs(itemsRef);
-                                    
-                                    for (const itemDoc of itemsSnapshot.docs) {
-                                        if (itemDoc.id === selectedProduct.id) {
-                                            productRef = doc(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items', selectedProduct.id);
-                                            docSnap = itemDoc;
-                                            foundCategory = selectedCategory.name;
-
-                                            break;
-                                        }
-                                    }
-                                    if (productRef) break;
-                                }
-                                if (productRef) break;
-                            }
-                            if (productRef) break;
-                        }
-                        if (productRef) break;
-                    } catch (storageError) {
-
-                        continue;
-                    }
-                }
-            }
-            
-            if (!productRef || !docSnap || !docSnap.exists()) {
-                throw new Error(`Product document not found in any storage location. Product ID: ${selectedProduct.id}. Please ensure the product exists in the correct nested Firebase structure: Products/{storageLocation}/shelves/{shelfName}/rows/{rowName}/columns/{columnIndex}/items/{productId}`);
-            }
-
-            // Get the current document data
-            const currentData = docSnap.data();
-
-            // Get existing variants and ensure it's an array - CRITICAL FIX
-            const existingVariants = Array.isArray(currentData.variants) ? [...currentData.variants] : [];
-
-            // Create new variant with unique ID
-            const newVariant = {
-                id: `${selectedProduct.id}_variant_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                // Storage location - from selected storage location
+                storageLocation: selectedStorageLocation.unit,
+                shelfName: selectedStorageLocation.shelf,
+                rowName: selectedStorageLocation.row,
+                columnIndex: selectedStorageLocation.column,
+                fullLocation: selectedStorageLocation.fullLocation,
+                location: selectedStorageLocation.unit,
+                
+                // Variant identification
+                isVariant: true,
                 parentProductId: selectedProduct.id,
-                name: selectedProduct.name,
-                brand: selectedProduct.brand || currentData.brand || 'Generic',
-                category: foundCategory,
-                subCategory: selectedProduct.subCategory || currentData.subCategory || foundCategory,
-                quantity: Number(variantData.quantity || 0),
-                unitPrice: Number(variantData.unitPrice || 0),
-                unit: variantData.unit || currentData.unit || 'pcs',
-                location: variantData.location || 'STR A1',
-                storageType: variantData.storageType || currentData.storageType || 'Goods',
-                size: variantData.size || 'default',
-                specifications: variantData.specifications || '',
-                supplier: variantData.supplier || currentData.supplier,
-                customFields: variantData.customFields || {},
-                categoryValues: variantData.categoryValues || {},
-                imageUrl: variantData.imageUrl || null,
+                
+                // Supplier information
+                supplier: currentSupplier ? {
+                    name: currentSupplier.name,
+                    code: currentSupplier.primaryCode || currentSupplier.code,
+                    primaryCode: currentSupplier.primaryCode || currentSupplier.code,
+                    id: currentSupplier.id,
+                    price: Number(supplierPrice) || Number(variantValue.unitPrice) || 0
+                } : selectedProduct.supplier || {
+                    name: 'Unknown',
+                    primaryCode: '',
+                    code: ''
+                },
+                
+                // Additional fields
+                categoryValues: filteredCategoryValues || {},
+                customFields: additionalVariantFields.reduce((acc, field) => ({
+                    ...acc,
+                    [field.name]: field.value || ''
+                }), {}),
+                imageUrl: variantImage || null,
+                storageType: selectedProduct.storageType || 'Goods',
+                restockLevel: selectedProduct.restockLevel || 0,
+                maximumStockLevel: selectedProduct.maximumStockLevel || 0,
+                
+                // Timestamps
                 createdAt: new Date().toISOString(),
-                lastUpdated: new Date().toISOString(),
-                isVariant: true
-            };
-
-            // Add to variants array
-            const updatedVariants = [...existingVariants, newVariant];
-
-            // Calculate new total quantity (existing base quantity + all variant quantities)
-            const variantQuantityTotal = updatedVariants.reduce((sum, variant) => 
-                sum + (Number(variant.quantity) || 0), 0
-            );
-            
-            // Preserve the original product's base quantity and add variant quantities
-            const originalBaseQuantity = Number(currentData.quantity) || 0;
-            const totalQuantity = originalBaseQuantity + variantQuantityTotal;
-
-            // CRITICAL: Only update variants and quantity, preserve all other fields
-            const updateData = {
-                variants: updatedVariants,
-                quantity: totalQuantity,
                 lastUpdated: new Date().toISOString()
             };
 
-            // Update the document with only the necessary fields
-            await updateDoc(productRef, updateData);
+            // Remove any undefined values
+            const cleanVariantData = JSON.parse(JSON.stringify(variantProductData));
 
-            // If supplier is provided, also create a supplier-product relationship record for the variant
-            const currentSupplier = supplier || selectedSupplier;
+            console.log('=== VARIANT CREATION DEBUG ===');
+            console.log('Storage Unit Path:', selectedStorageLocation.unit);
+            console.log('Variant ID:', variantId);
+            console.log('Full Path:', `Products/${selectedStorageLocation.unit}/products/${variantId}`);
+            console.log('Variant Data:', cleanVariantData);
+
+            // Write variant to Products/{storageLocation}/products/{variantId} - NESTED BY STORAGE UNIT
+            const storageUnitPath = selectedStorageLocation.unit; // e.g., "Unit 01"
+            const variantRef = doc(db, 'Products', storageUnitPath, 'products', variantId);
+            await setDoc(variantRef, cleanVariantData);
+
+            console.log(`✅ Variant created at: Products/${storageUnitPath}/products/${variantId}`);
+
+            // If supplier is provided, create supplier-product relationship for the variant
             if (currentSupplier) {
                 try {
-
-                    const variantProductId = newVariant.id; // Use the unique variant ID
-                    await linkProductToSupplier(variantProductId, currentSupplier.id, {
+                    await linkProductToSupplier(variantId, currentSupplier.id, {
                         supplierPrice: Number(supplierPrice) || Number(variantValue.unitPrice) || 0,
-                        supplierSKU: newVariant.id,
+                        supplierSKU: variantId,
                         isVariant: true,
                         parentProductId: selectedProduct.id,
-                        variantIndex: updatedVariants.length - 1,
                         lastUpdated: new Date().toISOString()
                     });
 
+                    console.log('Variant linked to supplier');
                 } catch (linkError) {
                     console.error('Error linking variant to supplier:', linkError);
                     // Don't fail the whole operation if linking fails
                 }
             }
 
-            alert('Variant added successfully!');
+            alert('Variant added successfully as a separate product!');
             onBack();
         } catch (error) {
             console.error('Error adding variant:', error);
@@ -580,14 +501,41 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Unit
+                                    <span className="text-xs text-gray-500 ml-1">(Select measurement unit)</span>
                                 </label>
-                                <input
-                                    type="text"
-                                    value={variantValue.unit}
-                                    onChange={(e) => setVariantValue(prev => ({...prev, unit: e.target.value}))}
-                                    placeholder="e.g. pcs, kg"
+                                <select
+                                    value={unit}
+                                    onChange={(e) => {
+                                        setUnit(e.target.value);
+                                        setVariantValue(prev => ({...prev, unit: e.target.value}));
+                                    }}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                                />
+                                >
+                                    <option value="">Select Unit</option>
+                                    <optgroup label="Count">
+                                        <option value="pcs">Pieces (pcs)</option>
+                                        <option value="bag">Bag</option>
+                                        <option value="box">Box</option>
+                                        <option value="set">Set</option>
+                                        <option value="pack">Pack</option>
+                                    </optgroup>
+                                    <optgroup label="Weight">
+                                        <option value="kg">Kilogram (kg)</option>
+                                        <option value="g">Gram (g)</option>
+                                        <option value="lbs">Pounds (lbs)</option>
+                                    </optgroup>
+                                    <optgroup label="Length">
+                                        <option value="m">Meter (m)</option>
+                                        <option value="cm">Centimeter (cm)</option>
+                                        <option value="ft">Feet (ft)</option>
+                                        <option value="in">Inch (in)</option>
+                                    </optgroup>
+                                    <optgroup label="Volume">
+                                        <option value="L">Liter (L)</option>
+                                        <option value="mL">Milliliter (mL)</option>
+                                        <option value="gal">Gallon (gal)</option>
+                                    </optgroup>
+                                </select>
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -615,10 +563,37 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                             </div>
                         </div>
                         
+                        {/* Storage Unit Selection */}
+                        <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Storage Unit
+                                <span className="text-xs text-red-500 ml-1">*</span>
+                            </label>
+                            <select
+                                value={selectedUnit}
+                                onChange={(e) => {
+                                    setSelectedUnit(e.target.value);
+                                    // Reset storage location when unit changes
+                                    setSelectedStorageLocation(null);
+                                }}
+                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                            >
+                                <option value="Unit 01">Unit 01</option>
+                                <option value="Unit 02">Unit 02</option>
+                                <option value="Unit 03">Unit 03</option>
+                                <option value="Unit 04">Unit 04</option>
+                                <option value="Unit 05">Unit 05</option>
+                                <option value="Unit 06">Unit 06</option>
+                                <option value="Unit 07">Unit 07</option>
+                                <option value="Unit 08">Unit 08</option>
+                                <option value="Unit 09">Unit 09</option>
+                            </select>
+                        </div>
+                        
                         {/* Storage Location Selection */}
                         <div className="mt-4">
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Storage Location
+                                Storage Location (Shelf/Row/Column)
                                 <span className="text-xs text-red-500 ml-1">*</span>
                             </label>
                             <button
@@ -645,7 +620,7 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                             {selectedStorageLocation && (
                                 <div className="mt-2 p-2 bg-blue-50 rounded-lg">
                                     <p className="text-xs text-blue-700">
-                                        <span className="font-medium">Selected:</span> {selectedStorageLocation.unit} → {selectedStorageLocation.shelf} → {selectedStorageLocation.row} → Column {selectedStorageLocation.column}
+                                        <span className="font-medium">Selected:</span> {selectedStorageLocation.unit} → {selectedStorageLocation.shelf} → {selectedStorageLocation.row} → Column {selectedStorageLocation.columnDisplay || selectedStorageLocation.column}
                                     </p>
                                 </div>
                             )}

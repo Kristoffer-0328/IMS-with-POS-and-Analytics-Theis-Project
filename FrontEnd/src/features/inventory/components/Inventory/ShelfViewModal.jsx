@@ -28,53 +28,47 @@ const ShelfViewModal = ({ isOpen, onClose, selectedUnit, onLocationSelect, highl
     setLoading(true);
     try {
       const unitName = selectedUnit.title.split(' - ')[0]; // Extract "Unit 01" from "Unit 01 - Steel & Heavy Materials"
-
+      console.log('Fetching products for unit:', unitName);
 
       const products = [];
       
-      // Traverse the nested Firebase structure for this specific unit
-      const shelvesRef = collection(db, 'Products', unitName, 'shelves');
-      const shelvesSnapshot = await getDocs(shelvesRef);
+      // NEW NESTED STRUCTURE: Products/{Unit}/products/{productId}
+      // Each product document has storageLocation, shelfName, rowName, columnIndex fields
+      const productsRef = collection(db, 'Products', unitName, 'products');
+      const productsSnapshot = await getDocs(productsRef);
 
-      for (const shelfDoc of shelvesSnapshot.docs) {
-        const shelfName = shelfDoc.id;
+      console.log(`Found ${productsSnapshot.docs.length} products in ${unitName}`);
 
-        const rowsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows');
-        const rowsSnapshot = await getDocs(rowsRef);
+      productsSnapshot.docs.forEach(productDoc => {
+        const productData = productDoc.data();
+        
+        // Build product info with location data from document fields
+        const productInfo = {
+          ...productData,
+          id: productDoc.id,
+          shelfName: productData.shelfName || '',
+          rowName: productData.rowName || '',
+          columnIndex: productData.columnIndex || '', // Keep as is (string or number)
+          columnIndexNumber: parseInt(productData.columnIndex) || 0, // Also store as number
+          locationKey: `${productData.shelfName}-${productData.rowName}-${productData.columnIndex}`
+        };
 
-        for (const rowDoc of rowsSnapshot.docs) {
-          const rowName = rowDoc.id;
-          
-          const columnsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows', rowName, 'columns');
-          const columnsSnapshot = await getDocs(columnsRef);
+        console.log('Product loaded:', {
+          name: productInfo.name,
+          location: productInfo.locationKey,
+          shelf: productInfo.shelfName,
+          row: productInfo.rowName,
+          column: productInfo.columnIndex
+        });
 
-          for (const columnDoc of columnsSnapshot.docs) {
-            const columnIndex = columnDoc.id;
-            
-            const itemsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items');
-            const itemsSnapshot = await getDocs(itemsRef);
+        products.push(productInfo);
+      });
 
-            itemsSnapshot.docs.forEach(itemDoc => {
-              const productData = itemDoc.data();
-              const productInfo = {
-                ...productData,
-                id: itemDoc.id,
-                shelfName,
-                rowName,
-                columnIndex: columnIndex, // Keep as string to match
-                columnIndexNumber: parseInt(columnIndex), // Also store as number
-                locationKey: `${shelfName}-${rowName}-${columnIndex}`
-              };
-
-              products.push(productInfo);
-            });
-          }
-        }
-      }
-
+      console.log(`Successfully loaded ${products.length} products from ${unitName}`);
       setProducts(products);
     } catch (error) {
       console.error('Error fetching unit products:', error);
+      alert(`Failed to load products: ${error.message}`);
     } finally {
       setLoading(false);
     }

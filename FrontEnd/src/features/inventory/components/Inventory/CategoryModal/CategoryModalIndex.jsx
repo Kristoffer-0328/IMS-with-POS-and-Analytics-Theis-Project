@@ -43,6 +43,7 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
     }, [CategoryOpen, db]);
 
     // Calculate unit capacity based on actual products vs total slots
+    // UPDATED for new nested structure: Products/{unit}/products/{productId}
     const fetchUnitCapacities = async () => {
         try {
             const capacities = {};
@@ -60,7 +61,7 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
                 'Unit 09': 4 * 8 + 4 * 8 + 4 * 8 // Shelf A + Shelf B + Shelf C (4 cols * 8 rows each)
             };
 
-            // Fetch products for each unit
+            // Fetch products for each unit using NEW NESTED STRUCTURE
             const storageLocationsRef = collection(db, 'Products');
             const storageLocationsSnapshot = await getDocs(storageLocationsRef);
             
@@ -69,33 +70,14 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
                 let productCount = 0;
                 
                 try {
-                    const shelvesRef = collection(db, 'Products', unitName, 'shelves');
-                    const shelvesSnapshot = await getDocs(shelvesRef);
+                    // NEW: Simply count products in the products subcollection
+                    const productsRef = collection(db, 'Products', unitName, 'products');
+                    const productsSnapshot = await getDocs(productsRef);
+                    productCount = productsSnapshot.docs.length;
                     
-                    for (const shelfDoc of shelvesSnapshot.docs) {
-                        const shelfName = shelfDoc.id;
-                        
-                        const rowsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows');
-                        const rowsSnapshot = await getDocs(rowsRef);
-                        
-                        for (const rowDoc of rowsSnapshot.docs) {
-                            const rowName = rowDoc.id;
-                            
-                            const columnsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows', rowName, 'columns');
-                            const columnsSnapshot = await getDocs(columnsRef);
-                            
-                            for (const columnDoc of columnsSnapshot.docs) {
-                                const columnIndex = columnDoc.id;
-                                
-                                const itemsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items');
-                                const itemsSnapshot = await getDocs(itemsRef);
-                                
-                                productCount += itemsSnapshot.docs.length;
-                            }
-                        }
-                    }
+                    console.log(`📊 ${unitName}: ${productCount} products`);
                 } catch (error) {
-
+                    console.error(`Error counting products in ${unitName}:`, error);
                 }
                 
                 const totalSlots = unitTotalSlots[unitName] || 100; // Default to 100 if not defined

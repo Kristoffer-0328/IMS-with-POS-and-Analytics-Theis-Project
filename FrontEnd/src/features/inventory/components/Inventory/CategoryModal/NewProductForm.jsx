@@ -43,39 +43,28 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
     // Storage location modal states
     const [isStorageModalOpen, setIsStorageModalOpen] = useState(false);
     const [selectedStorageLocation, setSelectedStorageLocation] = useState(null);
+    const [selectedUnit, setSelectedUnit] = useState('Unit 01'); // Add state for unit selection
     
     // Mock storage unit data for the modal
     const getStorageUnitData = () => {
-        const unitName = selectedCategory?.name || 'Unit 01';
+        const unitName = selectedUnit || 'Unit 01'; // Use selectedUnit instead of category
         return {
             title: unitName,
             type: "Storage Unit",
             shelves: [
                 {
                     name: "Shelf A",
-                    rows: [
-                        { name: "Row 1", items: [] },
-                        { name: "Row 2", items: [] },
-                        { name: "Row 3", items: [] },
-                        { name: "Row 4", items: [] },
-                        { name: "Row 5", items: [] },
-                        { name: "Row 6", items: [] },
-                        { name: "Row 7", items: [] },
-                        { name: "Row 8", items: [] }
-                    ]
+                    rows: Array.from({ length: 8 }, (_, i) => ({ 
+                        name: `Row ${i + 1}`, 
+                        columns: 4 
+                    }))
                 },
                 {
                     name: "Shelf B",
-                    rows: [
-                        { name: "Row 1", items: [] },
-                        { name: "Row 2", items: [] },
-                        { name: "Row 3", items: [] },
-                        { name: "Row 4", items: [] },
-                        { name: "Row 5", items: [] },
-                        { name: "Row 6", items: [] },
-                        { name: "Row 7", items: [] },
-                        { name: "Row 8", items: [] }
-                    ]
+                    rows: Array.from({ length: 8 }, (_, i) => ({ 
+                        name: `Row ${i + 1}`, 
+                        columns: 4 
+                    }))
                 }
             ]
         };
@@ -83,12 +72,13 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
     
     // Handle storage location selection
     const handleStorageLocationSelect = (shelfName, rowName, columnIndex) => {
-        const locationString = `${selectedCategory?.name} - ${shelfName} - ${rowName} - Column ${columnIndex + 1}`;
+        const locationString = `${selectedUnit} - ${shelfName} - ${rowName} - Column ${columnIndex + 1}`;
         setSelectedStorageLocation({
-            unit: selectedCategory?.name,
+            unit: selectedUnit, // Use selectedUnit instead of category name
             shelf: shelfName,
             row: rowName,
-            column: columnIndex + 1,
+            column: columnIndex, // Store 0-based index (0, 1, 2, 3) to match ShelfViewModal
+            columnDisplay: columnIndex + 1, // Keep display value (1, 2, 3, 4) for UI
             fullLocation: locationString
         });
         setLocation(locationString);
@@ -119,7 +109,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
     }, [supplier]);
 
     // Handle supplier selection from SupplierSelector
-    const handleSupplierSelect = (supplierData) => {
+    const handleSupplierSelect = (supplierData) => {    
         if (supplierData) {
             setSelectedSupplier(supplierData);
             setSupplierName(supplierData.name);
@@ -262,8 +252,8 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
             storageLocation: selectedStorageLocation.unit,
             shelfName: selectedStorageLocation.shelf,
             rowName: selectedStorageLocation.row,
-            columnIndex: selectedStorageLocation.column,
-            fullLocation: `${selectedStorageLocation.unit} - ${selectedStorageLocation.shelf} - ${selectedStorageLocation.row} - Column ${selectedStorageLocation.column}`,
+            columnIndex: selectedStorageLocation.column, // 0-based index (0, 1, 2, 3) to match ShelfViewModal
+            fullLocation: `${selectedStorageLocation.unit} - ${selectedStorageLocation.shelf} - ${selectedStorageLocation.row} - Column ${selectedStorageLocation.columnDisplay || selectedStorageLocation.column + 1}`,
             location: selectedStorageLocation.unit, // Keep for backward compatibility
             unit: unit || 'pcs',
             brand: brand.trim(),
@@ -300,82 +290,37 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                 ? ProductFactory.generateSupplierProductId(productData.name, selectedCategory.name, currentSupplier.primaryCode || currentSupplier.code)
                 : ProductFactory.generateProductId(productData.name, selectedCategory.name, productData.brand);
 
-
             // Create product with the correct ID
             const newProduct = ProductFactory.createProduct(productData);
             
             // Override the product ID to match our generated ID
             newProduct.id = productId;
             
+            // Add flat structure fields
+            newProduct.isVariant = false;
+            newProduct.parentProductId = null;
+            newProduct.variantName = 'Standard';
+            
             // Remove any undefined values
             const cleanProduct = JSON.parse(JSON.stringify(newProduct));
 
-            // Create Firebase path: Products/{storageLocation}/{shelfName}/{rowName}/{columnIndex}/{productId}
-            const storageLocation = selectedStorageLocation.unit;
-            const shelfName = selectedStorageLocation.shelf;
-            const rowName = selectedStorageLocation.row;
-            const columnIndex = selectedStorageLocation.column;
-            
-            // Ensure all parent documents exist in the hierarchy
-            // Firebase requires alternating collection/document structure
-            // 1. Create storage location document (if it doesn't exist)
-            const storageLocationRef = doc(db, 'Products', storageLocation);
-            await setDoc(storageLocationRef, {
-                name: storageLocation,
-                type: 'storage_location',
-                createdAt: new Date().toISOString(),
-                lastUpdated: new Date().toISOString()
-            }, { merge: true });
-            
-            // 2. Create shelf document (using 'shelves' subcollection)
-            const shelfRef = doc(db, 'Products', storageLocation, 'shelves', shelfName);
-            await setDoc(shelfRef, {
-                name: shelfName,
-                type: 'shelf',
-                storageLocation: storageLocation,
-                createdAt: new Date().toISOString(),
-                lastUpdated: new Date().toISOString()
-            }, { merge: true });
-            
-            // 3. Create row document (using 'rows' subcollection)
-            const rowRef = doc(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName);
-            await setDoc(rowRef, {
-                name: rowName,
-                type: 'row',
-                storageLocation: storageLocation,
-                shelfName: shelfName,
-                createdAt: new Date().toISOString(),
-                lastUpdated: new Date().toISOString()
-            }, { merge: true });
-            
-            // 4. Create column document (using 'columns' subcollection)
-            const columnRef = doc(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex.toString());
-            await setDoc(columnRef, {
-                name: `Column ${columnIndex}`,
-                type: 'column',
-                storageLocation: storageLocation,
-                shelfName: shelfName,
-                rowName: rowName,
-                columnIndex: columnIndex,
-                createdAt: new Date().toISOString(),
-                lastUpdated: new Date().toISOString()
-            }, { merge: true });
-            
-            // 5. Create the actual product document (using 'items' subcollection)
-            const productRef = doc(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex.toString(), 'items', productId);
+            // Write to Products/{storageLocation}/{productId} - NESTED BY STORAGE UNIT
+            const storageUnitPath = selectedStorageLocation.unit; // e.g., "Unit 01"
+            const productRef = doc(db, 'Products', storageUnitPath, 'products', productId);
             await setDoc(productRef, cleanProduct);
+
+            console.log(`Product created at: Products/${storageUnitPath}/products/${productId}`);
 
             // If supplier is provided, automatically link the product
             if (currentSupplier) {
                 try {
-                    
-                    
                     const linkResult = await linkProductToSupplier(productId, currentSupplier.id, {
                         supplierPrice: Number(supplierPrice) || Number(unitPrice) || 0,
                         supplierSKU: productId,
                         lastUpdated: new Date().toISOString()
                     });
 
+                    console.log('Product linked to supplier:', linkResult);
                 } catch (error) {
                     console.error('Error linking product to supplier:', error);
                     alert('Product created but failed to link to supplier: ' + error.message);
@@ -675,7 +620,33 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
 
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-700">
-                                Storage Location
+                                Storage Unit
+                                <span className="text-xs text-red-500 ml-1">*</span>
+                            </label>
+                            <select
+                                value={selectedUnit}
+                                onChange={(e) => {
+                                    setSelectedUnit(e.target.value);
+                                    // Reset storage location when unit changes
+                                    setSelectedStorageLocation(null);
+                                }}
+                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                            >
+                                <option value="Unit 01">Unit 01</option>
+                                <option value="Unit 02">Unit 02</option>
+                                <option value="Unit 03">Unit 03</option>
+                                <option value="Unit 04">Unit 04</option>
+                                <option value="Unit 05">Unit 05</option>
+                                <option value="Unit 06">Unit 06</option>
+                                <option value="Unit 07">Unit 07</option>
+                                <option value="Unit 08">Unit 08</option>
+                                <option value="Unit 09">Unit 09</option>
+                            </select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                                Storage Location (Shelf/Row/Column)
                                 <span className="text-xs text-red-500 ml-1">*</span>
                             </label>
                             <button
@@ -702,7 +673,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                             {selectedStorageLocation && (
                                 <div className="mt-2 p-2 bg-blue-50 rounded-lg">
                                     <p className="text-xs text-blue-700">
-                                        <span className="font-medium">Selected:</span> {selectedStorageLocation.unit} → {selectedStorageLocation.shelf} → {selectedStorageLocation.row} → Column {selectedStorageLocation.column}
+                                        <span className="font-medium">Selected:</span> {selectedStorageLocation.unit} → {selectedStorageLocation.shelf} → {selectedStorageLocation.row} → Column {selectedStorageLocation.columnDisplay || selectedStorageLocation.column}
                                     </p>
                                 </div>
                             )}

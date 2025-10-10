@@ -6,7 +6,7 @@ import InventoryFilters from '../components/Inventory/InventoryFilters';
 
 import ViewProductModal from '../components/Inventory/ViewProductModal';
 import { useServices } from '../../../services/firebase/ProductServices';
-import { FiPlusCircle, FiUpload, FiSearch, FiInfo, FiGrid, FiList, FiPackage, FiTrendingDown, FiTruck, FiRefreshCw, FiSend } from 'react-icons/fi';
+import { FiPlusCircle, FiUpload, FiSearch, FiInfo, FiGrid, FiList, FiPackage, FiLayers, FiTrendingDown, FiTruck, FiRefreshCw, FiSend } from 'react-icons/fi';
 import ImportCVGModal from '../components/Inventory/ImportCVGModal';
 import ProductChoice from '../components/Inventory/ProductChoices';
 import CategoryMOdalIndex from '../components/Inventory/CategoryModal/CategoryModalIndex';
@@ -420,13 +420,36 @@ const Inventory = () => {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredData.map((product) => (
-                  <div key={product.id} className="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow border border-gray-100">
+                  <div key={product.id} className={`bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow border-2 ${
+                    product.isVariant 
+                      ? 'border-purple-200 bg-purple-50/30' 
+                      : 'border-gray-100'
+                  }`}>
                     <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <h4 className={`text-sm font-medium inline-block px-2 py-1 rounded-md ${getCategoryColor(product.category)}`}>
-                          {product.name} 
-                          {product.brand && <span className="ml-1 text-gray-600">({product.brand})</span>}
-                        </h4>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className={`text-sm font-medium inline-block px-2 py-1 rounded-md ${getCategoryColor(product.category)}`}>
+                            {product.name} 
+                            {product.brand && <span className="ml-1 text-gray-600">({product.brand})</span>}
+                          </h4>
+                          {product.isVariant && (
+                            <span className="px-2 py-0.5 bg-purple-500 text-white text-xs font-semibold rounded-full flex items-center gap-1">
+                              <FiLayers size={10} />
+                              VARIANT
+                            </span>
+                          )}
+                          {!product.isVariant && product.hasVariants && (
+                            <span className="px-2 py-0.5 bg-blue-500 text-white text-xs font-semibold rounded-full flex items-center gap-1">
+                              <FiPackage size={10} />
+                              BASE
+                            </span>
+                          )}
+                        </div>
+                        {product.isVariant && product.variantName && (
+                          <p className="text-xs text-purple-700 font-medium mt-1">
+                            Variant: {product.variantName || product.size || 'Standard'}
+                          </p>
+                        )}
                         <p className="text-xs text-gray-500 mt-1">{product.category}</p>
                       </div>
                       <span className={`px-2 py-1 text-xs font-medium rounded-full ${

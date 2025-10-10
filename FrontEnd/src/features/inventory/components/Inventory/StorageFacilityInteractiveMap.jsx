@@ -33,45 +33,57 @@ const StorageFacilityInteractiveMap = () => {
         'Unit 09': 4 * 8 + 4 * 8 + 4 * 8 // Shelf A + Shelf B + Shelf C (4 cols * 8 rows each)
       };
 
-      // Fetch products for each unit
-      const storageLocationsRef = collection(db, 'Products');
-      const storageLocationsSnapshot = await getDocs(storageLocationsRef);
+      // Fetch products from nested structure: Products/{storageUnit}/products/{productId}
+      const productsRef = collection(db, 'Products');
+      const storageUnitsSnapshot = await getDocs(productsRef);
       
-      for (const storageLocationDoc of storageLocationsSnapshot.docs) {
-        const unitName = storageLocationDoc.id;
-        let productCount = 0;
+      // Count products per unit (group base products + variants)
+      const unitProductCounts = {};
+      const processedParentIds = new Set(); // Track base products we've already counted
+      
+      // Iterate through each storage unit
+      for (const storageUnitDoc of storageUnitsSnapshot.docs) {
+        const unitId = storageUnitDoc.id;
         
-        try {
-          const shelvesRef = collection(db, 'Products', unitName, 'shelves');
-          const shelvesSnapshot = await getDocs(shelvesRef);
-          
-          for (const shelfDoc of shelvesSnapshot.docs) {
-            const shelfName = shelfDoc.id;
-            
-            const rowsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows');
-            const rowsSnapshot = await getDocs(rowsRef);
-            
-            for (const rowDoc of rowsSnapshot.docs) {
-              const rowName = rowDoc.id;
-              
-              const columnsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows', rowName, 'columns');
-              const columnsSnapshot = await getDocs(columnsRef);
-              
-              for (const columnDoc of columnsSnapshot.docs) {
-                const columnIndex = columnDoc.id;
-                
-                const itemsRef = collection(db, 'Products', unitName, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items');
-                const itemsSnapshot = await getDocs(itemsRef);
-                
-                productCount += itemsSnapshot.docs.length;
-              }
-            }
-          }
-        } catch (error) {
-
+        // Skip non-storage unit documents
+        if (!unitId.startsWith('Unit ')) {
+          continue;
         }
         
-        const totalSlots = unitTotalSlots[unitName] || 100; // Default to 100 if not defined
+        // Fetch products subcollection for this storage unit
+        const productsSubcollectionRef = collection(db, 'Products', unitId, 'products');
+        const productsSnapshot = await getDocs(productsSubcollectionRef);
+        
+        // Initialize counter for this unit
+        if (!unitProductCounts[unitId]) {
+          unitProductCounts[unitId] = 0;
+        }
+        
+        productsSnapshot.docs.forEach(doc => {
+          const product = doc.data();
+          
+          // If it's a variant, only count if we haven't counted its parent
+          if (product.isVariant && product.parentProductId) {
+            const parentKey = `${unitId}_${product.parentProductId}`;
+            if (!processedParentIds.has(parentKey)) {
+              processedParentIds.add(parentKey);
+              unitProductCounts[unitId]++;
+            }
+          } else if (!product.isVariant) {
+            // It's a base product, count it once
+            const productKey = `${unitId}_${doc.id}`;
+            if (!processedParentIds.has(productKey)) {
+              processedParentIds.add(productKey);
+              unitProductCounts[unitId]++;
+            }
+          }
+        });
+      }
+      
+      // Calculate capacities for each unit
+      for (const unitName in unitTotalSlots) {
+        const productCount = unitProductCounts[unitName] || 0;
+        const totalSlots = unitTotalSlots[unitName];
         const occupancyRate = productCount / totalSlots;
         
         capacities[unitName] = {
@@ -81,7 +93,7 @@ const StorageFacilityInteractiveMap = () => {
           status: getCapacityStatus(occupancyRate)
         };
         
-        
+        console.log(`${unitName}: ${productCount} products / ${totalSlots} slots (${(occupancyRate * 100).toFixed(1)}%)`);
       }
       
       setUnitCapacities(capacities);
