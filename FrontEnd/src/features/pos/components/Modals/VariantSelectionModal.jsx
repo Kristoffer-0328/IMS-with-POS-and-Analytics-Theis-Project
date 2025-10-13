@@ -23,7 +23,7 @@ export default function VariantSelectionModal({
   }
 
   const activeVariant = product.variants[activeVariantIndex];
-  const maxQty = activeVariant?.quantity || 0;
+  const maxQty = activeVariant?.totalQuantity || activeVariant?.quantity || 0;
 
   const handleQuantityChange = (e) => {
     const value = e.target.value;
@@ -58,13 +58,20 @@ export default function VariantSelectionModal({
   const hasSizeOrUnitVariants = new Set(product.variants.map(v => `${v.size || ''}|${v.unit || ''}`)).size > 1;
   const hasBrandVariants = new Set(product.variants.map(v => v.brand)).size > 1;
 
+  // Determine modal title based on what's different
+  const getModalTitle = () => {
+    if (hasSizeOrUnitVariants) return 'Select Size';
+    if (hasBrandVariants) return 'Select Brand';
+    return 'Select Variant';
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg w-[400px] mx-4">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
           <h3 className="text-lg font-medium">
-            {hasSizeOrUnitVariants ? 'Select Size' : 'Select Brand'}
+            {getModalTitle()}
           </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
             <FiX size={20} />
@@ -82,7 +89,7 @@ export default function VariantSelectionModal({
           <div className="grid grid-cols-2 gap-3 mb-4">
             {product.variants.map((variant, index) => (
               <button
-                key={variant.variantId}
+                key={variant.variantId || index}
                 onClick={() => setActiveVariantIndex(index)}
                 className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-all ${
                   activeVariantIndex === index
@@ -91,27 +98,32 @@ export default function VariantSelectionModal({
                 }`}
               >
                 <div className="text-center">
-                  {/* Always show brand if available */}
-                  {variant.brand && (
+                  {/* Show brand if different brands exist */}
+                  {hasBrandVariants && variant.brand && (
                     <p className="font-medium text-gray-900 mb-1">{variant.brand}</p>
                   )}
-                  {/* Always show size/specifications if available */}
-                  {(variant.size || variant.variantName || variant.specifications) && (
+                  {/* Show size/specifications if different sizes exist */}
+                  {hasSizeOrUnitVariants && (variant.size || variant.variantName || variant.specifications) && (
                     <p className="text-sm text-gray-600">
                       {variant.size || variant.variantName || variant.specifications}
                       {variant.unit && ` ${variant.unit}`}
                     </p>
                   )}
-                  {/* If no size/brand info, show variant name or a default */}
-                  {!variant.brand && !variant.size && !variant.variantName && !variant.specifications && (
+                  {/* If no distinguishing features shown yet, show variant name or default */}
+                  {!hasBrandVariants && !hasSizeOrUnitVariants && (
                     <p className="text-sm text-gray-600">
-                      {variant.unit || 'Standard'}
+                      {variant.size || variant.variantName || variant.unit || 'Standard'}
                     </p>
                   )}
                   <p className="text-sm font-medium text-orange-600 mt-1">
                     ₱{formatCurrency(variant.unitPrice || variant.price || 0)}
                   </p>
-                  <p className="text-xs text-gray-500">Stock: {variant.quantity}</p>
+                  <p className="text-xs text-gray-500">
+                    Stock: {variant.totalQuantity || variant.quantity}
+                    {variant.locationCount > 1 && (
+                      <span className="ml-1 text-blue-600">({variant.locationCount} locations)</span>
+                    )}
+                  </p>
                 </div>
               </button>
             ))}
@@ -170,10 +182,15 @@ export default function VariantSelectionModal({
           {/* Price Summary */}
           <div className="bg-gray-50 rounded-lg p-3">
             <div className="flex justify-between py-1">
-              <span className="text-gray-600">Selected {hasBrandVariants ? 'Brand' : 'Size'}:</span>
+              <span className="text-gray-600">
+                Selected {hasBrandVariants ? 'Brand' : 'Size'}:
+              </span>
               <span className="font-medium">
-                {activeVariant?.brand || activeVariant?.size || activeVariant?.variantName || activeVariant?.specifications || 
-                 `${activeVariant?.unit || 'pcs'}`}
+                {hasBrandVariants 
+                  ? (activeVariant?.brand || 'Unknown')
+                  : (activeVariant?.size || activeVariant?.variantName || activeVariant?.specifications || 
+                     `${activeVariant?.unit || 'pcs'}`)
+                }
               </span>
             </div>
             <div className="flex justify-between py-1">

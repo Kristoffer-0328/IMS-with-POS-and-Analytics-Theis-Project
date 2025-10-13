@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   FiTrendingUp,
   FiTrendingDown,
@@ -114,7 +114,24 @@ const IMDashboard = () => {
     getRequests();
   }, [fetchRestockRequests]);
   
-  const chartData = products.map((p) => {
+  const groupedProducts = useMemo(() => {
+    const productGroups = {};
+    products.forEach(item => {
+      const groupKey = `${item.name || 'unknown'}_${item.brand || 'generic'}_${item.specifications || ''}_${item.category || ''}`;
+      if (!productGroups[groupKey]) {
+        productGroups[groupKey] = {
+          ...item,
+          quantity: 0,
+          locations: [],
+        };
+      }
+      productGroups[groupKey].quantity += Number(item.quantity) || 0;
+      productGroups[groupKey].locations.push(item.location || item.fullLocation || 'Unknown');
+    });
+    return Object.values(productGroups);
+  }, [products]);
+
+  const chartData = groupedProducts.map((p) => {
     let color = '#4779FF';
     if (p.quantity < p.restockLevel) color = '#FF4D4D';
     else if (p.quantity <= 40) color = '#FFC554';

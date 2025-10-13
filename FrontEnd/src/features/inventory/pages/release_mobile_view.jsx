@@ -322,45 +322,113 @@ const ReleaseMobileView = () => {
           }
 
           const productData = productDoc.data();
-          const currentQty = Number(productData.quantity) || 0;
-          const newQty = currentQty - releasedQty;
-
-          if (newQty < 0) {
-            throw new Error(`Insufficient stock for ${product.name}. Available: ${currentQty}, Requested: ${releasedQty}`);
-          }
-
-          console.log(`➡️ Updating quantity: ${currentQty} - ${releasedQty} = ${newQty}`);
-
-          // Update product quantity
-          transaction.update(inventoryLocation.productRef, {
-            quantity: newQty,
-            lastUpdated: serverTimestamp()
-          });
-
-          // Generate restock request if quantity is low
-          const restockLevel = productData.restockLevel || productData.reorderPoint || 10;
-          if (newQty <= restockLevel) {
-            console.log(`⚠️ Low stock detected (${newQty} <= ${restockLevel}), creating restock request...`);
-
-            const restockRequestRef = doc(collection(db, 'RestockingRequests'));
-            transaction.set(restockRequestRef, {
-              productId: product.productId,
-              productName: product.name,
-              currentQuantity: newQty,
-              requestedQuantity: restockLevel * 2,
-              storageLocation: inventoryLocation.location.storageLocation,
-              shelfName: inventoryLocation.location.shelfName,
-              rowName: inventoryLocation.location.rowName,
-              columnIndex: inventoryLocation.location.columnIndex,
-              category: product.category || 'Uncategorized',
-              status: 'pending',
-              priority: newQty === 0 ? 'high' : 'medium',
-              reason: `Stock depleted after release (Release ID: ${releaseId})`,
-              requestedBy: currentUser?.uid || 'system',
-              requestedByName: currentUser?.displayName || currentUser?.email || 'System',
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp()
+          
+          // Check if this product has variants
+          const hasVariants = productData.variants && Array.isArray(productData.variants) && productData.variants.length > 0;
+          
+          if (hasVariants && product.variantId) {
+            // Product has variants - update the specific variant's quantity
+            console.log(`🔍 Product has variants, searching for variant ID: ${product.variantId}`);
+            
+            const variants = [...productData.variants];
+            const variantIndex = variants.findIndex(v => v.id === product.variantId);
+            
+            if (variantIndex === -1) {
+              throw new Error(`Variant ${product.name} not found in product`);
+            }
+            
+            const variant = variants[variantIndex];
+            const currentQty = Number(variant.quantity) || 0;
+            const newQty = currentQty - releasedQty;
+            
+            if (newQty < 0) {
+              throw new Error(`Insufficient stock for ${product.name}. Available: ${currentQty}, Requested: ${releasedQty}`);
+            }
+            
+            console.log(`➡️ Updating variant quantity: ${currentQty} - ${releasedQty} = ${newQty}`);
+            
+            // Update the variant quantity
+            variants[variantIndex] = {
+              ...variant,
+              quantity: newQty
+            };
+            
+            // Update the product document with modified variants
+            transaction.update(inventoryLocation.productRef, {
+              variants: variants,
+              lastUpdated: serverTimestamp()
             });
+            
+            // Check for low stock on variant
+            const restockLevel = variant.restockLevel || productData.restockLevel || productData.reorderPoint || 10;
+            if (newQty <= restockLevel) {
+              console.log(`Low stock detected for variant (${newQty} <= ${restockLevel}), creating restock request...`);
+
+              const restockRequestRef = doc(collection(db, 'RestockingRequests'));
+              transaction.set(restockRequestRef, {
+                productId: product.productId,
+                variantId: product.variantId,
+                productName: product.name,
+                currentQuantity: newQty,
+                requestedQuantity: restockLevel - product.maximumStockLevel,
+                storageLocation: inventoryLocation.location.storageLocation,
+                shelfName: inventoryLocation.location.shelfName,
+                rowName: inventoryLocation.location.rowName,
+                columnIndex: inventoryLocation.location.columnIndex,
+                category: product.category || 'Uncategorized',
+                status: 'pending',
+                priority: newQty === 0 ? 'high' : 'medium',
+                reason: `Variant stock depleted after release (Release ID: ${releaseId})`,
+                requestedBy: currentUser?.uid || 'system',
+                requestedByName: currentUser?.displayName || currentUser?.email || 'System',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+              });
+            }
+          } else {
+            // Product has no variants - update base product quantity
+            console.log(`📦 Product has no variants, updating base product quantity`);
+            
+            const currentQty = Number(productData.quantity) || 0;
+            const newQty = currentQty - releasedQty;
+
+            if (newQty < 0) {
+              throw new Error(`Insufficient stock for ${product.name}. Available: ${currentQty}, Requested: ${releasedQty}`);
+            }
+
+            console.log(`➡️ Updating quantity: ${currentQty} - ${releasedQty} = ${newQty}`);
+
+            // Update product quantity
+            transaction.update(inventoryLocation.productRef, {
+              quantity: newQty,
+              lastUpdated: serverTimestamp()
+            });
+
+            // Generate restock request if quantity is low
+            const restockLevel = productData.restockLevel || productData.reorderPoint || 10;
+            if (newQty <= restockLevel) {
+              console.log(`⚠️ Low stock detected (${newQty} <= ${restockLevel}), creating restock request...`);
+
+              const restockRequestRef = doc(collection(db, 'RestockingRequests'));
+              transaction.set(restockRequestRef, {
+                productId: product.productId,
+                productName: product.name,
+                currentQuantity: newQty,
+                requestedQuantity: restockLevel * 2,
+                storageLocation: inventoryLocation.location.storageLocation,
+                shelfName: inventoryLocation.location.shelfName,
+                rowName: inventoryLocation.location.rowName,
+                columnIndex: inventoryLocation.location.columnIndex,
+                category: product.category || 'Uncategorized',
+                status: 'pending',
+                priority: newQty === 0 ? 'high' : 'medium',
+                reason: `Stock depleted after release (Release ID: ${releaseId})`,
+                requestedBy: currentUser?.uid || 'system',
+                requestedByName: currentUser?.displayName || currentUser?.email || 'System',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+              });
+            }
           }
         });
 

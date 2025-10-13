@@ -46,31 +46,32 @@ export const generateReceiptHtml = (data) => {
         <html>
         <head>
             <meta charset="UTF-8">
-            <title>Receipt ${data.receiptNumber}</title>
+            <title>Invoice ${data.receiptNumber}</title>
             <style>
-                body { font-family: 'Courier New', Courier, monospace; font-size: 10pt; color: #000; width: 280px; margin: 0 auto; padding: 10px; box-sizing: border-box; }
-                .receipt { width: 100%; text-align: center; }
+                body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11pt; color: #222; width: 380px; margin: 0 auto; padding: 18px; box-sizing: border-box; background: #f8f8f8; }
+                .invoice { width: 100%; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); padding: 18px; }
                 .header, .footer { text-align: center; margin-bottom: 10px; }
                 .header p, .footer p { margin: 2px 0; }
-                .store-name { font-weight: bold; font-size: 12pt; }
-                .divider { border-top: 1px dashed #000; margin: 8px 0; }
-                .section-title { text-align: center; margin: 8px 0; font-weight: bold; text-transform: uppercase; font-size: 11pt; }
-                .info-section { text-align: left; font-size: 9pt; margin-bottom: 5px; }
+                .logo-img { width: 90px; height: auto; margin-bottom: 8px; }
+                .store-name { font-weight: bold; font-size: 16pt; color: #d97706; letter-spacing: 1px; display: none; }
+                .divider { border-top: 1px solid #e5e7eb; margin: 12px 0; }
+                .section-title { text-align: left; margin: 12px 0 6px 0; font-weight: bold; text-transform: uppercase; font-size: 13pt; color: #374151; }
+                .info-section { text-align: left; font-size: 10pt; margin-bottom: 8px; }
                 .info-section div { margin-bottom: 2px; display: flex; justify-content: space-between; }
-                .items-header { display: flex; justify-content: space-between; font-weight: bold; font-size: 9pt; margin-bottom: 3px; padding: 0 2px; }
-                .item-row { display: flex; justify-content: space-between; margin: 4px 0; font-size: 9pt; text-align: right; padding: 0 2px; }
+                .items-header { display: flex; justify-content: space-between; font-weight: bold; font-size: 10pt; margin-bottom: 3px; padding: 0 2px; color: #374151; }
+                .item-row { display: flex; justify-content: space-between; margin: 4px 0; font-size: 10pt; text-align: right; padding: 0 2px; }
                 .col-desc { text-align: left; flex-grow: 1; margin-right: 5px; word-break: break-word; }
                 .col-qty { min-width: 30px; flex-shrink: 0; text-align: center;}
                 .col-price { min-width: 55px; flex-shrink: 0; }
                 .col-total { min-width: 60px; flex-shrink: 0; font-weight: 500;}
-                .totals-section { text-align: right; margin-top: 8px; font-size: 10pt; }
-                .totals-section .item-row { font-size: 10pt; margin: 3px 0; }
+                .totals-section { text-align: right; margin-top: 12px; font-size: 11pt; }
+                .totals-section .item-row { font-size: 11pt; margin: 3px 0; }
                 .totals-section .item-row span:first-child { text-align: right; flex-grow: 1; margin-right: 10px; }
-                .total-line { font-weight: bold; font-size: 11pt; margin-top: 5px; padding-top: 5px; border-top: 1px solid #000; }
-                .payment-info { margin-top: 8px; font-size: 10pt; }
-                .print-button { display: block; width: 80%; margin: 20px auto 10px auto; padding: 10px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 11pt; }
+                .total-line { font-weight: bold; font-size: 13pt; margin-top: 8px; padding-top: 8px; border-top: 2px solid #d97706; color: #d97706; }
+                .payment-info { margin-top: 10px; font-size: 11pt; }
+                .print-button { display: block; width: 80%; margin: 20px auto 10px auto; padding: 10px; background-color: #d97706; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 12pt; }
                 @media print {
-                    body { width: auto; margin: 0; padding: 0; font-size: 9pt; }
+                    body { width: auto; margin: 0; padding: 0; font-size: 10pt; background: #fff; }
                     .print-button { display: none; }
                     .header, .footer, .section-title, .divider, .item-row, .totals-section .item-row { margin: 3px 0; }
                     .divider { margin: 5px 0; }
@@ -80,18 +81,18 @@ export const generateReceiptHtml = (data) => {
             </style>
         </head>
         <body>
-        <div class="receipt">
+        <div class="invoice">
             <div class="header">
-                <p class="store-name">Glory Star Hardware</p>
+                <img src="/Glory_Star_Logo.png" alt="Glory Star Hardware Logo" class="logo-img" />
                 <p>123 Main Street, Antipolo City, Philippines</p>
                 <p>Phone: (123) 456-7890</p>
                 <p>Email: support@glorystarhardware.com</p>
                 <p>VAT Reg TIN: 000-000-000-000</p>
                 <div class="divider"></div>
-                <p class="section-title">SALES RECEIPT</p>
+                <p class="section-title">INVOICE</p>
                 <div class="divider"></div>
                 <div class="info-section">
-                    <div><span>Receipt No:</span><span>${data.receiptNumber}</span></div>
+                    <div><span>Invoice No:</span><span>${data.receiptNumber}</span></div>
                     <div><span>Date:</span><span>${formattedDate}</span></div>
                     <div><span>Time:</span><span>${formattedTime}</span></div>
                     <div><span>Cashier:</span><span>${data.cashierName || 'N/A'}</span></div>
@@ -102,7 +103,7 @@ export const generateReceiptHtml = (data) => {
                     ${data.isBulkOrder && data.customerDetails?.address ? `<div><span>Address:</span><span>${data.customerDetails.address}</span></div>` : ''}
                 </div>
                 <div class="divider"></div>
-                <p class="section-title">SOLD ITEMS</p>
+                <p class="section-title">ITEMS</p>
                 <div class="divider"></div>
                 <div class="items-header">
                     <span class="col-desc">Description</span>
@@ -150,11 +151,11 @@ export const generateReceiptHtml = (data) => {
                 <div class="divider"></div>
             </div>
             <div class="footer">
-                <p>Thank you for shopping with us!</p>
+                <p>Thank you for your business!</p>
                 <p>Visit again for quality hardware supplies.</p>
-                <p style="font-size: 8pt; margin-top: 10px;">THIS SERVES AS YOUR OFFICIAL RECEIPT.</p>
+                <p style="font-size: 9pt; margin-top: 10px; color: #374151;">This is your official invoice.</p>
             </div>
-            <button class="print-button" onclick="window.print(); window.close();">Print Receipt</button>
+            <button class="print-button" onclick="window.print(); window.close();">Print Invoice</button>
         </div>
         </body>
         </html>

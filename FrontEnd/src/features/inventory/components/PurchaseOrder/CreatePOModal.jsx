@@ -32,7 +32,7 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
     const loadData = async () => {
       try {
         // Load restock requests
-        const restockRequestsRef = collection(db, 'RestockRequests');
+        const restockRequestsRef = collection(db, 'RestockingRequests');
         const q = query(
           restockRequestsRef,
           where('status', '==', 'pending')

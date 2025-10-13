@@ -63,51 +63,85 @@ const SupplierProducts = ({ supplier, onClose }) => {
 
         console.log('Total linked products found:', linkedProducts.length);
 
-        // Step 4: Process products and their variants
-        const processedProducts = linkedProducts.map(product => {
+        // Step 4: Group products by base identity to consolidate duplicates across storage locations
+        const productGroups = {};
+        
+        linkedProducts.forEach(product => {
           const supplierData = supplierDataMap[product.id];
           
-          // Check if product has variants in Firebase
-          const productVariants = Array.isArray(product.variants) ? product.variants : [];
+          // Create a unique key for grouping (name + brand + specifications)
+          const groupKey = `${product.name || 'unknown'}_${product.brand || 'generic'}_${product.specifications || ''}_${product.category || ''}`;
           
-          // Process variants that are linked to this supplier
-          const linkedVariants = productVariants
-            .map((variant, index) => {
-              const variantId = variant.id || `${product.id}_variant_${index}`;
-              const variantSupplierData = supplierDataMap[variantId];
-              
-              if (variantSupplierData) {
-                return {
-                  ...variant,
-                  id: variantId,
-                  variantIndex: index,
-                  parentProductId: product.id,
-                  name: variant.name || product.name,
-                  size: variant.size || variant.specifications || '',
-                  specifications: variant.specifications || '',
-                  supplierPrice: variantSupplierData.supplierPrice || 0,
-                  supplierSKU: variantSupplierData.supplierSKU || '',
-                  unitPrice: variant.unitPrice || 0,
-                  quantity: variant.quantity || 0,
-                  unit: variant.unit || 'pcs'
-                };
-              }
-              return null;
-            })
-            .filter(v => v !== null);
-
-          return {
-            ...product,
-            supplierPrice: supplierData.supplierPrice || 0,
-            supplierSKU: supplierData.supplierSKU || '',
-            lastUpdated: supplierData.lastUpdated,
-            originalUnitPrice: product.unitPrice, // Store original unit price for editing
-            variants: linkedVariants,
-            // Keep original product data
-            actualCategory: product.category || product.storageLocation || 'Unknown',
-            fullLocation: product.fullLocation || ''
-          };
+          if (!productGroups[groupKey]) {
+            // Check if product has variants in Firebase
+            const productVariants = Array.isArray(product.variants) ? product.variants : [];
+            
+            // Process variants that are linked to this supplier
+            const linkedVariants = productVariants
+              .map((variant, index) => {
+                const variantId = variant.id || `${product.id}_variant_${index}`;
+                const variantSupplierData = supplierDataMap[variantId];
+                
+                if (variantSupplierData) {
+                  return {
+                    ...variant,
+                    id: variantId,
+                    variantIndex: index,
+                    parentProductId: product.id,
+                    name: variant.name || product.name,
+                    size: variant.size || variant.specifications || '',
+                    specifications: variant.specifications || '',
+                    supplierPrice: variantSupplierData.supplierPrice || 0,
+                    supplierSKU: variantSupplierData.supplierSKU || '',
+                    unitPrice: variant.unitPrice || 0,
+                    quantity: variant.quantity || 0,
+                    unit: variant.unit || 'pcs'
+                  };
+                }
+                return null;
+              })
+              .filter(v => v !== null);
+            
+            productGroups[groupKey] = {
+              ...product,
+              supplierPrice: supplierData.supplierPrice || 0,
+              supplierSKU: supplierData.supplierSKU || '',
+              lastUpdated: supplierData.lastUpdated,
+              originalUnitPrice: product.unitPrice, // Store original unit price for editing
+              variants: linkedVariants,
+              actualCategory: product.category || product.storageLocation || 'Unknown',
+              fullLocation: product.fullLocation || '',
+              locations: [{
+                id: product.id,
+                location: product.fullLocation || product.location || 'Unknown',
+                storageLocation: product.storageLocation,
+                quantity: Number(product.quantity) || 0
+              }],
+              allIds: [product.id],
+              totalQuantity: Number(product.quantity) || 0
+            };
+          } else {
+            // Add this location to the existing product group
+            productGroups[groupKey].locations.push({
+              id: product.id,
+              location: product.fullLocation || product.location || 'Unknown',
+              storageLocation: product.storageLocation,
+              quantity: Number(product.quantity) || 0
+            });
+            productGroups[groupKey].allIds.push(product.id);
+            productGroups[groupKey].totalQuantity += Number(product.quantity) || 0;
+          }
         });
+
+        // Convert grouped products to array
+        const processedProducts = Object.values(productGroups).map(group => ({
+          ...group,
+          locationCount: group.locations.length,
+          // Update the full location display to show multiple locations if applicable
+          fullLocation: group.locations.length > 1 
+            ? `${group.locations.length} locations` 
+            : group.locations[0]?.location || 'Unknown'
+        }));
 
         setSupplierProducts(processedProducts);
         setLoading(false);
@@ -439,6 +473,16 @@ const SupplierProducts = ({ supplier, onClose }) => {
                               {product.storageType && (
                                 <div className="text-xs text-gray-500">
                                   Storage: {product.storageType}
+                                </div>
+                              )}
+                              {product.locationCount > 1 && (
+                                <div className="text-xs mt-2">
+                                  <span className="inline-flex items-center px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-semibold">
+                                    📍 {product.locationCount} storage locations
+                                  </span>
+                                  <div className="mt-1 text-xs text-gray-600">
+                                    Total qty: {product.totalQuantity} {product.unit || 'pcs'}
+                                  </div>
                                 </div>
                               )}
                             </div>

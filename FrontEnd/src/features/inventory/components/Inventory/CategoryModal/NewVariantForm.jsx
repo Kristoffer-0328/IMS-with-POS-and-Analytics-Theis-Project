@@ -6,6 +6,7 @@ import { getCategorySpecificFields } from "./Utils";
 import ProductFactory from "../../Factory/productFactory";
 import SupplierSelector from '../../Supplier/SupplierSelector';
 import ShelfViewModal from '../ShelfViewModal';
+import { getStorageUnitData } from '../../../config/StorageUnitsConfig';
 
 const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier }) => {
     const [existingProducts, setExistingProducts] = useState([]);
@@ -34,53 +35,77 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
     
     // Storage location modal states
     const [isStorageModalOpen, setIsStorageModalOpen] = useState(false);
-    const [selectedStorageLocation, setSelectedStorageLocation] = useState(null);
-    const [selectedUnit, setSelectedUnit] = useState('Unit 01'); // Add state for unit selection
+    const [selectedStorageLocations, setSelectedStorageLocations] = useState([]); // Changed to array for multiple selections
+    const [selectedUnit, setSelectedUnit] = useState(selectedCategory?.name || null); // Auto-set from selectedCategory
+    const [quantityPerLocation, setQuantityPerLocation] = useState({}); // Track quantity per location
 
     const { listenToProducts, linkProductToSupplier } = useServices();
     const db = getFirestore(app);
     
-    // Mock storage unit data for the modal
-    const getStorageUnitData = () => {
-        const unitName = selectedUnit || 'Unit 01'; // Use selectedUnit instead of category
-        return {
-            title: unitName,
-            type: "Storage Unit",
-            shelves: [
-                {
-                    name: "Shelf A",
-                    rows: Array.from({ length: 8 }, (_, i) => ({ 
-                        name: `Row ${i + 1}`, 
-                        columns: 4 
-                    }))
-                },
-                {
-                    name: "Shelf B",
-                    rows: Array.from({ length: 8 }, (_, i) => ({ 
-                        name: `Row ${i + 1}`, 
-                        columns: 4 
-                    }))
-                }
-            ]
-        };
-    };
-    
-    // Handle storage location selection
-    const handleStorageLocationSelect = (shelfName, rowName, columnIndex) => {
+    // Handle storage location selection - now supports multiple locations
+    // Handle storage location selection - now with quantity parameter
+    const handleStorageLocationSelect = (shelfName, rowName, columnIndex, quantity) => {
+        // If quantity is -1, this is a removal request
+        if (quantity === -1) {
+            const locationKey = `${selectedUnit}-${shelfName}-${rowName}-${columnIndex}`;
+            handleRemoveLocation(locationKey);
+            return;
+        }
+        
+        const locationKey = `${selectedUnit}-${shelfName}-${rowName}-${columnIndex}`;
         const locationString = `${selectedUnit} - ${shelfName} - ${rowName} - Column ${columnIndex + 1}`;
-        setSelectedStorageLocation({
-            unit: selectedUnit, // Use selectedUnit instead of category name
+        
+        const newLocation = {
+            id: locationKey,
+            unit: selectedUnit,
             shelf: shelfName,
             row: rowName,
-            column: columnIndex, // Store 0-based index (0, 1, 2, 3) to match ShelfViewModal
-            columnDisplay: columnIndex + 1, // Keep display value (1, 2, 3, 4) for UI
-            fullLocation: locationString
-        });
-        setVariantValue(prev => ({
+            column: columnIndex,
+            columnDisplay: columnIndex + 1,
+            fullLocation: locationString,
+            quantity: quantity // Quantity is now passed directly from the modal
+        };
+        
+        // Add new location with quantity already set
+        setSelectedStorageLocations(prev => [...prev, newLocation]);
+        setQuantityPerLocation(prev => ({
             ...prev,
-            location: locationString
+            [locationKey]: quantity
         }));
-        setIsStorageModalOpen(false);
+        
+        // Don't close modal - allow multiple selections
+    };
+    
+    // Handle removing a storage location
+    const handleRemoveLocation = (locationId) => {
+        setSelectedStorageLocations(prev => prev.filter(loc => loc.id !== locationId));
+        setQuantityPerLocation(prev => {
+            const updated = { ...prev };
+            delete updated[locationId];
+            return updated;
+        });
+    };
+    
+    // Handle quantity change for a specific location (for editing after selection)
+    const handleLocationQuantityChange = (locationId, qty) => {
+        setQuantityPerLocation(prev => ({
+            ...prev,
+            [locationId]: parseInt(qty) || 0
+        }));
+        // Also update in selectedStorageLocations
+        setSelectedStorageLocations(prev => prev.map(loc => 
+            loc.id === locationId ? { ...loc, quantity: parseInt(qty) || 0 } : loc
+        ));
+    };
+    
+    // Calculate total quantity across all locations
+    const getTotalQuantity = () => {
+        return Object.values(quantityPerLocation).reduce((sum, qty) => sum + (parseInt(qty) || 0), 0);
+    };
+    
+    // Calculate allocated quantity (for ShelfViewModal)
+    const getAllocatedQuantity = () => {
+        return getTotalQuantity();
     };
 
     // Handle preSelectedProduct and supplier props
@@ -185,8 +210,25 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
             return;
         }
         
-        if (!selectedStorageLocation) {
-            alert('Please select a storage location first');
+        // Validate storage locations
+        if (selectedStorageLocations.length === 0) {
+            alert('Please select at least one storage location');
+            return;
+        }
+        
+        // Validate quantities for all locations
+        const totalQty = getTotalQuantity();
+        if (totalQty === 0) {
+            alert('Please enter quantity for at least one storage location');
+            return;
+        }
+        
+        // Check if all selected locations have quantities
+        const locationsWithoutQty = selectedStorageLocations.filter(
+            loc => !quantityPerLocation[loc.id] || quantityPerLocation[loc.id] === 0
+        );
+        if (locationsWithoutQty.length > 0) {
+            alert('Please enter quantity for all selected storage locations');
             return;
         }
 
@@ -204,102 +246,114 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
 
             // Get current supplier
             const currentSupplier = supplier || selectedSupplier;
+            
+            // Create variants for each storage location
+            for (const location of selectedStorageLocations) {
+                const locationQty = quantityPerLocation[location.id] || 0;
 
-            // Generate unique variant ID
-            const variantId = `${selectedProduct.id}_VAR_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                // Generate unique variant ID for this location
+                const locationSuffix = `${location.shelf}-${location.row}-${location.column}`;
+                const baseVariantId = `${selectedProduct.id}_VAR_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                const variantId = selectedStorageLocations.length > 1 
+                    ? `${baseVariantId}-${locationSuffix}` 
+                    : baseVariantId;
 
-            // Create variant as a separate product document with FLAT STRUCTURE
-            const variantProductData = {
-                id: variantId,
-                name: selectedProduct.name,
-                brand: selectedProduct.brand || 'Generic',
-                category: selectedProduct.category || selectedCategory?.name,
-                subCategory: selectedProduct.subCategory || selectedProduct.category,
-                
-                // Variant-specific data
-                quantity: Number(variantValue.quantity) || 0,
-                unitPrice: Number(variantValue.unitPrice) || 0,
-                unit: variantValue.unit || unit || 'pcs',
-                size: variantValue.size || 'default',
-                specifications: specifications || '',
-                variantName: variantValue.size || 'Variant',
-                
-                // Storage location - from selected storage location
-                storageLocation: selectedStorageLocation.unit,
-                shelfName: selectedStorageLocation.shelf,
-                rowName: selectedStorageLocation.row,
-                columnIndex: selectedStorageLocation.column,
-                fullLocation: selectedStorageLocation.fullLocation,
-                location: selectedStorageLocation.unit,
-                
-                // Variant identification
-                isVariant: true,
-                parentProductId: selectedProduct.id,
-                
-                // Supplier information
-                supplier: currentSupplier ? {
-                    name: currentSupplier.name,
-                    code: currentSupplier.primaryCode || currentSupplier.code,
-                    primaryCode: currentSupplier.primaryCode || currentSupplier.code,
-                    id: currentSupplier.id,
-                    price: Number(supplierPrice) || Number(variantValue.unitPrice) || 0
-                } : selectedProduct.supplier || {
-                    name: 'Unknown',
-                    primaryCode: '',
-                    code: ''
-                },
-                
-                // Additional fields
-                categoryValues: filteredCategoryValues || {},
-                customFields: additionalVariantFields.reduce((acc, field) => ({
-                    ...acc,
-                    [field.name]: field.value || ''
-                }), {}),
-                imageUrl: variantImage || null,
-                storageType: selectedProduct.storageType || 'Goods',
-                restockLevel: selectedProduct.restockLevel || 0,
-                maximumStockLevel: selectedProduct.maximumStockLevel || 0,
-                
-                // Timestamps
-                createdAt: new Date().toISOString(),
-                lastUpdated: new Date().toISOString()
-            };
+                // Create variant as a separate product document with FLAT STRUCTURE
+                const variantProductData = {
+                    id: variantId,
+                    name: selectedProduct.name,
+                    brand: selectedProduct.brand || 'Generic',
+                    category: selectedProduct.category || selectedCategory?.name,
+                    subCategory: selectedProduct.subCategory || selectedProduct.category,
+                    
+                    // Variant-specific data
+                    quantity: locationQty,
+                    unitPrice: Number(variantValue.unitPrice) || 0,
+                    unit: variantValue.unit || unit || 'pcs',
+                    size: variantValue.size || 'default',
+                    specifications: specifications || '',
+                    variantName: variantValue.size || 'Variant',
+                    
+                    // Storage location
+                    storageLocation: location.unit,
+                    shelfName: location.shelf,
+                    rowName: location.row,
+                    columnIndex: location.column,
+                    fullLocation: location.fullLocation,
+                    location: location.unit,
+                    
+                    // Variant identification
+                    isVariant: true,
+                    parentProductId: selectedProduct.id,
+                    multiLocation: selectedStorageLocations.length > 1,
+                    totalQuantityAllLocations: totalQty,
+                    
+                    // Supplier information
+                    supplier: currentSupplier ? {
+                        name: currentSupplier.name,
+                        code: currentSupplier.primaryCode || currentSupplier.code,
+                        primaryCode: currentSupplier.primaryCode || currentSupplier.code,
+                        id: currentSupplier.id,
+                        price: Number(supplierPrice) || Number(variantValue.unitPrice) || 0
+                    } : selectedProduct.supplier || {
+                        name: 'Unknown',
+                        primaryCode: '',
+                        code: ''
+                    },
+                    
+                    // Additional fields
+                    categoryValues: filteredCategoryValues || {},
+                    customFields: additionalVariantFields.reduce((acc, field) => ({
+                        ...acc,
+                        [field.name]: field.value || ''
+                    }), {}),
+                    imageUrl: variantImage || null,
+                    storageType: selectedProduct.storageType || 'Goods',
+                    restockLevel: selectedProduct.restockLevel || 0,
+                    maximumStockLevel: selectedProduct.maximumStockLevel || 0,
+                    
+                    // Timestamps
+                    createdAt: new Date().toISOString(),
+                    lastUpdated: new Date().toISOString()
+                };
 
-            // Remove any undefined values
-            const cleanVariantData = JSON.parse(JSON.stringify(variantProductData));
+                // Remove any undefined values
+                const cleanVariantData = JSON.parse(JSON.stringify(variantProductData));
 
-            console.log('=== VARIANT CREATION DEBUG ===');
-            console.log('Storage Unit Path:', selectedStorageLocation.unit);
-            console.log('Variant ID:', variantId);
-            console.log('Full Path:', `Products/${selectedStorageLocation.unit}/products/${variantId}`);
-            console.log('Variant Data:', cleanVariantData);
+                console.log('=== VARIANT CREATION DEBUG ===');
+                console.log('Storage Unit Path:', location.unit);
+                console.log('Variant ID:', variantId);
+                console.log('Full Path:', `Products/${location.unit}/products/${variantId}`);
+                console.log('Variant Data:', cleanVariantData);
 
-            // Write variant to Products/{storageLocation}/products/{variantId} - NESTED BY STORAGE UNIT
-            const storageUnitPath = selectedStorageLocation.unit; // e.g., "Unit 01"
-            const variantRef = doc(db, 'Products', storageUnitPath, 'products', variantId);
-            await setDoc(variantRef, cleanVariantData);
+                // Write variant to Products/{storageLocation}/products/{variantId} - NESTED BY STORAGE UNIT
+                const storageUnitPath = location.unit;
+                const variantRef = doc(db, 'Products', storageUnitPath, 'products', variantId);
+                await setDoc(variantRef, cleanVariantData);
 
-            console.log(`✅ Variant created at: Products/${storageUnitPath}/products/${variantId}`);
+                console.log(`✅ Variant created at: Products/${storageUnitPath}/products/${variantId}`);
 
-            // If supplier is provided, create supplier-product relationship for the variant
-            if (currentSupplier) {
-                try {
-                    await linkProductToSupplier(variantId, currentSupplier.id, {
-                        supplierPrice: Number(supplierPrice) || Number(variantValue.unitPrice) || 0,
-                        supplierSKU: variantId,
-                        isVariant: true,
-                        parentProductId: selectedProduct.id,
-                        lastUpdated: new Date().toISOString()
-                    });
+                // If supplier is provided, create supplier-product relationship for the variant
+                if (currentSupplier) {
+                    try {
+                        await linkProductToSupplier(variantId, currentSupplier.id, {
+                            supplierPrice: Number(supplierPrice) || Number(variantValue.unitPrice) || 0,
+                            supplierSKU: variantId,
+                            isVariant: true,
+                            parentProductId: selectedProduct.id,
+                            lastUpdated: new Date().toISOString()
+                        });
 
-                    console.log('Variant linked to supplier');
-                } catch (linkError) {
-                    console.error('Error linking variant to supplier:', linkError);
-                    // Don't fail the whole operation if linking fails
+                        console.log('Variant linked to supplier');
+                    } catch (linkError) {
+                        console.error('Error linking variant to supplier:', linkError);
+                        // Don't fail the whole operation if linking fails
+                    }
                 }
             }
 
-            alert('Variant added successfully as a separate product!');
+            const locationCount = selectedStorageLocations.length;
+            alert(`Variant added successfully across ${locationCount} location${locationCount > 1 ? 's' : ''}! Total quantity: ${totalQty}`);
             onBack();
         } catch (error) {
             console.error('Error adding variant:', error);
@@ -563,65 +617,104 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                             </div>
                         </div>
                         
-                        {/* Storage Unit Selection */}
-                        <div className="mt-4">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Storage Unit
-                                <span className="text-xs text-red-500 ml-1">*</span>
-                            </label>
-                            <select
-                                value={selectedUnit}
-                                onChange={(e) => {
-                                    setSelectedUnit(e.target.value);
-                                    // Reset storage location when unit changes
-                                    setSelectedStorageLocation(null);
-                                }}
-                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                            >
-                                <option value="Unit 01">Unit 01</option>
-                                <option value="Unit 02">Unit 02</option>
-                                <option value="Unit 03">Unit 03</option>
-                                <option value="Unit 04">Unit 04</option>
-                                <option value="Unit 05">Unit 05</option>
-                                <option value="Unit 06">Unit 06</option>
-                                <option value="Unit 07">Unit 07</option>
-                                <option value="Unit 08">Unit 08</option>
-                                <option value="Unit 09">Unit 09</option>
-                            </select>
-                        </div>
-                        
-                        {/* Storage Location Selection */}
-                        <div className="mt-4">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Storage Location (Shelf/Row/Column)
-                                <span className="text-xs text-red-500 ml-1">*</span>
-                            </label>
+                        {/* Storage Location Selection - Combined */}
+                        <div className="mt-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Storage Locations
+                                    <span className="text-xs text-red-500 ml-1">* Select locations with quantity</span>
+                                </label>
+                                {variantValue.quantity && getTotalQuantity() < parseInt(variantValue.quantity) ? (
+                                    <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full font-medium">
+                                        {parseInt(variantValue.quantity) - getTotalQuantity()} remaining to allocate
+                                    </span>
+                                ) : variantValue.quantity && getTotalQuantity() === parseInt(variantValue.quantity) ? (
+                                    <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium flex items-center gap-1">
+                                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                        </svg>
+                                        Fully allocated
+                                    </span>
+                                ) : (
+                                    <span className="text-xs text-gray-500">
+                                        {selectedStorageLocations.length} location{selectedStorageLocations.length !== 1 ? 's' : ''} selected
+                                    </span>
+                                )}
+                            </div>
+                            
+                            {/* Show selected unit */}
+                            {selectedUnit && (
+                                <div className="p-2 bg-purple-50 rounded-lg border border-purple-200">
+                                    <span className="text-sm font-medium text-purple-700">Storage Unit: {selectedUnit}</span>
+                                </div>
+                            )}
+                            
                             <button
                                 type="button"
                                 onClick={() => setIsStorageModalOpen(true)}
-                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-left hover:bg-gray-100"
+                                className="w-full px-4 py-2.5 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all text-left font-medium shadow-sm flex items-center justify-between"
                             >
-                                {selectedStorageLocation ? (
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-gray-900">{selectedStorageLocation.fullLocation}</span>
-                                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                        </svg>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-gray-500">Click to select storage location</span>
-                                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                        </svg>
-                                    </div>
-                                )}
+                                <span>
+                                    {selectedStorageLocations.length > 0 
+                                        ? `${selectedStorageLocations.length} location${selectedStorageLocations.length > 1 ? 's' : ''} selected` 
+                                        : `Select shelf locations in ${selectedUnit}`}
+                                </span>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                </svg>
                             </button>
-                            {selectedStorageLocation && (
-                                <div className="mt-2 p-2 bg-blue-50 rounded-lg">
-                                    <p className="text-xs text-blue-700">
-                                        <span className="font-medium">Selected:</span> {selectedStorageLocation.unit} → {selectedStorageLocation.shelf} → {selectedStorageLocation.row} → Column {selectedStorageLocation.columnDisplay || selectedStorageLocation.column}
-                                    </p>
+                            
+                            {/* Show selected locations with quantity inputs */}
+                            {selectedStorageLocations.length > 0 && (
+                                <div className="space-y-2 mt-3 max-h-64 overflow-y-auto">
+                                    <div className="flex items-center justify-between text-xs font-medium text-gray-600 px-2">
+                                        <span>Location</span>
+                                        <span>Quantity</span>
+                                    </div>
+                                    {selectedStorageLocations.map((location) => (
+                                        <div key={location.id} className="flex items-center gap-2 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-gray-900 truncate">
+                                                    {location.shelf} → {location.row} → Col {location.columnDisplay}
+                                                </p>
+                                                <p className="text-xs text-gray-600">{location.unit}</p>
+                                            </div>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                value={quantityPerLocation[location.id] || ''}
+                                                onChange={(e) => handleLocationQuantityChange(location.id, e.target.value)}
+                                                placeholder="Qty"
+                                                className="w-20 px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveLocation(location.id)}
+                                                className="p-1.5 text-red-500 hover:bg-red-100 rounded transition-colors"
+                                                title="Remove location"
+                                            >
+                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    ))}
+                                    
+                                    {/* Total Quantity Summary */}
+                                    <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200 font-medium">
+                                        <span className="text-sm text-green-900">Total Quantity:</span>
+                                        <span className="text-lg text-green-600">{getTotalQuantity()} {unit || 'pcs'}</span>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {selectedStorageLocations.length === 0 && (
+                                <div className="p-4 bg-gray-50 rounded-lg border border-dashed border-gray-300 text-center">
+                                    <svg className="w-12 h-12 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                    </svg>
+                                    <p className="text-sm text-gray-600">No storage locations selected</p>
+                                    <p className="text-xs text-gray-500 mt-1">Click the button above to select locations</p>
                                 </div>
                             )}
                         </div>
@@ -717,8 +810,13 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
             <ShelfViewModal 
                 isOpen={isStorageModalOpen}
                 onClose={() => setIsStorageModalOpen(false)}
-                selectedUnit={getStorageUnitData()}
+                selectedUnit={getStorageUnitData(selectedUnit)}
                 onLocationSelect={handleStorageLocationSelect}
+                multiSelect={true}
+                selectedLocations={selectedStorageLocations}
+                totalQuantity={parseInt(variantValue.quantity) || 0}
+                allocatedQuantity={getAllocatedQuantity()}
+                cellCapacity={100}
             />
         </div>
     );

@@ -23,7 +23,9 @@ import {
   getDoc,
   getDocs,
   updateDoc,
-  runTransaction
+  runTransaction,
+  query,        
+  where         
 } from 'firebase/firestore';
 import { ref, uploadBytes, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import app from '../../../services/firebase/config';
@@ -902,66 +904,56 @@ const ReceivingMobileView = () => {
       setProcessingStep('Saving record...');
       const docRef = await addDoc(collection(db, 'receivingRecords'), receivingData);
 
-      // Create stock movement entries for each received product
 
+      // Create stock movement entries for each accepted product
       setProcessingStep('Recording stock movements...');
-      
       const receivingTimestamp = new Date(`${deliveryDetails.deliveryDate}T${deliveryDetails.deliveryTime}`);
-      
+      // Only products with status 'accepted' and deliveredQty > 0
+      const acceptedProducts = receivingData.products.filter(product => product.status === 'accepted' && Number(product.deliveredQty) > 0);
       const stockMovementPromises = acceptedProducts.map(async (product) => {
         const movementRef = collection(db, 'stock_movements');
         return addDoc(movementRef, {
           // Movement Type
           movementType: 'IN',
           reason: 'Supplier Delivery',
-          
           // Product Information
           productId: product.productId,
           productName: product.name,
           variantId: product.variantId || null,
           variantName: product.variantName || null,
-          
           // Quantity & Value
           quantity: Number(product.deliveredQty),
           orderedQty: Number(product.orderedQty),
           unitPrice: product.unitPrice || 0,
           totalValue: (Number(product.deliveredQty) * (product.unitPrice || 0)),
-          
           // Location Information (will be filled when inventory is updated)
           storageLocation: null,
           shelf: null,
           row: null,
           column: null,
-          
           // Transaction References
           referenceType: 'receiving_record',
           referenceId: docRef.id,
           poId: poId,
           drNumber: deliveryDetails.drNumber,
           invoiceNumber: deliveryDetails.invoiceNumber || null,
-          
           // Supplier Information
           supplier: PoData?.supplier?.name || 'Unknown Supplier',
           supplierContact: PoData?.supplier?.contact || '',
-          
           // Delivery Information
           driverName: deliveryDetails.driverName,
           deliveryDate: receivingTimestamp,
-          
           // Condition & Status
           condition: product.condition,
           remarks: product.remarks || '',
           status: 'completed',
-          
           // Timestamps
           movementDate: receivingTimestamp,
           createdAt: new Date(),
-          
           // Additional Context
           notes: deliveryDetails.notes || ''
         });
       });
-      
       await Promise.all(stockMovementPromises);
 
       setProcessingStep('Completed!');

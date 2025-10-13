@@ -151,7 +151,7 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
     if (!CategoryOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center">
             <div className="fixed inset-0 bg-black/40 backdrop-blur-sm"></div>
             <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-4xl p-8 animate-scaleUp z-10">
                 <button 

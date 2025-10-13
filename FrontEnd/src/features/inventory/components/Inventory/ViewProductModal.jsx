@@ -5,6 +5,7 @@ import { getDoc } from 'firebase/firestore';
 import { FiPackage, FiDollarSign, FiMapPin, FiInfo, FiLayers, FiCalendar, FiMap } from 'react-icons/fi';
 import ShelfViewModal from './ShelfViewModal';
 import { uploadImage } from '../../../../services/cloudinary/CloudinaryService';
+import { getStorageUnitConfig } from '../../config/StorageUnitsConfig';
 
 const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
   const fileInputRef = useRef(null);
@@ -364,44 +365,24 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
       key !== 'key'
   );
 
-  // Get unit configuration for ShelfViewModal
+  // Get unit configuration for ShelfViewModal - using centralized config
   const getUnitConfig = (storageLocation) => {
-    const unitConfigs = {
-      'Unit 01': {
-        title: 'Unit 01 - Steel & Heavy Materials',
-        type: 'Steel & Heavy Materials Storage',
-        shelves: [
-          { name: 'Shelf A', rows: Array.from({ length: 8 }, (_, i) => `Row ${i + 1}`) },
-          { name: 'Shelf B', rows: Array.from({ length: 13 }, (_, i) => `Row ${i + 1}`) },
-          { name: 'Shelf C', rows: Array.from({ length: 6 }, (_, i) => `Row ${i + 1}`) }
-        ]
-      },
-      'Unit 02': {
-        title: 'Unit 02 - Cement & Aggregate',
-        type: 'Cement & Aggregate Storage',
-        shelves: [
-          { name: 'Shelf A', rows: Array.from({ length: 8 }, (_, i) => `Row ${i + 1}`) }
-        ]
-      },
-      'Unit 03': {
-        title: 'Unit 03 - Goods',
-        type: 'General Goods Storage',
-        shelves: [
-          { name: 'Shelf A', rows: Array.from({ length: 8 }, (_, i) => `Row ${i + 1}`) },
-          { name: 'Shelf B', rows: Array.from({ length: 8 }, (_, i) => `Row ${i + 1}`) }
-        ]
-      },
-      'Unit 04': {
-        title: 'Unit 04 - Goods',
-        type: 'General Goods Storage',
-        shelves: [
-          { name: 'Shelf A', rows: Array.from({ length: 8 }, (_, i) => `Row ${i + 1}`) },
-          { name: 'Shelf B', rows: Array.from({ length: 8 }, (_, i) => `Row ${i + 1}`) }
-        ]
-      }
-    };
+    if (!storageLocation) return null;
     
-    return unitConfigs[storageLocation] || null;
+    // Use the centralized configuration from StorageUnitsConfig.js
+    const config = getStorageUnitConfig(storageLocation);
+    
+    if (config) {
+      return {
+        title: config.title,
+        type: config.type,
+        shelves: config.shelves
+      };
+    }
+    
+    // Fallback if no config found
+    console.warn(`No storage unit configuration found for: ${storageLocation}`);
+    return null;
   };
 
   // Handle view location click
@@ -688,7 +669,7 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
                   <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
                     <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                       <FiMapPin size={16} />
-                      Storage Location
+                      Storage Location{product.locations && product.locations.length > 1 ? 's' : ''}
                     </h4>
                     {product.storageLocation && (
                       <button
@@ -704,11 +685,42 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
                       </button>
                     )}
                   </div>
-                  <div className="p-4 space-y-1">
-                    <InfoRow label="Storage Location" value={product.storageLocation || 'N/A'} />
-                    <InfoRow label="Shelf Name" value={product.shelfName || 'N/A'} />
-                    <InfoRow label="Row Name" value={product.rowName || 'N/A'} />
-                    <InfoRow label="Full Location" value={product.fullLocation || 'N/A'} />
+                  <div className="p-4 space-y-3">
+                    {product.locations && product.locations.length > 1 ? (
+                      <>
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                          <p className="text-sm text-blue-800 font-medium">
+                            📍 This product is stored in {product.locations.length} different locations
+                          </p>
+                          <p className="text-xs text-blue-600 mt-1">
+                            Total quantity across all locations: {product.quantity} {product.unit}
+                          </p>
+                        </div>
+                        {product.locations.map((loc, index) => (
+                          <div key={loc.id || index} className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-1">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-semibold text-gray-700 bg-gray-200 px-2 py-1 rounded">
+                                Location {index + 1}
+                              </span>
+                              <span className="text-xs font-medium text-gray-600">
+                                Qty: {loc.quantity} {product.unit}
+                              </span>
+                            </div>
+                            <InfoRow label="Full Location" value={loc.location || 'N/A'} />
+                            <InfoRow label="Storage Unit" value={loc.storageLocation || 'N/A'} />
+                            {loc.shelfName && <InfoRow label="Shelf" value={loc.shelfName} />}
+                            {loc.rowName && <InfoRow label="Row" value={loc.rowName} />}
+                          </div>
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        <InfoRow label="Storage Location" value={product.storageLocation || 'N/A'} />
+                        <InfoRow label="Shelf Name" value={product.shelfName || 'N/A'} />
+                        <InfoRow label="Row Name" value={product.rowName || 'N/A'} />
+                        <InfoRow label="Full Location" value={product.fullLocation || 'N/A'} />
+                      </>
+                    )}
                   </div>
                 </div>
 
