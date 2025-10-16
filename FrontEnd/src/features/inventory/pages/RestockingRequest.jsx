@@ -31,7 +31,7 @@ const RestockingRequest = () => {
 
   // Listen to restock requests
   useEffect(() => {
-    const restockRequestsRef = collection(db, 'RestockRequests');
+  const restockRequestsRef = collection(db, 'RestockingRequests');
     
     // Try ordering by timestamp, fallback to listening without ordering if it fails
       const unsubscribe = onSnapshot(restockRequestsRef, (snapshot) => {

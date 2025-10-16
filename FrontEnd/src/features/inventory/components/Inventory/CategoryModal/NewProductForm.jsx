@@ -7,6 +7,7 @@ import SupplierSelector from '../../Supplier/SupplierSelector';
 import { useServices } from '../../../../../services/firebase/ProductServices';
 import ShelfViewModal from '../ShelfViewModal';
 import { uploadImage } from '../../../../../services/cloudinary/CloudinaryService';
+import { getStorageUnitData } from '../../../config/StorageUnitsConfig';
 
 const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
     const { linkProductToSupplier } = useServices();
@@ -38,61 +39,77 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
     const [supplierCode, setSupplierCode] = useState('');
     const [selectedSupplier, setSelectedSupplier] = useState(null);
     const [supplierPrice, setSupplierPrice] = useState('');
-    const [dateStocked, setDateStocked] = useState(new Date().toISOString().split('T')[0]);
+    const [dateStocked, setDateStocked] = useState(new Date().toISOString().split('T`')[0]);
     
     // Storage location modal states
     const [isStorageModalOpen, setIsStorageModalOpen] = useState(false);
-    const [selectedStorageLocation, setSelectedStorageLocation] = useState(null);
+    const [selectedStorageLocations, setSelectedStorageLocations] = useState([]); // Changed to array for multiple selections
+    const [selectedUnit, setSelectedUnit] = useState(selectedCategory?.name || null); // Auto-set from selectedCategory
+    const [quantityPerLocation, setQuantityPerLocation] = useState({}); // Track quantity per location
     
-    // Mock storage unit data for the modal
-    const getStorageUnitData = () => {
-        const unitName = selectedCategory?.name || 'Unit 01';
-        return {
-            title: unitName,
-            type: "Storage Unit",
-            shelves: [
-                {
-                    name: "Shelf A",
-                    rows: [
-                        { name: "Row 1", items: [] },
-                        { name: "Row 2", items: [] },
-                        { name: "Row 3", items: [] },
-                        { name: "Row 4", items: [] },
-                        { name: "Row 5", items: [] },
-                        { name: "Row 6", items: [] },
-                        { name: "Row 7", items: [] },
-                        { name: "Row 8", items: [] }
-                    ]
-                },
-                {
-                    name: "Shelf B",
-                    rows: [
-                        { name: "Row 1", items: [] },
-                        { name: "Row 2", items: [] },
-                        { name: "Row 3", items: [] },
-                        { name: "Row 4", items: [] },
-                        { name: "Row 5", items: [] },
-                        { name: "Row 6", items: [] },
-                        { name: "Row 7", items: [] },
-                        { name: "Row 8", items: [] }
-                    ]
-                }
-            ]
-        };
-    };
-    
-    // Handle storage location selection
-    const handleStorageLocationSelect = (shelfName, rowName, columnIndex) => {
-        const locationString = `${selectedCategory?.name} - ${shelfName} - ${rowName} - Column ${columnIndex + 1}`;
-        setSelectedStorageLocation({
-            unit: selectedCategory?.name,
+    // Handle storage location selection - now supports multiple locations with quantity
+    const handleStorageLocationSelect = (shelfName, rowName, columnIndex, quantity) => {
+        // If quantity is -1, this is a removal request
+        if (quantity === -1) {
+            const locationKey = `${selectedUnit}-${shelfName}-${rowName}-${columnIndex}`;
+            handleRemoveLocation(locationKey);
+            return;
+        }
+        
+        const locationKey = `${selectedUnit}-${shelfName}-${rowName}-${columnIndex}`;
+        const locationString = `${selectedUnit} - ${shelfName} - ${rowName} - Column ${columnIndex + 1}`;
+        
+        const newLocation = {
+            id: locationKey,
+            unit: selectedUnit,
             shelf: shelfName,
             row: rowName,
-            column: columnIndex + 1,
-            fullLocation: locationString
+            column: columnIndex,
+            columnDisplay: columnIndex + 1,
+            fullLocation: locationString,
+            quantity: quantity // Quantity is now passed directly from the modal
+        };
+        
+        // Add new location with quantity already set
+        setSelectedStorageLocations(prev => [...prev, newLocation]);
+        setQuantityPerLocation(prev => ({
+            ...prev,
+            [locationKey]: quantity
+        }));
+        
+        // Don't close modal - allow multiple selections
+    };
+    
+    // Handle removing a storage location
+    const handleRemoveLocation = (locationId) => {
+        setSelectedStorageLocations(prev => prev.filter(loc => loc.id !== locationId));
+        setQuantityPerLocation(prev => {
+            const updated = { ...prev };
+            delete updated[locationId];
+            return updated;
         });
-        setLocation(locationString);
-        setIsStorageModalOpen(false);
+    };
+    
+    // Handle quantity change for a specific location (for editing after selection)
+    const handleLocationQuantityChange = (locationId, qty) => {
+        setQuantityPerLocation(prev => ({
+            ...prev,
+            [locationId]: parseInt(qty) || 0
+        }));
+        // Also update in selectedStorageLocations
+        setSelectedStorageLocations(prev => prev.map(loc => 
+            loc.id === locationId ? { ...loc, quantity: parseInt(qty) || 0 } : loc
+        ));
+    };
+    
+    // Calculate total quantity across all locations
+    const getTotalQuantity = () => {
+        return Object.values(quantityPerLocation).reduce((sum, qty) => sum + (parseInt(qty) || 0), 0);
+    };
+    
+    // Calculate allocated quantity (for ShelfViewModal)
+    const getAllocatedQuantity = () => {
+        return getTotalQuantity();
     };
 
     useEffect(() => {
@@ -119,7 +136,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
     }, [supplier]);
 
     // Handle supplier selection from SupplierSelector
-    const handleSupplierSelect = (supplierData) => {
+    const handleSupplierSelect = (supplierData) => {    
         if (supplierData) {
             setSelectedSupplier(supplierData);
             setSupplierName(supplierData.name);
@@ -232,157 +249,145 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
     const handleAddProduct = async () => {
 
         // Validate required fields
-        if (!productName || !brand || !quantity || !unitPrice || !selectedStorageLocation) {
-            alert('Please fill in all required fields: Product Name, Brand, Quantity, Unit Price, and Storage Location');
+        if (!productName || !brand || !unitPrice) {
+            alert('Please fill in all required fields: Product Name, Brand, and Unit Price');
+            return;
+        }
+        
+        // Validate storage locations
+        if (selectedStorageLocations.length === 0) {
+            alert('Please select at least one storage location');
+            return;
+        }
+        
+        // Validate quantities for all locations
+        const totalQty = getTotalQuantity();
+        if (totalQty === 0) {
+            alert('Please enter quantity for at least one storage location');
+            return;
+        }
+        
+        // Check if all selected locations have quantities
+        const locationsWithoutQty = selectedStorageLocations.filter(
+            loc => !quantityPerLocation[loc.id] || quantityPerLocation[loc.id] === 0
+        );
+        if (locationsWithoutQty.length > 0) {
+            alert('Please enter quantity for all selected storage locations');
             return;
         }
 
         // Fetch storage unit's category from Firebase
         const db = getFirestore(app);
-        let unitCategory = selectedCategory.name; // fallback to storage location name
+        const firstLocation = selectedStorageLocations[0];
+        let unitCategory = selectedCategory.name;
         
         try {
-            const storageUnitRef = doc(db, "Products", selectedStorageLocation.unit);
+            const storageUnitRef = doc(db, "Products", firstLocation.unit);
             const storageUnitDoc = await getDoc(storageUnitRef);
             
             if (storageUnitDoc.exists()) {
                 const unitData = storageUnitDoc.data();
                 unitCategory = unitData.category || selectedCategory.name;
-
             }
         } catch (error) {
-
+            console.error('Error fetching storage unit category:', error);
         }
-
-        const productData = {
-            name: productName.trim(),
-            quantity: Number(quantity) || 0,
-            unitPrice: Number(unitPrice) || 0,
-            category: unitCategory, // Use storage unit's category instead of selectedCategory.name
-            storageLocation: selectedStorageLocation.unit,
-            shelfName: selectedStorageLocation.shelf,
-            rowName: selectedStorageLocation.row,
-            columnIndex: selectedStorageLocation.column,
-            fullLocation: `${selectedStorageLocation.unit} - ${selectedStorageLocation.shelf} - ${selectedStorageLocation.row} - Column ${selectedStorageLocation.column}`,
-            location: selectedStorageLocation.unit, // Keep for backward compatibility
-            unit: unit || 'pcs',
-            brand: brand.trim(),
-            size: size?.trim() || 'default',
-            specifications: specifications?.trim() || '',
-            maximumStockLevel: Number(maximumStockLevel) || 0,
-            restockLevel: Number(restockLevel) || 0,
-            dateStocked: dateStocked || new Date().toISOString().split('T')[0],
-            imageUrl: productImage || null,
-            categoryValues: categoryValues || {},
-            supplier: supplier ? {
-                name: supplier.name,
-                code: supplier.primaryCode || supplier.code,
-                primaryCode: supplier.primaryCode || supplier.code
-            } : {
-                name: supplierName?.trim() || 'Unknown',
-                code: supplierCode?.trim() || '',
-                primaryCode: supplierCode?.trim() || ''
-            },
-            customFields: additionalFields.reduce((acc, field) => ({
-                ...acc,
-                [field.name]: field.value || ''
-            }), {}),
-            createdAt: new Date().toISOString(),
-            lastUpdated: new Date().toISOString()
-        };
 
         try {
             const db = getFirestore(app);
-            
-            // Generate the ID FIRST, before creating the product
             const currentSupplier = supplier || selectedSupplier;
-            const productId = currentSupplier 
-                ? ProductFactory.generateSupplierProductId(productData.name, selectedCategory.name, currentSupplier.primaryCode || currentSupplier.code)
-                : ProductFactory.generateProductId(productData.name, selectedCategory.name, productData.brand);
+            
+            // If multiple locations, create separate product documents for each location
+            // All will share the same base product ID but have different storage info
+            
+            for (const location of selectedStorageLocations) {
+                const locationQty = quantityPerLocation[location.id] || 0;
+                
+                const productData = {
+                    name: productName.trim(),
+                    quantity: locationQty,
+                    unitPrice: Number(unitPrice) || 0,
+                    category: unitCategory,
+                    storageLocation: location.unit,
+                    shelfName: location.shelf,
+                    rowName: location.row,
+                    columnIndex: location.column,
+                    fullLocation: location.fullLocation,
+                    location: location.unit,
+                    unit: unit || 'pcs',
+                    brand: brand.trim(),
+                    size: size?.trim() || 'default',
+                    specifications: specifications?.trim() || '',
+                    maximumStockLevel: Number(maximumStockLevel) || 0,
+                    restockLevel: Number(restockLevel) || 0,
+                    dateStocked: dateStocked || new Date().toISOString().split('T')[0],
+                    imageUrl: productImage || null,
+                    categoryValues: categoryValues || {},
+                    supplier: supplier ? {
+                        name: supplier.name,
+                        code: supplier.primaryCode || supplier.code,
+                        primaryCode: supplier.primaryCode || supplier.code
+                    } : {
+                        name: supplierName?.trim() || 'Unknown',
+                        code: supplierCode?.trim() || '',
+                        primaryCode: supplierCode?.trim() || ''
+                    },
+                    customFields: additionalFields.reduce((acc, field) => ({
+                        ...acc,
+                        [field.name]: field.value || ''
+                    }), {}),
+                    createdAt: new Date().toISOString(),
+                    lastUpdated: new Date().toISOString(),
+                    multiLocation: selectedStorageLocations.length > 1, // Flag for multi-location products
+                    totalQuantityAllLocations: totalQty // Store total quantity across all locations
+                };
 
+                // Generate unique ID for this location's product document
+                const locationSuffix = `${location.shelf}-${location.row}-${location.column}`;
+                const baseProductId = currentSupplier 
+                    ? ProductFactory.generateSupplierProductId(productData.name, selectedCategory.name, currentSupplier.primaryCode || currentSupplier.code)
+                    : ProductFactory.generateProductId(productData.name, selectedCategory.name, productData.brand);
+                
+                const productId = selectedStorageLocations.length > 1 
+                    ? `${baseProductId}-${locationSuffix}` 
+                    : baseProductId;
 
-            // Create product with the correct ID
-            const newProduct = ProductFactory.createProduct(productData);
+                const newProduct = ProductFactory.createProduct(productData);
+                newProduct.id = productId;
             
-            // Override the product ID to match our generated ID
-            newProduct.id = productId;
-            
-            // Remove any undefined values
-            const cleanProduct = JSON.parse(JSON.stringify(newProduct));
+                // Add flat structure fields
+                newProduct.isVariant = false;
+                newProduct.parentProductId = null;
+                newProduct.variantName = 'Standard';
+                
+                // Remove any undefined values
+                const cleanProduct = JSON.parse(JSON.stringify(newProduct));
 
-            // Create Firebase path: Products/{storageLocation}/{shelfName}/{rowName}/{columnIndex}/{productId}
-            const storageLocation = selectedStorageLocation.unit;
-            const shelfName = selectedStorageLocation.shelf;
-            const rowName = selectedStorageLocation.row;
-            const columnIndex = selectedStorageLocation.column;
-            
-            // Ensure all parent documents exist in the hierarchy
-            // Firebase requires alternating collection/document structure
-            // 1. Create storage location document (if it doesn't exist)
-            const storageLocationRef = doc(db, 'Products', storageLocation);
-            await setDoc(storageLocationRef, {
-                name: storageLocation,
-                type: 'storage_location',
-                createdAt: new Date().toISOString(),
-                lastUpdated: new Date().toISOString()
-            }, { merge: true });
-            
-            // 2. Create shelf document (using 'shelves' subcollection)
-            const shelfRef = doc(db, 'Products', storageLocation, 'shelves', shelfName);
-            await setDoc(shelfRef, {
-                name: shelfName,
-                type: 'shelf',
-                storageLocation: storageLocation,
-                createdAt: new Date().toISOString(),
-                lastUpdated: new Date().toISOString()
-            }, { merge: true });
-            
-            // 3. Create row document (using 'rows' subcollection)
-            const rowRef = doc(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName);
-            await setDoc(rowRef, {
-                name: rowName,
-                type: 'row',
-                storageLocation: storageLocation,
-                shelfName: shelfName,
-                createdAt: new Date().toISOString(),
-                lastUpdated: new Date().toISOString()
-            }, { merge: true });
-            
-            // 4. Create column document (using 'columns' subcollection)
-            const columnRef = doc(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex.toString());
-            await setDoc(columnRef, {
-                name: `Column ${columnIndex}`,
-                type: 'column',
-                storageLocation: storageLocation,
-                shelfName: shelfName,
-                rowName: rowName,
-                columnIndex: columnIndex,
-                createdAt: new Date().toISOString(),
-                lastUpdated: new Date().toISOString()
-            }, { merge: true });
-            
-            // 5. Create the actual product document (using 'items' subcollection)
-            const productRef = doc(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex.toString(), 'items', productId);
-            await setDoc(productRef, cleanProduct);
+                // Write to Products/{storageLocation}/products/{productId} - NESTED BY STORAGE UNIT
+                const storageUnitPath = location.unit;
+                const productRef = doc(db, 'Products', storageUnitPath, 'products', productId);
+                await setDoc(productRef, cleanProduct);
 
-            // If supplier is provided, automatically link the product
-            if (currentSupplier) {
-                try {
-                    
-                    
-                    const linkResult = await linkProductToSupplier(productId, currentSupplier.id, {
-                        supplierPrice: Number(supplierPrice) || Number(unitPrice) || 0,
-                        supplierSKU: productId,
-                        lastUpdated: new Date().toISOString()
-                    });
+                console.log(`Product created at: Products/${storageUnitPath}/products/${productId}`);
 
-                } catch (error) {
-                    console.error('Error linking product to supplier:', error);
-                    alert('Product created but failed to link to supplier: ' + error.message);
+                // If supplier is provided, automatically link the product
+                if (currentSupplier) {
+                    try {
+                        const linkResult = await linkProductToSupplier(productId, currentSupplier.id, {
+                            supplierPrice: Number(supplierPrice) || Number(unitPrice) || 0,
+                            supplierSKU: productId,
+                            lastUpdated: new Date().toISOString()
+                        });
+
+                        console.log('Product linked to supplier:', linkResult);
+                    } catch (error) {
+                        console.error('Error linking product to supplier:', error);
+                    }
                 }
             }
 
-            alert('Product added successfully!');
+            const locationCount = selectedStorageLocations.length;
+            alert(`Product added successfully across ${locationCount} location${locationCount > 1 ? 's' : ''}! Total quantity: ${totalQty}`);
             onClose();
         } catch (error) {
             console.error('Error adding product:', error);
@@ -673,37 +678,103 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                             />
                         </div>
 
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-700">
-                                Storage Location
-                                <span className="text-xs text-red-500 ml-1">*</span>
-                            </label>
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Storage Locations
+                                    <span className="text-xs text-red-500 ml-1">* Select locations with quantity</span>
+                                </label>
+                                {quantity && getTotalQuantity() < parseInt(quantity) ? (
+                                    <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full font-medium">
+                                        {parseInt(quantity) - getTotalQuantity()} remaining to allocate
+                                    </span>
+                                ) : quantity && getTotalQuantity() === parseInt(quantity) ? (
+                                    <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium flex items-center gap-1">
+                                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                        </svg>
+                                        Fully allocated
+                                    </span>
+                                ) : (
+                                    <span className="text-xs text-gray-500">
+                                        {selectedStorageLocations.length} location{selectedStorageLocations.length !== 1 ? 's' : ''} selected
+                                    </span>
+                                )}
+                            </div>
+                            
+                            {/* Show selected unit if any */}
+                            {selectedUnit && (
+                                <div className="p-2 bg-blue-50 rounded-lg border border-blue-200">
+                                    <span className="text-sm font-medium text-blue-700">Storage Unit: {selectedUnit}</span>
+                                </div>
+                            )}
+                            
                             <button
                                 type="button"
                                 onClick={() => setIsStorageModalOpen(true)}
-                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-left hover:bg-gray-100"
+                                className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all text-left font-medium shadow-sm flex items-center justify-between"
                             >
-                                {selectedStorageLocation ? (
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-gray-900">{selectedStorageLocation.fullLocation}</span>
-                                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                        </svg>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-gray-500">Click to select storage location</span>
-                                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                        </svg>
-                                    </div>
-                                )}
+                                <span>
+                                    {selectedStorageLocations.length > 0 
+                                        ? `${selectedStorageLocations.length} location${selectedStorageLocations.length > 1 ? 's' : ''} selected` 
+                                        : `Select shelf locations in ${selectedUnit}`}
+                                </span>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                </svg>
                             </button>
-                            {selectedStorageLocation && (
-                                <div className="mt-2 p-2 bg-blue-50 rounded-lg">
-                                    <p className="text-xs text-blue-700">
-                                        <span className="font-medium">Selected:</span> {selectedStorageLocation.unit} → {selectedStorageLocation.shelf} → {selectedStorageLocation.row} → Column {selectedStorageLocation.column}
-                                    </p>
+                            
+                            {/* Show selected locations with quantity inputs */}
+                            {selectedStorageLocations.length > 0 && (
+                                <div className="space-y-2 mt-3 max-h-64 overflow-y-auto">
+                                    <div className="flex items-center justify-between text-xs font-medium text-gray-600 px-2">
+                                        <span>Location</span>
+                                        <span>Quantity</span>
+                                    </div>
+                                    {selectedStorageLocations.map((location) => (
+                                        <div key={location.id} className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-gray-900 truncate">
+                                                    {location.shelf} → {location.row} → Col {location.columnDisplay}
+                                                </p>
+                                                <p className="text-xs text-gray-600">{location.unit}</p>
+                                            </div>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                value={quantityPerLocation[location.id] || ''}
+                                                onChange={(e) => handleLocationQuantityChange(location.id, e.target.value)}
+                                                placeholder="Qty"
+                                                className="w-20 px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveLocation(location.id)}
+                                                className="p-1.5 text-red-500 hover:bg-red-100 rounded transition-colors"
+                                                title="Remove location"
+                                            >
+                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    ))}
+                                    
+                                    {/* Total Quantity Summary */}
+                                    <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200 font-medium">
+                                        <span className="text-sm text-green-900">Total Quantity:</span>
+                                        <span className="text-lg text-green-600">{getTotalQuantity()} {unit || 'pcs'}</span>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {selectedStorageLocations.length === 0 && (
+                                <div className="p-4 bg-gray-50 rounded-lg border border-dashed border-gray-300 text-center">
+                                    <svg className="w-12 h-12 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                    </svg>
+                                    <p className="text-sm text-gray-600">No storage locations selected</p>
+                                    <p className="text-xs text-gray-500 mt-1">Click the button above to select locations</p>
                                 </div>
                             )}
                         </div>
@@ -923,8 +994,13 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
             <ShelfViewModal 
                 isOpen={isStorageModalOpen}
                 onClose={() => setIsStorageModalOpen(false)}
-                selectedUnit={getStorageUnitData()}
+                selectedUnit={getStorageUnitData(selectedUnit)}
                 onLocationSelect={handleStorageLocationSelect}
+                multiSelect={true}
+                selectedLocations={selectedStorageLocations}
+                totalQuantity={parseInt(quantity) || 0}
+                allocatedQuantity={getAllocatedQuantity()}
+                cellCapacity={100}
             />
         </div>
     );

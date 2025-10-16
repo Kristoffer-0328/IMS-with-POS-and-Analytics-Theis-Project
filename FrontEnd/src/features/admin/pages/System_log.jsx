@@ -45,6 +45,7 @@ const System_log = () => {
             });
 
             // Check for low stock items (WARNING logs)
+            // UPDATED for nested structure: Products/{unit}/products/{productId}
             const productsRef = collection(db, 'Products');
             const storageSnapshot = await getDocs(productsRef);
             let lowStockCount = 0;
@@ -53,62 +54,40 @@ const System_log = () => {
                 if (lowStockCount >= 10) break; // Limit to first 10 warnings
                 
                 const storageLocation = storageDoc.id;
-                const shelvesRef = collection(db, 'Products', storageLocation, 'shelves');
-                const shelvesSnapshot = await getDocs(shelvesRef);
+                
+                // NEW: Fetch products directly from the products subcollection
+                const productsSubcollectionRef = collection(db, 'Products', storageLocation, 'products');
+                const productsSnapshot = await getDocs(productsSubcollectionRef);
 
-                for (const shelfDoc of shelvesSnapshot.docs) {
-                    if (lowStockCount >= 10) break;
+                productsSnapshot.docs.forEach(productDoc => {
+                    if (lowStockCount >= 10) return;
                     
-                    const shelfName = shelfDoc.id;
-                    const rowsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows');
-                    const rowsSnapshot = await getDocs(rowsRef);
+                    const product = productDoc.data();
+                    const qty = product.quantity || 0;
+                    const minStock = product.minimumStockLevel || 60;
 
-                    for (const rowDoc of rowsSnapshot.docs) {
-                        if (lowStockCount >= 10) break;
-                        
-                        const rowName = rowDoc.id;
-                        const columnsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns');
-                        const columnsSnapshot = await getDocs(columnsRef);
-
-                        for (const columnDoc of columnsSnapshot.docs) {
-                            if (lowStockCount >= 10) break;
-                            
-                            const columnIndex = columnDoc.id;
-                            const itemsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items');
-                            const itemsSnapshot = await getDocs(itemsRef);
-
-                            itemsSnapshot.docs.forEach(productDoc => {
-                                if (lowStockCount >= 10) return;
-                                
-                                const product = productDoc.data();
-                                const qty = product.quantity || 0;
-                                const minStock = product.minimumStockLevel || 60;
-
-                                if (qty === 0) {
-                                    logs.push({
-                                        id: `out-of-stock-${productDoc.id}`,
-                                        timestamp: new Date(),
-                                        type: 'ERROR',
-                                        module: 'Inventory',
-                                        message: 'Out of stock',
-                                        details: `Product: ${product.name} - Stock depleted in ${storageLocation}`
-                                    });
-                                    lowStockCount++;
-                                } else if (qty <= minStock) {
-                                    logs.push({
-                                        id: `low-stock-${productDoc.id}`,
-                                        timestamp: new Date(),
-                                        type: 'WARNING',
-                                        module: 'Inventory',
-                                        message: 'Low stock alert',
-                                        details: `Product: ${product.name} - Stock: ${qty} (Below threshold: ${minStock})`
-                                    });
-                                    lowStockCount++;
-                                }
-                            });
-                        }
+                    if (qty === 0) {
+                        logs.push({
+                            id: `out-of-stock-${productDoc.id}`,
+                            timestamp: new Date(),
+                            type: 'ERROR',
+                            module: 'Inventory',
+                            message: 'Out of stock',
+                            details: `Product: ${product.name} - Stock depleted in ${storageLocation}`
+                        });
+                        lowStockCount++;
+                    } else if (qty <= minStock) {
+                        logs.push({
+                            id: `low-stock-${productDoc.id}`,
+                            timestamp: new Date(),
+                            type: 'WARNING',
+                            module: 'Inventory',
+                            message: 'Low stock alert',
+                            details: `Product: ${product.name} - Current stock: ${qty} (Min: ${minStock}) in ${storageLocation}`
+                        });
+                        lowStockCount++;
                     }
-                }
+                });
             }
 
             // Check for pending POs (INFO logs)
