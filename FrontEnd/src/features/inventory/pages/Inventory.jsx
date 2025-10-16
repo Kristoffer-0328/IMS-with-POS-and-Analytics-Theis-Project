@@ -6,7 +6,7 @@ import InventoryFilters from '../components/Inventory/InventoryFilters';
 
 import ViewProductModal from '../components/Inventory/ViewProductModal';
 import { useServices } from '../../../services/firebase/ProductServices';
-import { FiPlusCircle, FiUpload, FiSearch, FiInfo, FiGrid, FiList, FiPackage, FiTrendingDown, FiTruck, FiRefreshCw, FiSend } from 'react-icons/fi';
+import { FiPlusCircle, FiUpload, FiSearch, FiInfo, FiGrid, FiList, FiPackage, FiLayers, FiTrendingDown, FiTruck, FiRefreshCw, FiSend } from 'react-icons/fi';
 import ImportCVGModal from '../components/Inventory/ImportCVGModal';
 import ProductChoice from '../components/Inventory/ProductChoices';
 import CategoryMOdalIndex from '../components/Inventory/CategoryModal/CategoryModalIndex';
@@ -153,64 +153,78 @@ const Inventory = () => {
   const filteredData = useMemo(() => {
     let filtered = [...products];
 
-    // Map the products to include the correct price field and status
-    filtered = filtered.map(item => {
-        // Check if product has variants (can be array or object)
-        const hasVariants = item.variants && (
-            (Array.isArray(item.variants) && item.variants.length > 0) ||
-            (typeof item.variants === 'object' && Object.keys(item.variants).length > 0)
-        );
-        
-        let totalQuantity = 0;
-        let totalValue = 0;
-        let averageUnitPrice = 0;
-        let status = 'in-stock';
-        
-        if (hasVariants) {
-            // Convert variants to array if it's an object
-            const variantsArray = Array.isArray(item.variants) 
-                ? item.variants 
-                : Object.values(item.variants);
-            
-            // Calculate totals from all variants
-            totalQuantity = variantsArray.reduce((sum, variant) => sum + (Number(variant.quantity) || 0), 0);
-            totalValue = variantsArray.reduce((sum, variant) => {
-                const variantQuantity = Number(variant.quantity) || 0;
-                // Check both unitPrice and price fields (some products use different field names)
-                const variantPrice = Number(variant.unitPrice) || Number(variant.price) || 0;
-                return sum + (variantQuantity * variantPrice);
-            }, 0);
-            
-            // Calculate average unit price across variants
-            if (totalQuantity > 0) {
-                averageUnitPrice = totalValue / totalQuantity;
-            }
-        } else {
-            // Single product without variants
-            totalQuantity = item.quantity || 0;
-            // Check both unitPrice and price fields
-            const unitPrice = Number(item.unitPrice) || Number(item.price) || 0;
-            totalValue = totalQuantity * unitPrice;
-            averageUnitPrice = unitPrice;
-        }
-
-        // Calculate status based on total quantity and restock level
-        const restockLevel = item.restockLevel || 0;
-        if (totalQuantity <= 0) {
-            status = 'out-of-stock';
-        } else if (totalQuantity < restockLevel) {
-            status = 'low-stock';
-        }
-
-        return {
-            ...item,
-            quantity: totalQuantity, // Use aggregated quantity
-            unitPrice: averageUnitPrice, // Use average unit price
-            totalvalue: totalValue, // Use calculated total value
-            status: status,
-            hasVariants: hasVariants,
-            variantCount: hasVariants ? (Array.isArray(item.variants) ? item.variants.length : Object.keys(item.variants).length) : 0
+    // Step 1: Group products by their base identity (name + brand + specifications)
+    const productGroups = {};
+    
+    filtered.forEach(item => {
+      // Create a unique key for grouping (excluding location-specific fields)
+      const groupKey = `${item.name || 'unknown'}_${item.brand || 'generic'}_${item.specifications || ''}_${item.category || ''}`;
+      
+      if (!productGroups[groupKey]) {
+        productGroups[groupKey] = {
+          baseProduct: { ...item },
+          locations: [],
+          totalQuantity: 0,
+          totalValue: 0,
+          allIds: []
         };
+      }
+      
+      // Add this product instance to the group
+      productGroups[groupKey].locations.push({
+        id: item.id,
+        location: item.fullLocation || item.location || 'Unknown',
+        storageLocation: item.storageLocation,
+        shelfName: item.shelfName,
+        rowName: item.rowName,
+        columnIndex: item.columnIndex,
+        quantity: Number(item.quantity) || 0,
+        unitPrice: Number(item.unitPrice) || 0
+      });
+      
+      productGroups[groupKey].totalQuantity += Number(item.quantity) || 0;
+      productGroups[groupKey].totalValue += (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+      productGroups[groupKey].allIds.push(item.id);
+    });
+
+    // Step 2: Convert grouped products back to array
+    filtered = Object.values(productGroups).map(group => {
+      const baseProduct = group.baseProduct;
+      
+      // Check if product has variants (can be array or object)
+      const hasVariants = baseProduct.variants && (
+          (Array.isArray(baseProduct.variants) && baseProduct.variants.length > 0) ||
+          (typeof baseProduct.variants === 'object' && Object.keys(baseProduct.variants).length > 0)
+      );
+      
+      // Calculate average unit price
+      const averageUnitPrice = group.totalQuantity > 0 ? group.totalValue / group.totalQuantity : (Number(baseProduct.unitPrice) || 0);
+      
+      // Calculate status based on total quantity and restock level
+      const restockLevel = baseProduct.restockLevel || 0;
+      let status = 'in-stock';
+      if (group.totalQuantity <= 0) {
+        status = 'out-of-stock';
+      } else if (group.totalQuantity < restockLevel) {
+        status = 'low-stock';
+      }
+
+      return {
+        ...baseProduct,
+        id: baseProduct.id, // Keep the first product's ID as primary
+        allIds: group.allIds, // Store all IDs for reference
+        quantity: group.totalQuantity, // Use aggregated quantity from all locations
+        unitPrice: averageUnitPrice, // Use average unit price
+        totalvalue: group.totalValue, // Use calculated total value
+        status: status,
+        locations: group.locations, // Store all locations
+        locationCount: group.locations.length, // Number of locations
+        location: group.locations.length > 1 
+          ? `${group.locations.length} locations` 
+          : (group.locations[0]?.location || 'Unknown'),
+        hasVariants: hasVariants,
+        variantCount: hasVariants ? (Array.isArray(baseProduct.variants) ? baseProduct.variants.length : Object.keys(baseProduct.variants).length) : 0
+      };
     });
 
     // Apply filters
@@ -241,8 +255,15 @@ const Inventory = () => {
     if (selectedStorageRoom !== 'all') {
         // Filter by storage location (new nested structure)
         filtered = filtered.filter((item) => {
-            // Check both old 'location' field and new 'storageLocation' field for compatibility
-            return item.storageLocation === selectedStorageRoom || item.location === selectedStorageRoom;
+            // Check multiple fields for storage location matching
+            const storageLocation = item.storageLocation || '';
+            const location = item.location || '';
+            const fullLocation = item.fullLocation || '';
+            
+            // Match if any location field contains the selected unit name
+            return storageLocation.includes(selectedStorageRoom) || 
+                   location.includes(selectedStorageRoom) ||
+                   fullLocation.includes(selectedStorageRoom);
         });
     }
 
@@ -356,7 +377,7 @@ const Inventory = () => {
               </div>
             </div>
             <div className="bg-gray-50/50 rounded-xl p-4">
-              <StorageFacilityInteractiveMap/>
+              <StorageFacilityInteractiveMap viewOnly={true} />
             </div>
           </div>
 
@@ -420,13 +441,36 @@ const Inventory = () => {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredData.map((product) => (
-                  <div key={product.id} className="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow border border-gray-100">
+                  <div key={product.id} className={`bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow border-2 ${
+                    product.isVariant 
+                      ? 'border-purple-200 bg-purple-50/30' 
+                      : 'border-gray-100'
+                  }`}>
                     <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <h4 className={`text-sm font-medium inline-block px-2 py-1 rounded-md ${getCategoryColor(product.category)}`}>
-                          {product.name} 
-                          {product.brand && <span className="ml-1 text-gray-600">({product.brand})</span>}
-                        </h4>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className={`text-sm font-medium inline-block px-2 py-1 rounded-md ${getCategoryColor(product.category)}`}>
+                            {product.name} 
+                            {product.brand && <span className="ml-1 text-gray-600">({product.brand})</span>}
+                          </h4>
+                          {product.isVariant && (
+                            <span className="px-2 py-0.5 bg-purple-500 text-white text-xs font-semibold rounded-full flex items-center gap-1">
+                              <FiLayers size={10} />
+                              VARIANT
+                            </span>
+                          )}
+                          {!product.isVariant && product.hasVariants && (
+                            <span className="px-2 py-0.5 bg-blue-500 text-white text-xs font-semibold rounded-full flex items-center gap-1">
+                              <FiPackage size={10} />
+                              BASE
+                            </span>
+                          )}
+                        </div>
+                        {product.isVariant && product.variantName && (
+                          <p className="text-xs text-purple-700 font-medium mt-1">
+                            Variant: {product.variantName || product.size || 'Standard'}
+                          </p>
+                        )}
                         <p className="text-xs text-gray-500 mt-1">{product.category}</p>
                       </div>
                       <span className={`px-2 py-1 text-xs font-medium rounded-full ${
@@ -461,6 +505,11 @@ const Inventory = () => {
                       </p>
                       <p className="text-sm">
                         <span className="font-medium">Location:</span> {product.location}
+                        {product.locationCount > 1 && (
+                          <span className="ml-2 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-semibold">
+                            {product.locationCount} locations
+                          </span>
+                        )}
                       </p>
                       <p className="text-sm">
                         <span className="font-medium">Total Value:</span> ₱{product.totalvalue?.toLocaleString()}

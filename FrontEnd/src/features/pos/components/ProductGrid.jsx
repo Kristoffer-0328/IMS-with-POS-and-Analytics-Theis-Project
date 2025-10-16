@@ -11,7 +11,7 @@ const ProductCard = ({
 }) => {
   const firstVariant = product.variants[0];
   const lowestPrice = Math.min(...product.variants.map(v => v.unitPrice || v.price || 0));
-  const totalStock = product.variants.reduce((sum, v) => sum + (v.quantity || 0), 0);
+  const totalStock = product.variants.reduce((sum, v) => sum + (v.totalQuantity || v.quantity || 0), 0);
   const hasMultipleVariants = product.variants.length > 1;
 
   const formatPrice = (price) => {

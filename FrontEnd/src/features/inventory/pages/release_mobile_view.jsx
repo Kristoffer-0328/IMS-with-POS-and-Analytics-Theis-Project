@@ -143,344 +143,130 @@ const ReleaseMobileView = () => {
     ));
   };
 
-  // Function to find product in inventory
+  // Function to find product in inventory using nested structure
   const findProductInInventory = async (productId, variantId, variantName, storageLocation, shelfName, rowName, columnIndex, category) => {
-
-
-
-
-
-
+    console.log('\n🔍 Finding product in nested inventory structure:');
+    console.log('Product ID:', productId);
+    console.log('Variant ID:', variantId);
+    console.log('Variant Name:', variantName);
+    console.log('Storage Location:', storageLocation);
 
     // Check if this is a quotation-based product (temporary ID)
     const isQuotationProduct = productId && productId.startsWith('quotation-');
     
     if (isQuotationProduct) {
-
+      console.log('📦 Quotation product detected - will search by name and category');
     }
     
     try {
-      // If we have the location information AND a real product ID, try direct lookup first
-      if (!isQuotationProduct && storageLocation && shelfName && rowName && columnIndex !== undefined) {
-
-        const productRef = doc(
-          db, 
-          'Products', 
-          storageLocation, 
-          'shelves', 
-          shelfName, 
-          'rows', 
-          rowName, 
-          'columns', 
-          String(columnIndex), 
-          'items', 
-          productId
-        );
-
-        const productDoc = await getDoc(productRef);
+      // For quotation products or when we don't have location info, search all storage units
+      if (isQuotationProduct || !storageLocation) {
+        console.log('🔍 Searching all storage units...');
         
-        if (productDoc.exists()) {
-          const productData = productDoc.data();
-
+        const productsRef = collection(db, 'Products');
+        const storageUnitsSnapshot = await getDocs(productsRef);
+        
+        for (const storageUnitDoc of storageUnitsSnapshot.docs) {
+          const unitId = storageUnitDoc.id;
           
-
-          if (productData.variants) {
-            
-            
-          }
-
-          // Extract the variant index from the full variant ID
-          // Format: 'ABC-123-CODE1-Unit_04-PVC_PIP-1696-0' -> '0'
-          let actualVariantKey = variantId;
-          if (variantId && variantId.includes('-')) {
-            const parts = variantId.split('-');
-            actualVariantKey = parts[parts.length - 1]; // Get the last part (the index)
-
-          }
+          // Skip non-storage unit documents
+          if (!unitId.startsWith('Unit ')) continue;
           
-          // If variantId is provided, look for that specific variant
-          if (actualVariantKey && productData.variants && productData.variants[actualVariantKey]) {
-            const variantData = productData.variants[actualVariantKey];
+          // Search products subcollection in this unit
+          const productsSubcollectionRef = collection(db, 'Products', unitId, 'products');
+          const productsSnapshot = await getDocs(productsSubcollectionRef);
+          
+          for (const productDoc of productsSnapshot.docs) {
+            const productData = productDoc.data();
+            const currentProductId = productDoc.id;
             
-            return {
-              productRef,
-              variantId: actualVariantKey,
-              currentQty: variantData.quantity || 0,
-              location: {
-                storageLocation,
-                shelfName,
-                rowName,
-                columnIndex: parseInt(columnIndex)
-              }
-            };
-          } else {
-            console.warn(`⚠️ Variant '${actualVariantKey}' NOT found at known location`);
-            console.warn(`Available variants:`, Object.keys(productData.variants || {}));
-            
-            // Try to find variant by name as fallback
-            if (productData.variants) {
-              const matchingVariantKey = Object.keys(productData.variants).find(vKey => {
-                const variant = productData.variants[vKey];
-                const matches = (
-                  variant.name === variantName || 
-                  variant.variantName === variantName ||
-                  variant.name?.includes(variantName) ||
-                  variantName?.includes(variant.name)
-                );
-                
-                return matches;
-              });
+            // For quotation products, match by name and category
+            if (isQuotationProduct) {
+              const productBaseName = productData.name || '';
+              const normalizeStr = (str) => str.toLowerCase().trim().replace(/\s+/g, ' ');
+              const normalizedSearchName = normalizeStr(variantName);
+              const normalizedProductName = normalizeStr(productBaseName);
               
-              if (matchingVariantKey) {
-                const variantData = productData.variants[matchingVariantKey];
+              const productNameMatches = normalizedProductName.includes(normalizedSearchName) || 
+                                        normalizedSearchName.includes(normalizedProductName);
+              const categoryMatches = !category || productData.category === category;
+              
+              if (productNameMatches && categoryMatches) {
+                console.log(`✅ Found matching product: ${productBaseName} in ${unitId}`);
                 
+                const productRef = doc(db, 'Products', unitId, 'products', currentProductId);
                 return {
                   productRef,
-                  variantId: matchingVariantKey,
-                  currentQty: variantData.quantity || 0,
+                  currentQty: productData.quantity || 0,
                   location: {
-                    storageLocation,
-                    shelfName,
-                    rowName,
-                    columnIndex: parseInt(columnIndex)
+                    storageLocation: productData.storageLocation || unitId,
+                    shelfName: productData.shelfName || 'Unknown',
+                    rowName: productData.rowName || 'Unknown',
+                    columnIndex: productData.columnIndex || 0
                   }
                 };
               }
             }
           }
-        } else {
-          console.warn(`⚠️ Product document NOT found at known location`);
-          console.warn(`Will proceed to search all locations...`);
         }
-      } else {
-
+        
+        console.error(`❌ Product not found: ${variantName}`);
+        return null;
       }
       
-      // If direct lookup failed or no location info, search all locations
+      // We have location info - try direct lookup
+      console.log(`🎯 Looking up product at: Products/${storageLocation}/products/${productId}`);
       
-      const productsCollection = collection(db, 'Products');
-      const storageSnapshot = await getDocs(productsCollection);
-
-      for (const storageDoc of storageSnapshot.docs) {
-        const currentStorageLocation = storageDoc.id;
-
-        // Get all shelves in this storage location
-        const shelvesCollection = collection(db, 'Products', currentStorageLocation, 'shelves');
-        const shelvesSnapshot = await getDocs(shelvesCollection);
-
-        for (const shelfDoc of shelvesSnapshot.docs) {
-          const currentShelfName = shelfDoc.id;
+      const productRef = doc(db, 'Products', storageLocation, 'products', productId);
+      const productDoc = await getDoc(productRef);
+      
+      if (productDoc.exists()) {
+        const productData = productDoc.data();
+        console.log(`✅ Found product: ${productData.name}`);
+        
+        return {
+          productRef,
+          currentQty: productData.quantity || 0,
+          location: {
+            storageLocation: productData.storageLocation,
+            shelfName: productData.shelfName,
+            rowName: productData.rowName,
+            columnIndex: productData.columnIndex
+          }
+        };
+      } else {
+        console.warn(`⚠️ Product not found at ${storageLocation}, searching all units...`);
+        
+        // Fallback: search all units
+        const productsRef = collection(db, 'Products');
+        const storageUnitsSnapshot = await getDocs(productsRef);
+        
+        for (const storageUnitDoc of storageUnitsSnapshot.docs) {
+          const unitId = storageUnitDoc.id;
+          if (!unitId.startsWith('Unit ')) continue;
           
-          // Get all rows in this shelf
-          const rowsCollection = collection(db, 'Products', currentStorageLocation, 'shelves', currentShelfName, 'rows');
-          const rowsSnapshot = await getDocs(rowsCollection);
+          const fallbackProductRef = doc(db, 'Products', unitId, 'products', productId);
+          const fallbackProductDoc = await getDoc(fallbackProductRef);
           
-          for (const rowDoc of rowsSnapshot.docs) {
-            const currentRowName = rowDoc.id;
+          if (fallbackProductDoc.exists()) {
+            const productData = fallbackProductDoc.data();
+            console.log(`✅ Found product in ${unitId}: ${productData.name}`);
             
-            // Get all columns in this row
-            const columnsCollection = collection(db, 'Products', currentStorageLocation, 'shelves', currentShelfName, 'rows', currentRowName, 'columns');
-            const columnsSnapshot = await getDocs(columnsCollection);
-            
-            for (const columnDoc of columnsSnapshot.docs) {
-              const currentColumnIndex = columnDoc.id;
-              
-              // Get all items in this column
-              const itemsCollection = collection(db, 'Products', currentStorageLocation, 'shelves', currentShelfName, 'rows', currentRowName, 'columns', currentColumnIndex, 'items');
-              const itemsSnapshot = await getDocs(itemsCollection);
-
-              // Check each product in this column
-              for (const itemDoc of itemsSnapshot.docs) {
-                const productData = itemDoc.data();
-                const currentProductId = itemDoc.id;
-
-
-
-
-                if (productData.variants) {
-                  
-                  // Log first variant details for reference
-                  const firstVariantKey = Object.keys(productData.variants)[0];
-                  if (firstVariantKey) {
-                    const firstVariant = productData.variants[firstVariantKey];
-
-                  }
-                }
-                
-                // For quotation products, match by name and category
-                if (isQuotationProduct) {
-                  // Check if product name matches (try both exact and partial matches)
-                  const productBaseName = productData.name || productData.productName || '';
-                  
-                  // Normalize names for comparison (remove extra spaces, lowercase)
-                  const normalizeStr = (str) => str.toLowerCase().trim().replace(/\s+/g, ' ');
-                  const normalizedSearchName = normalizeStr(variantName);
-                  const normalizedProductName = normalizeStr(productBaseName);
-                  
-                  // Try different matching strategies
-                  const exactMatch = normalizedProductName === normalizedSearchName;
-                  const containsMatch = normalizedProductName.includes(normalizedSearchName) || 
-                                       normalizedSearchName.includes(normalizedProductName);
-                  
-                  // Extract key parts (e.g., "Cement Portland Type 1" from "Cement Portland Type 1 (40kg Bag)")
-                  const extractMainName = (str) => {
-                    const match = str.match(/^([^(]+)/); // Get everything before first parenthesis
-                    return match ? match[1].trim() : str;
-                  };
-                  
-                  const mainSearchName = normalizeStr(extractMainName(variantName));
-                  const mainProductName = normalizeStr(extractMainName(productBaseName));
-                  const mainNameMatch = mainSearchName === mainProductName || 
-                                       mainProductName.includes(mainSearchName) ||
-                                       mainSearchName.includes(mainProductName);
-                  
-                  const productNameMatches = exactMatch || containsMatch || mainNameMatch;
-
-
-                  // Check if category matches
-                  const categoryMatches = !category || productData.category === category;
-                  
-                  
-                  
-                  if (productNameMatches && categoryMatches) {
-
-                    
-                    
-                    const productRef = doc(db, 'Products', currentStorageLocation, 'shelves', currentShelfName, 'rows', currentRowName, 'columns', currentColumnIndex, 'items', currentProductId);
-                    
-                    // If product has variants, find matching variant
-                    if (productData.variants && Object.keys(productData.variants).length > 0) {
-
-                      // Try to find variant by name
-                      const matchingVariantKey = Object.keys(productData.variants).find(vKey => {
-                        const variant = productData.variants[vKey];
-                        const matches = (
-                          variant.name === variantName || 
-                          variant.variantName === variantName ||
-                          variant.name?.includes(variantName) ||
-                          variantName?.includes(variant.name)
-                        );
-                        
-                        return matches;
-                      });
-                      
-                      if (matchingVariantKey) {
-                        const variantData = productData.variants[matchingVariantKey];
-                        
-                        return {
-                          productRef,
-                          variantId: matchingVariantKey,
-                          currentQty: variantData.quantity || 0,
-                          location: {
-                            storageLocation: currentStorageLocation,
-                            shelfName: currentShelfName,
-                            rowName: currentRowName,
-                            columnIndex: parseInt(currentColumnIndex)
-                          }
-                        };
-                      } else {
-                        console.warn(`Product found but no matching variant for: ${variantName}`);
-                      }
-                    } else {
-                      // Product has no variants, return the product itself
-
-                      return {
-                        productRef,
-                        variantId: null,
-                        currentQty: productData.quantity || 0,
-                        location: {
-                          storageLocation: currentStorageLocation,
-                          shelfName: currentShelfName,
-                          rowName: currentRowName,
-                          columnIndex: parseInt(currentColumnIndex)
-                        }
-                      };
-                    }
-                  }
-                  continue; // Skip ID-based matching for quotation products
-                }
-                
-                // For regular products, check by ID first
-                if (currentProductId === productId) {
-
-                  
-                  
-
-                  const productRef = doc(db, 'Products', currentStorageLocation, 'shelves', currentShelfName, 'rows', currentRowName, 'columns', currentColumnIndex, 'items', currentProductId);
-                  
-                  // Extract the variant index from the full variant ID
-                  let actualVariantKey = variantId;
-                  if (variantId && variantId.includes('-')) {
-                    const parts = variantId.split('-');
-                    actualVariantKey = parts[parts.length - 1];
-
-                  }
-                  
-                  // If variantId is provided, look for that specific variant
-                  if (actualVariantKey && productData.variants && productData.variants[actualVariantKey]) {
-                    const variantData = productData.variants[actualVariantKey];
-                    
-                    return {
-                      productRef,
-                      variantId: actualVariantKey,
-                      currentQty: variantData.quantity || 0,
-                      location: {
-                        storageLocation: currentStorageLocation,
-                        shelfName: currentShelfName,
-                        rowName: currentRowName,
-                        columnIndex: parseInt(currentColumnIndex)
-                      }
-                    };
-                  } else if (!actualVariantKey) {
-                    // If no variantId, try to find variant by name matching
-                    console.warn(`No variantId provided for ${variantName}. Checking if product has variants...`);
-                    
-                    if (productData.variants && Object.keys(productData.variants).length > 0) {
-                      // Try to find variant by name matching
-                      const matchingVariantId = Object.keys(productData.variants).find(vId => {
-                        const variant = productData.variants[vId];
-                        const matches = (
-                          variant.name === variantName || 
-                          variant.variantName === variantName ||
-                          variant.name?.includes(variantName) ||
-                          variantName?.includes(variant.name)
-                        );
-                        
-                        return matches;
-                      });
-                      
-                      if (matchingVariantId) {
-                        const variantData = productData.variants[matchingVariantId];
-                        
-                        return {
-                          productRef,
-                          variantId: matchingVariantId,
-                          currentQty: variantData.quantity || 0,
-                          location: {
-                            storageLocation: currentStorageLocation,
-                            shelfName: currentShelfName,
-                            rowName: currentRowName,
-                            columnIndex: parseInt(currentColumnIndex)
-                          }
-                        };
-                      }
-                    }
-                  } else {
-                    console.error(`❌ Variant '${actualVariantKey}' not found. Available variants:`, Object.keys(productData.variants || {}));
-                  }
-                }
+            return {
+              productRef: fallbackProductRef,
+              currentQty: productData.quantity || 0,
+              location: {
+                storageLocation: productData.storageLocation,
+                shelfName: productData.shelfName,
+                rowName: productData.rowName,
+                columnIndex: productData.columnIndex
               }
-            }
+            };
           }
         }
       }
       
-      console.error(`\n❌ PRODUCT NOT FOUND IN ANY LOCATION`);
-      console.error(`Search parameters:`);
-      console.error(`  - Product Name: ${variantName}`);
-      console.error(`  - Product ID: ${productId}`);
-      console.error(`  - Variant ID: ${variantId}`);
-      console.error(`  - Expected Location: ${storageLocation}/${shelfName}/${rowName}/${columnIndex}`);
+      console.error(`❌ Product not found in any location: ${productId}`);
       return null;
     } catch (error) {
       console.error(`Error searching for product ${variantName}:`, error);
@@ -491,19 +277,21 @@ const ReleaseMobileView = () => {
   // Function to update inventory by deducting released items
   const updateInventoryQuantities = async (releasedProducts) => {
     try {
+      console.log('\n📦 Starting inventory update for', releasedProducts.length, 'products');
 
       for (const product of releasedProducts) {
         if (product.status !== 'released') {
-
+          console.log(`⏭️ Skipping ${product.name} - status: ${product.status}`);
           continue;
         }
 
         const releasedQty = Number(product.releasedQty);
         if (isNaN(releasedQty) || releasedQty <= 0) {
-
+          console.log(`⏭️ Skipping ${product.name} - invalid quantity: ${releasedQty}`);
           continue;
         }
 
+        console.log(`\n🔄 Processing ${product.name} - Qty to release: ${releasedQty}`);
 
         // Find the product in inventory
         const inventoryLocation = await findProductInInventory(
@@ -518,9 +306,12 @@ const ReleaseMobileView = () => {
         );
 
         if (!inventoryLocation) {
-          console.error(`Product ${product.name} not found in inventory`);
+          console.error(`❌ Product ${product.name} not found in inventory`);
           throw new Error(`Product ${product.name} not found in inventory`);
         }
+
+        console.log(`✅ Found product at: Products/${inventoryLocation.location.storageLocation}/products/${product.productId}`);
+        console.log(`📊 Current quantity: ${inventoryLocation.currentQty}`);
 
         // Deduct from inventory using transaction
         await runTransaction(db, async (transaction) => {
@@ -532,54 +323,62 @@ const ReleaseMobileView = () => {
 
           const productData = productDoc.data();
           
-          // Handle products with variants
-          if (inventoryLocation.variantId) {
-            const variantData = productData.variants?.[inventoryLocation.variantId];
-
-            if (!variantData) {
-              throw new Error(`Variant not found for ${product.name}`);
+          // Check if this product has variants
+          const hasVariants = productData.variants && Array.isArray(productData.variants) && productData.variants.length > 0;
+          
+          if (hasVariants && product.variantId) {
+            // Product has variants - update the specific variant's quantity
+            console.log(`🔍 Product has variants, searching for variant ID: ${product.variantId}`);
+            
+            const variants = [...productData.variants];
+            const variantIndex = variants.findIndex(v => v.id === product.variantId);
+            
+            if (variantIndex === -1) {
+              throw new Error(`Variant ${product.name} not found in product`);
             }
-
-            const currentQty = Number(variantData.quantity) || 0;
+            
+            const variant = variants[variantIndex];
+            const currentQty = Number(variant.quantity) || 0;
             const newQty = currentQty - releasedQty;
-
+            
             if (newQty < 0) {
               throw new Error(`Insufficient stock for ${product.name}. Available: ${currentQty}, Requested: ${releasedQty}`);
             }
-
+            
+            console.log(`➡️ Updating variant quantity: ${currentQty} - ${releasedQty} = ${newQty}`);
+            
             // Update the variant quantity
-            const updatedVariants = {
-              ...productData.variants,
-              [inventoryLocation.variantId]: {
-                ...variantData,
-                quantity: newQty
-              }
+            variants[variantIndex] = {
+              ...variant,
+              quantity: newQty
             };
-
+            
+            // Update the product document with modified variants
             transaction.update(inventoryLocation.productRef, {
-              variants: updatedVariants,
-              updatedAt: serverTimestamp()
+              variants: variants,
+              lastUpdated: serverTimestamp()
             });
-
-            // Generate restock request if quantity is low
-            if (newQty <= (variantData.reorderPoint || 10)) {
+            
+            // Check for low stock on variant
+            const restockLevel = variant.restockLevel || productData.restockLevel || productData.reorderPoint || 10;
+            if (newQty <= restockLevel) {
+              console.log(`Low stock detected for variant (${newQty} <= ${restockLevel}), creating restock request...`);
 
               const restockRequestRef = doc(collection(db, 'RestockingRequests'));
               transaction.set(restockRequestRef, {
                 productId: product.productId,
+                variantId: product.variantId,
                 productName: product.name,
-                variantId: inventoryLocation.variantId,
-                variantName: product.variantName || product.name,
                 currentQuantity: newQty,
-                requestedQuantity: (variantData.reorderPoint || 10) * 2,
+                requestedQuantity: restockLevel - product.maximumStockLevel,
                 storageLocation: inventoryLocation.location.storageLocation,
                 shelfName: inventoryLocation.location.shelfName,
                 rowName: inventoryLocation.location.rowName,
                 columnIndex: inventoryLocation.location.columnIndex,
-                category: product.category,
+                category: product.category || 'Uncategorized',
                 status: 'pending',
                 priority: newQty === 0 ? 'high' : 'medium',
-                reason: `Stock depleted after release (Release ID: ${releaseId})`,
+                reason: `Variant stock depleted after release (Release ID: ${releaseId})`,
                 requestedBy: currentUser?.uid || 'system',
                 requestedByName: currentUser?.displayName || currentUser?.email || 'System',
                 createdAt: serverTimestamp(),
@@ -587,7 +386,9 @@ const ReleaseMobileView = () => {
               });
             }
           } else {
-            // Handle products without variants (main product quantity)
+            // Product has no variants - update base product quantity
+            console.log(`📦 Product has no variants, updating base product quantity`);
+            
             const currentQty = Number(productData.quantity) || 0;
             const newQty = currentQty - releasedQty;
 
@@ -595,29 +396,30 @@ const ReleaseMobileView = () => {
               throw new Error(`Insufficient stock for ${product.name}. Available: ${currentQty}, Requested: ${releasedQty}`);
             }
 
-            
+            console.log(`➡️ Updating quantity: ${currentQty} - ${releasedQty} = ${newQty}`);
 
+            // Update product quantity
             transaction.update(inventoryLocation.productRef, {
               quantity: newQty,
-              updatedAt: serverTimestamp()
+              lastUpdated: serverTimestamp()
             });
 
             // Generate restock request if quantity is low
-            if (newQty <= (productData.reorderPoint || 10)) {
+            const restockLevel = productData.restockLevel || productData.reorderPoint || 10;
+            if (newQty <= restockLevel) {
+              console.log(`⚠️ Low stock detected (${newQty} <= ${restockLevel}), creating restock request...`);
 
               const restockRequestRef = doc(collection(db, 'RestockingRequests'));
               transaction.set(restockRequestRef, {
                 productId: product.productId,
                 productName: product.name,
-                variantId: null,
-                variantName: product.name,
                 currentQuantity: newQty,
-                requestedQuantity: (productData.reorderPoint || 10) * 2,
+                requestedQuantity: restockLevel * 2,
                 storageLocation: inventoryLocation.location.storageLocation,
                 shelfName: inventoryLocation.location.shelfName,
                 rowName: inventoryLocation.location.rowName,
                 columnIndex: inventoryLocation.location.columnIndex,
-                category: product.category,
+                category: product.category || 'Uncategorized',
                 status: 'pending',
                 priority: newQty === 0 ? 'high' : 'medium',
                 reason: `Stock depleted after release (Release ID: ${releaseId})`,
@@ -630,10 +432,12 @@ const ReleaseMobileView = () => {
           }
         });
 
+        console.log(`✅ Successfully updated ${product.name}`);
       }
 
+      console.log('\n✅ All inventory updates completed successfully');
     } catch (error) {
-      console.error('Error in inventory deduction:', error);
+      console.error('❌ Error in inventory deduction:', error);
       throw new Error(`Failed to update inventory: ${error.message}`);
     }
   };

@@ -63,40 +63,25 @@ const Dashboard = () => {
       const storageRef = collection(db, 'Products');
       const storageSnapshot = await getDocs(storageRef);
 
+      // UPDATED for nested structure: Products/{unit}/products/{productId}
       for (const storageDoc of storageSnapshot.docs) {
         const storageLocation = storageDoc.id;
-        const shelvesRef = collection(db, 'Products', storageLocation, 'shelves');
-        const shelvesSnapshot = await getDocs(shelvesRef);
+        
+        // NEW: Fetch products directly from the products subcollection
+        const productsRef = collection(db, 'Products', storageLocation, 'products');
+        const productsSnapshot = await getDocs(productsRef);
 
-        for (const shelfDoc of shelvesSnapshot.docs) {
-          const shelfName = shelfDoc.id;
-          const rowsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows');
-          const rowsSnapshot = await getDocs(rowsRef);
-
-          for (const rowDoc of rowsSnapshot.docs) {
-            const rowName = rowDoc.id;
-            const columnsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns');
-            const columnsSnapshot = await getDocs(columnsRef);
-
-            for (const columnDoc of columnsSnapshot.docs) {
-              const columnIndex = columnDoc.id;
-              const productsRef = collection(db, 'Products', storageLocation, 'shelves', shelfName, 'rows', rowName, 'columns', columnIndex, 'items');
-              const productsSnapshot = await getDocs(productsRef);
-
-              productsSnapshot.docs.forEach(doc => {
-                const data = doc.data();
-                allProducts.push({
-                  id: doc.id,
-                  ...data,
-                  storageLocation,
-                  shelfName,
-                  rowName,
-                  columnIndex
-                });
-              });
-            }
-          }
-        }
+        productsSnapshot.docs.forEach(doc => {
+          const data = doc.data();
+          allProducts.push({
+            id: doc.id,
+            ...data,
+            storageLocation: data.storageLocation || storageLocation,
+            shelfName: data.shelfName || 'Unknown',
+            rowName: data.rowName || 'Unknown',
+            columnIndex: data.columnIndex || 0
+          });
+        });
       }
 
       setProducts(allProducts);

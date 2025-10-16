@@ -14,146 +14,65 @@ export const ServicesProvider = ({ children }) => {
     const allProducts = [];
     let isFirstLoad = true;
 
-    // Simplified approach: recursively fetch all products from the nested structure
+    // Fetch products from nested structure: Products/{storageUnit}/products/{productId}
     const fetchAllProducts = async () => {
       try {
-
-        const storageLocationsRef = collection(db, "Products");
-        const storageLocationsSnapshot = await getDocs(storageLocationsRef);
+        const allProducts = [];
+        const productsRef = collection(db, "Products");
+        const storageUnitsSnapshot = await getDocs(productsRef);
         
-        const productPromises = [];
-        
-        for (const storageLocationDoc of storageLocationsSnapshot.docs) {
-          const storageLocation = storageLocationDoc.id;
-
-          // Fetch the storage unit's category
-          const storageLocationData = storageLocationDoc.data();
-          const unitCategory = storageLocationData.category || storageLocation;
-
-          const shelvesRef = collection(db, "Products", storageLocation, "shelves");
-          const shelvesSnapshot = await getDocs(shelvesRef);
+        // Iterate through each storage unit (Unit 01, Unit 02, etc.)
+        for (const storageUnitDoc of storageUnitsSnapshot.docs) {
+          const unitId = storageUnitDoc.id;
           
-          for (const shelfDoc of shelvesSnapshot.docs) {
-            const shelfName = shelfDoc.id;
-            
-            const rowsRef = collection(db, "Products", storageLocation, "shelves", shelfName, "rows");
-            const rowsSnapshot = await getDocs(rowsRef);
-            
-            for (const rowDoc of rowsSnapshot.docs) {
-              const rowName = rowDoc.id;
-              
-              const columnsRef = collection(db, "Products", storageLocation, "shelves", shelfName, "rows", rowName, "columns");
-              const columnsSnapshot = await getDocs(columnsRef);
-              
-              for (const columnDoc of columnsSnapshot.docs) {
-                const columnIndex = columnDoc.id;
-                
-                const productsRef = collection(db, "Products", storageLocation, "shelves", shelfName, "rows", rowName, "columns", columnIndex, "items");
-                
-                productPromises.push(
-                  getDocs(productsRef).then(productsSnapshot => {
-                    return productsSnapshot.docs.map(doc => {
-                      const data = doc.data();
-
-                      return {
-                        ...data,
-                        id: doc.id,
-                        baseProductId: doc.id.split('-')[0],
-                        category: data.category || unitCategory, // Use data.category first, fallback to storage unit's category
-                        storageLocation: storageLocation,
-                        shelfName: shelfName,
-                        rowName: rowName,
-                        columnIndex: columnIndex,
-                        fullLocation: `${storageLocation} - ${shelfName} - ${rowName} - Column ${columnIndex}`,
-                        brand: data.brand || 'Generic',
-                        subCategory: data.subCategory || data.category || unitCategory,
-                        specifications: data.specifications || '',
-                        storageType: data.storageType || 'Goods',
-                        unitPrice: typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice) || 0,
-                        quantity: typeof data.quantity === 'number' ? data.quantity : parseInt(data.quantity) || 0,
-                        supplierCode: data.supplierCode || data.supplier?.primaryCode || data.supplier?.code || '',
-                        supplier: data.supplier || {
-                          name: 'Unknown',
-                          primaryCode: '',
-                          code: '',
-                          address: '',
-                          contactPerson: '',
-                          phone: '',
-                          email: ''
-                        },
-                        variants: (Array.isArray(data.variants) && data.variants.length > 0) || (data.variants && typeof data.variants === 'object' && Object.keys(data.variants).length > 0)
-                          ? (Array.isArray(data.variants) ? data.variants : Object.values(data.variants)).map((variant, index) => ({
-                          ...variant,
-                          id: `${doc.id}-${index}`,
-                          variantId: variant.variantId || `${doc.id}-${index}`,
-                          baseProductId: doc.id,
-                          brand: data.brand || 'Generic',
-                          size: variant.size || variant.variantName || '',
-                          variantName: variant.variantName || variant.size || '',
-                          storageType: variant.storageType || data.storageType || 'Goods',
-                          specifications: variant.specifications || data.specifications || '',
-                          unitPrice: typeof variant.unitPrice === 'number' ? variant.unitPrice : parseFloat(variant.unitPrice) || 0,
-                          quantity: typeof variant.quantity === 'number' ? variant.quantity : parseInt(variant.quantity) || 0,
-                          unit: variant.unit || 'pcs',
-                          supplierCode: variant.supplierCode || data.supplierCode || data.supplier?.primaryCode || data.supplier?.code || '',
-                          // Add location fields to variants
-                          storageLocation: storageLocation,
-                          shelfName: shelfName,
-                          rowName: rowName,
-                          columnIndex: columnIndex,
-                          fullLocation: `${storageLocation} - ${shelfName} - ${rowName} - Column ${columnIndex}`,
-                          supplier: variant.supplier || data.supplier || {
-                            name: 'Unknown',
-                            primaryCode: '',
-                            code: ''
-                          }
-                        })) : [
-                          // Create a default variant if no variants exist
-                          {
-                            id: doc.id,
-                            variantId: doc.id,
-                            baseProductId: doc.id,
-                            brand: data.brand || 'Generic',
-                            size: data.size || 'Standard',
-                            variantName: 'Standard',
-                            storageType: data.storageType || 'Goods',
-                            specifications: data.specifications || '',
-                            unitPrice: typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice) || 0,
-                            quantity: typeof data.quantity === 'number' ? data.quantity : parseInt(data.quantity) || 0,
-                            unit: data.unit || 'pcs',
-                            supplierCode: data.supplierCode || data.supplier?.primaryCode || data.supplier?.code || '',
-                            // Add location fields to default variant
-                            storageLocation: storageLocation,
-                            shelfName: shelfName,
-                            rowName: rowName,
-                            columnIndex: columnIndex,
-                            fullLocation: `${storageLocation} - ${shelfName} - ${rowName} - Column ${columnIndex}`,
-                            supplier: data.supplier || {
-                              name: 'Unknown',
-                              primaryCode: '',
-                              code: ''
-                            }
-                          }
-                        ],
-                        // Calculate total value for display
-                        totalvalue: (typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice) || 0) * 
-                                   (typeof data.quantity === 'number' ? data.quantity : parseInt(data.quantity) || 0)
-                      };
-                    });
-                  }).catch(error => {
-                    console.error(`Error fetching products from ${storageLocation}/${shelfName}/${rowName}/${columnIndex}:`, error);
-                    return [];
-                  })
-                );
-              }
-            }
+          // Skip non-storage unit documents (if any)
+          if (!unitId.startsWith('Unit ')) {
+            continue;
           }
+          
+          // Fetch products subcollection for this storage unit
+          const productsSubcollectionRef = collection(db, "Products", unitId, "products");
+          const productsSnapshot = await getDocs(productsSubcollectionRef);
+          
+          productsSnapshot.docs.forEach(doc => {
+            const data = doc.data();
+            
+            allProducts.push({
+              ...data,
+              id: doc.id,
+              baseProductId: data.parentProductId || doc.id,
+              category: data.category || 'Uncategorized',
+              storageLocation: data.storageLocation || unitId,
+              shelfName: data.shelfName || 'Unknown',
+              rowName: data.rowName || 'Unknown',
+              columnIndex: data.columnIndex || 0,
+              fullLocation: data.fullLocation || `${data.storageLocation || unitId} - ${data.shelfName || 'Unknown'} - ${data.rowName || 'Unknown'} - Column ${data.columnIndex || 0}`,
+              brand: data.brand || 'Generic',
+              subCategory: data.subCategory || data.category || 'Uncategorized',
+              specifications: data.specifications || '',
+              storageType: data.storageType || 'Goods',
+              unitPrice: typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice) || 0,
+              quantity: typeof data.quantity === 'number' ? data.quantity : parseInt(data.quantity) || 0,
+              supplierCode: data.supplierCode || data.supplier?.primaryCode || data.supplier?.code || '',
+              supplier: data.supplier || {
+                name: 'Unknown',
+                primaryCode: '',
+                code: '',
+                address: '',
+                contactPerson: '',
+                phone: '',
+                email: ''
+              },
+              isVariant: data.isVariant || false,
+              parentProductId: data.parentProductId || null,
+              variantName: data.variantName || data.size || 'Standard',
+              totalvalue: (typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice) || 0) * 
+                         (typeof data.quantity === 'number' ? data.quantity : parseInt(data.quantity) || 0)
+            });
+          });
         }
-        
-        const productArrays = await Promise.all(productPromises);
-        const allProducts = productArrays.flat();
 
-        
+        console.log(`Fetched ${allProducts.length} products from ${storageUnitsSnapshot.docs.length} storage units`);
         
         setProducts(allProducts);
         if (onUpdate) onUpdate(allProducts);
@@ -168,12 +87,12 @@ export const ServicesProvider = ({ children }) => {
     // Initial fetch
     fetchAllProducts();
 
-    // Set up a single listener on the top-level Products collection to detect changes
+    // Set up a listener on the Products collection to detect changes
     const unsubscribe = onSnapshot(
       collection(db, "Products"),
       (snapshot) => {
         if (!isFirstLoad) {
-
+          console.log('Products collection changed, refetching...');
           fetchAllProducts();
         }
         isFirstLoad = false;
@@ -185,7 +104,7 @@ export const ServicesProvider = ({ children }) => {
 
     // Return cleanup function
     return () => {
-
+      console.log('Unsubscribing from Products listener');
       unsubscribe();
     };
   }, []); // Empty dependency array since it doesn't depend on any external values

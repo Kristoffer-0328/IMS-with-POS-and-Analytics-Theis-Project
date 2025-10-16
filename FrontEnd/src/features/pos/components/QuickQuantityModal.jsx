@@ -7,8 +7,16 @@ const QuickQuantityModal = ({
   onAdd,
   maxQuantity
 }) => {
+  console.log('QuickQuantityModal rendered with:', { product, maxQuantity });
+  
   // Early return if product is null
   if (!product) {
+    console.warn('QuickQuantityModal: No product provided');
+    return null;
+  }
+
+  if (!product.variants || product.variants.length === 0) {
+    console.error('QuickQuantityModal: No variants found in product', product);
     return null;
   }
 
@@ -54,6 +62,12 @@ const QuickQuantityModal = ({
   const getCurrentQuantity = () => {
     return quantity === '' ? 0 : parseInt(quantity);
   };
+
+  const firstVariant = product.variants?.[0] || {};
+  const variantUnit = firstVariant.unit || 'pcs';
+  const variantPrice = firstVariant.unitPrice || firstVariant.price || 0;
+
+  console.log('Modal variant data:', { firstVariant, variantUnit, variantPrice });
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -132,17 +146,17 @@ const QuickQuantityModal = ({
           {/* Total Calculation */}
           <div className="bg-gray-50 p-3 rounded-lg mb-4">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Price per {product.variants[0].unit}:</span>
-              <span className="font-medium">₱{product.variants[0].price.toLocaleString()}</span>
+              <span className="text-gray-600">Price per {variantUnit}:</span>
+              <span className="font-medium">₱{variantPrice.toLocaleString()}</span>
             </div>
             <div className="flex justify-between text-sm mt-1">
               <span className="text-gray-600">Quantity:</span>
-              <span className="font-medium">{getDisplayQuantity()} {product.variants[0].unit}</span>
+              <span className="font-medium">{getDisplayQuantity()} {variantUnit}</span>
             </div>
             <div className="flex justify-between text-base font-medium mt-2 pt-2 border-t">
               <span>Total:</span>
               <span className="text-orange-600">
-                ₱{(product.variants[0].price * getCurrentQuantity()).toLocaleString()}
+                ₱{(variantPrice * getCurrentQuantity()).toLocaleString()}
               </span>
             </div>
           </div>

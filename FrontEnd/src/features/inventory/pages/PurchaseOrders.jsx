@@ -4,6 +4,7 @@ import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import { usePurchaseOrderServices } from '../../../services/firebase/PurchaseOrderServices';
 import { useAuth } from '../../auth/services/FirebaseAuth';
 import CreatePOModal from '../components/PurchaseOrder/CreatePOModal';
+import { getFirestore, collection, getDocs } from 'firebase/firestore';
 import ViewPOModal from '../components/PurchaseOrder/ViewPOModal';
 
 const PurchaseOrders = () => {
@@ -14,6 +15,7 @@ const PurchaseOrders = () => {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [restockProducts, setRestockProducts] = useState([]);
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedPO, setSelectedPO] = useState(null);
   const [selectedStatus, setSelectedStatus] = useState('all');
@@ -32,6 +34,28 @@ const PurchaseOrders = () => {
 
     return () => unsubscribe();
   }, []);
+
+  // Load restock request products
+  useEffect(() => {
+    async function fetchRestockRequests() {
+      try {
+        const db = getFirestore();
+        const restockRef = collection(db, 'RestockingRequests');
+        const snapshot = await getDocs(restockRef);
+        const products = [];
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          if (Array.isArray(data.products)) {
+            products.push(...data.products);
+          }
+        });
+        setRestockProducts(products);
+      } catch (err) {
+        setRestockProducts([]);
+      }
+    }
+    fetchRestockRequests();
+  }, [showCreateModal]);
 
   // Filter POs
   const filteredPOs = purchaseOrders.filter(po => {
@@ -315,6 +339,7 @@ const PurchaseOrders = () => {
       {/* Modals */}
       {showCreateModal && (
         <CreatePOModal
+          restockProducts={restockProducts}
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
             setShowCreateModal(false);
