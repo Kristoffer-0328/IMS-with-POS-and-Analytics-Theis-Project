@@ -1018,7 +1018,7 @@ const MobileDeliveryReceipt = () => {
                 onClick={() => window.print()}
                 className="flex-1 px-4 py-3 bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-gray-200 transition-colors"
               >
-                🖨️ Print
+                Print
               </button>
               <button
                 onClick={() => {
@@ -1028,14 +1028,14 @@ const MobileDeliveryReceipt = () => {
                 }}
                 className="flex-1 px-4 py-3 bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-gray-200 transition-colors"
               >
-                🔄 Start Over
+                Start Over
               </button>
               <button
                 onClick={handleSubmit}
                 className="flex-1 px-4 py-3 text-white font-medium rounded-lg transition-colors"
                 style={{ backgroundColor: '#EC6923' }}
               >
-                ✓ Submit Receipt
+                Submit Receipt
               </button>
             </div>
           )}
