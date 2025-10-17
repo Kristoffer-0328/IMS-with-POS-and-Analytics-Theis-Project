@@ -49,8 +49,8 @@ doc(db, 'Products', storageLocation, 'products', productId)
 
 ---
 
-#### 2. receiving_mobile_view.jsx
-**Location**: `src/features/inventory/pages/receiving_mobile_view.jsx`
+#### 2. MobileReceive.jsx
+**Location**: `src/features/inventory/pages/MobileReceive.jsx`
 
 **What to update**:
 - Product receiving logic

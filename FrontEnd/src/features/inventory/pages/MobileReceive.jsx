@@ -1,7 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AlertCircle, CheckCircle, Clock, Upload, X, MapPin, User, Truck, FileText, Camera, ChevronLeft, ChevronRight } from 'lucide-react';
+import { AlertCircle, CheckCircle, Clock, Upload, X, MapPin, User, Truck, FileText, Camera, ChevronLeft, ChevronRight, QrCode } from 'lucide-react';
+import { 
+  collection, 
+  addDoc, 
+  serverTimestamp,
+  getFirestore,
+  doc,
+  getDoc,
+  getDocs,
+  updateDoc,
+  runTransaction,
+  query,        
+  where         
+} from 'firebase/firestore';
+import { ref, uploadBytes, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import app from '../../../services/firebase/config';
+import storage from '../../../services/firebase/StorageConfig';
+import { useAuth } from '../../auth/services/FirebaseAuth';
+import { AnalyticsService } from '../../../services/firebase/AnalyticsService';
 
-const MobileDeliveryReceipt = () => {
+const db = getFirestore(app);
+
+// Constants
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILES = 5;
+
+const MobileReceive = () => {
+  const { currentUser } = useAuth();
   const [deliveryData, setDeliveryData] = useState({
     drNumber: '',
     invoiceNumber: '',
@@ -12,50 +37,7 @@ const MobileDeliveryReceipt = () => {
     truckNumber: '',
     receivedBy: '',
     projectSite: '',
-    products: [
-      {
-        id: 'prod001',
-        name: 'Cement Bags',
-        sku: 'CBX-001',
-        unit: 'bags',
-        expectedQty: 10,
-        acceptedQty: 0,
-        rejectedQty: 0,
-        photo: null,
-        photoPreview: null,
-        rejectionReason: '',
-        status: 'pending',
-        notes: '',
-      },
-      {
-        id: 'prod002',
-        name: 'Steel Rebar',
-        sku: 'SRB-002',
-        unit: 'pieces',
-        expectedQty: 50,
-        acceptedQty: 0,
-        rejectedQty: 0,
-        photo: null,
-        photoPreview: null,
-        rejectionReason: '',
-        status: 'pending',
-        notes: '',
-      },
-      {
-        id: 'prod003',
-        name: 'Concrete Blocks',
-        sku: 'CBL-003',
-        unit: 'pieces',
-        expectedQty: 100,
-        acceptedQty: 0,
-        rejectedQty: 0,
-        photo: null,
-        photoPreview: null,
-        rejectionReason: '',
-        status: 'pending',
-        notes: '',
-      },
-    ],
+    products: [],
     supportingDocuments: [],
   });
 
@@ -66,16 +48,97 @@ const MobileDeliveryReceipt = () => {
   const [notReceivedProductId, setNotReceivedProductId] = useState(null);
   const [notReceivedReason, setNotReceivedReason] = useState('');
   const [selectedProducts, setSelectedProducts] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [processingStep, setProcessingStep] = useState('');
+  const [poId, setPoId] = useState(null);
+  const [poData, setPoData] = useState(null);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [completionData, setCompletionData] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState({});
+  const [uploadedFiles, setUploadedFiles] = useState([]);
   
   const containerRef = useRef(null);
   const fileInputRef = useRef(null);
   
   const steps = ['List', 'Inspect', 'Info', 'Summary'];
 
+  // Read poId from URL parameters
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const poIdParam = urlParams.get('poId');
+
+    if (poIdParam) {
+      setPoId(poIdParam);
+      setIsLoading(true);
+      
+      // Fetch PO data from Firestore
+      const fetchPO = async () => {
+        try {
+          const poRef = doc(db, 'purchase_orders', poIdParam);
+          const poDoc = await getDoc(poRef);
+          
+          if (poDoc.exists()) {
+            const poData = poDoc.data();
+            setPoData(poData);
+            
+            // Update delivery data with PO information
+            setDeliveryData(prev => ({
+              ...prev,
+              poNumber: poData.poNumber || '',
+              supplierName: poData.supplierName || '',
+              products: poData.items?.map((item, idx) => ({
+                id: item.productId || `item-${idx}`,
+                name: item.productName || item.name || 'Unknown Product',
+                sku: item.sku || item.productId || '',
+                unit: item.unit || 'pieces',
+                expectedQty: item.quantity || 0,
+                acceptedQty: 0,
+                rejectedQty: 0,
+                photo: null,
+                photoPreview: null,
+                rejectionReason: '',
+                status: 'pending',
+                notes: '',
+                productId: item.productId,
+                unitPrice: item.unitPrice || 0,
+                total: item.total || 0,
+                category: item.category || 'General'
+              })) || []
+            }));
+
+            // Update PO status to 'receiving_in_progress' if not already
+            if (poData.status !== 'receiving_in_progress' && poData.status !== 'received') {
+              await updateDoc(poRef, {
+                status: 'receiving_in_progress',
+                receivingStartedAt: serverTimestamp(),
+                receivingStartedBy: currentUser?.uid || 'mobile_user',
+                updatedAt: serverTimestamp()
+              });
+            }
+          } else {
+            console.error('PO not found');
+            alert('Purchase Order not found');
+          }
+        } catch (err) {
+          console.error('Error fetching PO:', err);
+          alert('Error loading Purchase Order data');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      fetchPO();
+    } else {
+      setIsLoading(false);
+    }
+  }, [currentUser]);
+
   // Initialize all products as selected for inspection
   useEffect(() => {
-    setSelectedProducts(deliveryData.products.map(p => p.id));
-  }, []);
+    if (deliveryData.products.length > 0) {
+      setSelectedProducts(deliveryData.products.map(p => p.id));
+    }
+  }, [deliveryData.products]);
 
   // Handle case where current product is no longer selected (e.g., marked as not received)
   useEffect(() => {
@@ -354,6 +417,330 @@ const MobileDeliveryReceipt = () => {
     return { totalExpected, totalAccepted, totalRejected, totalReceived, notReceived, forInspection, totalProducts: deliveryData.products.length };
   };
 
+  // Function to find product in inventory using NEW NESTED STRUCTURE
+  const findProductInInventory = async (productId, productName) => {
+    try {
+      console.log(`🔍 Searching for product: ${productName} (ID: ${productId})`);
+      
+      // Get all storage units (top-level documents in Products collection)
+      const productsCollection = collection(db, 'Products');
+      const storageSnapshot = await getDocs(productsCollection);
+      
+      // Search through each storage unit's products subcollection
+      for (const storageDoc of storageSnapshot.docs) {
+        const storageLocation = storageDoc.id;
+        
+        // Access the products subcollection for this storage unit
+        const productsRef = collection(db, 'Products', storageLocation, 'products');
+        
+        // Try to find by exact product ID
+        const productRef = doc(db, 'Products', storageLocation, 'products', productId);
+        const productDoc = await getDoc(productRef);
+        
+        if (productDoc.exists()) {
+          const productData = productDoc.data();
+          console.log(`✅ Found product in ${storageLocation}:`, productData);
+          
+          return {
+            ref: productRef,
+            data: productData,
+            location: {
+              storageLocation,
+              shelfName: productData.shelfName,
+              rowName: productData.rowName,
+              columnIndex: productData.columnIndex
+            }
+          };
+        }
+        
+        // If not found by ID, try querying by name in this storage unit
+        const nameQuery = query(productsRef, where('name', '==', productName));
+        const nameSnapshot = await getDocs(nameQuery);
+        
+        if (!nameSnapshot.empty) {
+          const firstDoc = nameSnapshot.docs[0];
+          const productData = firstDoc.data();
+          console.log(`✅ Found product by name in ${storageLocation}:`, productData);
+          
+          return {
+            ref: firstDoc.ref,
+            data: productData,
+            location: {
+              storageLocation,
+              shelfName: productData.shelfName,
+              rowName: productData.rowName,
+              columnIndex: productData.columnIndex
+            }
+          };
+        }
+      }
+
+      console.log(`❌ Product not found: ${productName} (ID: ${productId})`);
+      return null;
+      
+    } catch (error) {
+      console.error(`Error searching for product ${productName}:`, error);
+      throw error;
+    }
+  };
+
+  // Function to update inventory quantities by adding received items
+  const updateInventoryQuantities = async (receivedProducts) => {
+    try {
+      console.log('📦 Updating inventory for received products:', receivedProducts);
+
+      for (const product of receivedProducts) {
+        // Skip if no quantity delivered
+        if (!product.acceptedQty || product.acceptedQty <= 0) {
+          console.log(`⏭️ Skipping ${product.name} - no quantity delivered`);
+          continue;
+        }
+
+        console.log(`\n🔄 Processing ${product.name} (${product.acceptedQty} units)`);
+        
+        // Find the product in inventory
+        const productInfo = await findProductInInventory(product.productId, product.name);
+        
+        if (!productInfo) {
+          throw new Error(`Product "${product.name}" (ID: ${product.productId}) not found in inventory. Cannot update stock levels.`);
+        }
+        
+        console.log(`📍 Found at: Products/${productInfo.location.storageLocation}/products/${product.productId}`);
+        
+        // Update the product using a transaction
+        await runTransaction(db, async (transaction) => {
+          // Re-fetch the latest product data in the transaction
+          const currentProductDoc = await transaction.get(productInfo.ref);
+          
+          if (!currentProductDoc.exists()) {
+            throw new Error(`Product "${product.name}" was deleted during update process.`);
+          }
+          
+          const productData = currentProductDoc.data();
+          
+          // Calculate new quantity (flat structure - products have direct quantity field)
+          const currentQty = parseInt(productData.quantity) || 0;
+          const deliveredQty = parseInt(product.acceptedQty);
+          const newQty = currentQty + deliveredQty;
+          
+          console.log(`📊 Quantity update: ${currentQty} + ${deliveredQty} = ${newQty}`);
+          
+          // Update the product document (no variants array in flat structure)
+          transaction.update(productInfo.ref, {
+            quantity: newQty,
+            lastReceived: serverTimestamp(),
+            totalReceived: (productData.totalReceived || 0) + deliveredQty,
+            lastUpdated: serverTimestamp()
+          });
+          
+          console.log(`✅ Updated ${product.name} quantity to ${newQty}`);
+        });
+      }
+
+      console.log('✅ All inventory quantities updated successfully');
+
+    } catch (error) {
+      console.error('❌ Error in inventory update:', error);
+      throw new Error(`Failed to update inventory: ${error.message}`);
+    }
+  };
+
+  const handleSubmit = async () => {
+    try {
+      setIsSubmitting(true);
+      setProcessingStep('Preparing data...');
+
+      // Prepare received items for processing
+      const receivedItems = deliveryData.products
+        .filter(p => p.status === 'received' && (p.acceptedQty > 0 || p.rejectedQty > 0))
+        .map(product => ({
+          productId: product.productId,
+          productName: product.name,
+          category: product.category || 'General',
+          expectedQuantity: product.expectedQty,
+          receivedQuantity: parseInt(product.acceptedQty) || 0,
+          rejectedQuantity: parseInt(product.rejectedQty) || 0,
+          unitPrice: product.unitPrice || 0,
+          rejectionReason: product.rejectionReason || '',
+          notes: product.notes || '',
+          photo: product.photoPreview || null,
+          receivedBy: {
+            id: currentUser?.uid || 'mobile_user',
+            name: currentUser?.name || deliveryData.receivedBy || 'Mobile User'
+          }
+        }));
+
+      // Update inventory quantities with received products
+      setProcessingStep('Updating inventory...');
+      await updateInventoryQuantities(receivedItems);
+      
+      // Update Purchase Order status and received quantities
+      setProcessingStep('Updating Purchase Order...');
+      if (poId) {
+        const poRef = doc(db, 'purchase_orders', poId);
+        
+        // Calculate total ordered vs received for summary
+        const orderSummary = {
+          totalItemsOrdered: deliveryData.products.length,
+          totalItemsReceived: receivedItems.length,
+          totalQuantityOrdered: deliveryData.products.reduce((sum, p) => sum + (p.expectedQty || 0), 0),
+          totalQuantityReceived: receivedItems.reduce((sum, p) => sum + (p.receivedQuantity || 0), 0),
+          itemsWithDiscrepancies: deliveryData.products.filter(p => (parseInt(p.acceptedQty) || 0) !== p.expectedQty).length
+        };
+        
+        await updateDoc(poRef, {
+          status: 'received',
+          receivedAt: serverTimestamp(),
+          receivingCompletedBy: currentUser?.uid || 'mobile_user',
+          orderSummary: orderSummary,
+          receivedProducts: receivedItems,
+          deliveryDetails: {
+            drNumber: deliveryData.drNumber,
+            invoiceNumber: deliveryData.invoiceNumber,
+            deliveryDateTime: new Date(deliveryData.deliveryDateTime),
+            driverName: deliveryData.driverName,
+            truckNumber: deliveryData.truckNumber,
+            receivedBy: deliveryData.receivedBy,
+            projectSite: deliveryData.projectSite
+          },
+          updatedAt: serverTimestamp()
+        });
+      }
+
+      // Save receiving transaction record
+      setProcessingStep('Logging transaction...');
+      const receivingTransactionData = {
+        transactionId: `REC-${Date.now()}`,
+        type: 'receiving',
+        poId: poId,
+        deliveryDetails: {
+          drNumber: deliveryData.drNumber,
+          invoiceNumber: deliveryData.invoiceNumber,
+          deliveryDateTime: new Date(deliveryData.deliveryDateTime),
+          driverName: deliveryData.driverName,
+          truckNumber: deliveryData.truckNumber,
+          receivedBy: deliveryData.receivedBy,
+          projectSite: deliveryData.projectSite
+        },
+        items: receivedItems,
+        summary: {
+          totalOrderValue: deliveryData.products.reduce((sum, p) => sum + ((p.unitPrice || 0) * (p.expectedQty || 0)), 0),
+          totalReceivedValue: receivedItems.reduce((sum, p) => sum + ((p.unitPrice || 0) * (p.receivedQuantity || 0)), 0),
+          itemsCount: deliveryData.products.length,
+          receivedItemsCount: receivedItems.length
+        },
+        status: 'completed',
+        createdAt: serverTimestamp(),
+        createdBy: currentUser?.uid || 'mobile_user'
+      };
+      
+      await addDoc(collection(db, 'receivingTransactions'), receivingTransactionData);
+
+      // Update analytics
+      setProcessingStep('Updating analytics...');
+      await AnalyticsService.updateInventorySnapshotAfterReceiving(receivedItems);
+
+      // Create stock movement entries for each accepted product
+      setProcessingStep('Recording stock movements...');
+      const receivingTimestamp = new Date(deliveryData.deliveryDateTime);
+      const stockMovementPromises = receivedItems.map(async (product) => {
+        const movementRef = collection(db, 'stock_movements');
+        return addDoc(movementRef, {
+          // Movement Type
+          movementType: 'IN',
+          reason: 'Supplier Delivery',
+          // Product Information
+          productId: product.productId,
+          productName: product.productName,
+          variantId: product.variantId || null,
+          variantName: product.variantName || null,
+          // Quantity & Value
+          quantity: product.receivedQuantity,
+          orderedQty: product.expectedQuantity,
+          unitPrice: product.unitPrice || 0,
+          totalValue: (product.receivedQuantity * (product.unitPrice || 0)),
+          // Location Information (will be filled when inventory is updated)
+          storageLocation: null,
+          shelf: null,
+          row: null,
+          column: null,
+          // Transaction References
+          referenceType: 'receiving_record',
+          referenceId: poId,
+          poId: poId,
+          drNumber: deliveryData.drNumber,
+          invoiceNumber: deliveryData.invoiceNumber || null,
+          // Supplier Information
+          supplier: poData?.supplierName || 'Unknown Supplier',
+          supplierContact: poData?.supplierContact || '',
+          // Delivery Information
+          driverName: deliveryData.driverName,
+          deliveryDate: receivingTimestamp,
+          // Condition & Status
+          condition: product.rejectedQuantity > 0 ? 'partial' : 'complete',
+          remarks: product.notes || '',
+          status: 'completed',
+          // Timestamps
+          movementDate: receivingTimestamp,
+          createdAt: new Date(),
+          // Additional Context
+          notes: deliveryData.projectSite || ''
+        });
+      });
+      await Promise.all(stockMovementPromises);
+
+      setProcessingStep('Completed!');
+      
+      // Set completion data and show completion page
+      setCompletionData({
+        poId,
+        poNumber: deliveryData.poNumber,
+        deliveryDetails: {
+          drNumber: deliveryData.drNumber,
+          driverName: deliveryData.driverName,
+          deliveryDateTime: deliveryData.deliveryDateTime,
+          receivedBy: deliveryData.receivedBy
+        },
+        productsReceived: receivedItems,
+        totalProducts: deliveryData.products.length,
+        timestamp: new Date().toISOString()
+      });
+      
+      setIsCompleted(true);
+      
+    } catch (error) {
+      console.error('Error submitting data:', error);
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
+      
+      // Better error handling with specific messages
+      let errorMessage = 'Error submitting data. Please try again.';
+      
+      if (error.message.includes('Failed to update')) {
+        errorMessage = `Update failed: ${error.message}`;
+      } else if (error.message.includes('permission') || error.code === 'permission-denied') {
+        errorMessage = 'Permission denied. Please check your authentication.';
+      } else if (error.message.includes('network') || error.message.includes('CORS') || error.code === 'unavailable') {
+        errorMessage = 'Network error. Please check your connection and try again.';
+      } else if (error.message.includes('quota') || error.code === 'resource-exhausted') {
+        errorMessage = 'Storage quota exceeded. Please contact your administrator.';
+      } else if (error.message.includes('invalid-argument') || error.code === 'invalid-argument') {
+        errorMessage = 'Invalid data format. Please check your inputs and try again.';
+      } else if (error.message) {
+        // Include the actual error message for debugging
+        errorMessage = `Error: ${error.message}`;
+      }
+      
+      alert(errorMessage);
+    } finally {
+      setIsSubmitting(false);
+      setProcessingStep('');
+    }
+  };
+
   const summary = getSummary();
   
   // Get the selected products for inspection
@@ -362,23 +749,186 @@ const MobileDeliveryReceipt = () => {
   const totalCounted = currentProduct ? (parseInt(currentProduct.acceptedQty) || 0) + (parseInt(currentProduct.rejectedQty) || 0) : 0;
   const variance = currentProduct ? calculateVariance(currentProduct.expectedQty, parseInt(currentProduct.acceptedQty) || 0, parseInt(currentProduct.rejectedQty) || 0) : 0;
 
-  const handleSubmit = () => {
-    const payload = {
-      ...deliveryData,
-      status: 'Submitted',
-      timestamp: new Date().toISOString(),
-    };
-    console.log('Submitting Final Payload:', payload);
-    alert('Delivery receipt submitted successfully!');
-  };
+  // Show completion page if receiving is completed
+  if (isCompleted && completionData) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="max-w-lg mx-auto bg-white rounded-lg shadow-lg p-6">
+          {/* Success Header */}
+          <div className="text-center mb-6">
+            <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle className="w-8 h-8 text-green-600" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-800">Receiving Completed!</h1>
+            <p className="text-gray-600 mt-2">All items have been successfully processed</p>
+          </div>
+
+          {/* Summary Information */}
+          <div className="space-y-4 mb-6">
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="font-semibold text-gray-800 mb-2">Delivery Summary</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">PO Number:</span>
+                  <span className="font-medium">{completionData.poNumber}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">DR Number:</span>
+                  <span className="font-medium">{completionData.deliveryDetails?.drNumber}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Driver:</span>
+                  <span className="font-medium">{completionData.deliveryDetails?.driverName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Products Received:</span>
+                  <span className="font-medium">{completionData.productsReceived?.length} of {completionData.totalProducts}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Products Received */}
+            <div className="bg-green-50 rounded-lg p-4">
+              <h3 className="font-semibold text-gray-800 mb-2 flex items-center">
+                <Truck className="mr-2" />
+                Inventory Updated
+              </h3>
+              <div className="space-y-1 text-sm">
+                {completionData.productsReceived?.map((product, index) => (
+                  <div key={index} className="flex justify-between">
+                    <span className="text-gray-600">{product.productName}</span>
+                    <span className="font-medium text-green-600">+{product.receivedQuantity}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Status Updates */}
+            <div className="bg-blue-50 rounded-lg p-4">
+              <h3 className="font-semibold text-gray-800 mb-2">System Updates</h3>
+              <div className="space-y-1 text-sm text-gray-600">
+                <div className="flex items-center">
+                  <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                  Purchase Order status updated to 'Received'
+                </div>
+                <div className="flex items-center">
+                  <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                  Inventory quantities updated
+                </div>
+                <div className="flex items-center">
+                  <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                  Receiving transaction logged
+                </div>
+                <div className="flex items-center">
+                  <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                  Stock movements recorded
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="space-y-3">
+            <button
+              onClick={() => {
+                // Reset all states to start a new receiving process
+                setIsCompleted(false);
+                setCompletionData(null);
+                setPoId(null);
+                setPoData(null);
+                setDeliveryData({
+                  drNumber: '',
+                  invoiceNumber: '',
+                  poNumber: '',
+                  supplierName: '',
+                  deliveryDateTime: '',
+                  driverName: '',
+                  truckNumber: '',
+                  receivedBy: '',
+                  projectSite: '',
+                  products: [],
+                  supportingDocuments: [],
+                });
+                setUploadedFiles([]);
+                setUploadProgress({});
+                setCurrentStep(0);
+                setCurrentProductIndex(0);
+                setSelectedProducts([]);
+              }}
+              className="w-full bg-orange-500 text-white py-3 px-4 rounded-lg font-medium hover:bg-orange-600 transition-colors flex items-center justify-center"
+            >
+              <QrCode className="mr-2" />
+              Process New Delivery
+            </button>
+            
+            <button
+              onClick={() => {
+                // Go back to main receiving page
+                window.history.back();
+              }}
+              className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+            >
+              Back to Receiving
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading Purchase Order data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!poId || !poData) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto p-6">
+          <QrCode className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">No Purchase Order Found</h1>
+          <p className="text-gray-600 mb-4">
+            Please scan a QR code or access this page through a valid Purchase Order link.
+          </p>
+          <button
+            onClick={() => window.history.back()}
+            className="bg-orange-500 text-white px-6 py-2 rounded-lg hover:bg-orange-600 transition-colors"
+          >
+            Go Back
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">Delivery Receipt</h1>
-          <p className="text-sm text-gray-500 mt-1">Material Receiving & Inspection</p>
+          <h1 className="text-2xl font-bold text-gray-900">Mobile Receiving</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {poData.poNumber} • {poData.supplierName}
+            {poData.status && (
+              <span className={`ml-2 px-2 py-1 rounded-full text-xs ${
+                poData.status === 'receiving_in_progress' ? 'bg-orange-100 text-orange-700' :
+                poData.status === 'received' ? 'bg-green-100 text-green-700' :
+                poData.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                'bg-gray-100 text-gray-700'
+              }`}>
+                {poData.status === 'receiving_in_progress' ? 'Receiving in Progress' :
+                 poData.status === 'received' ? 'Received' :
+                 poData.status === 'pending' ? 'Pending' :
+                 poData.status}
+              </span>
+            )}
+          </p>
         </div>
       </div>
 
@@ -462,6 +1012,9 @@ const MobileDeliveryReceipt = () => {
                           <div className="mt-2 flex items-center gap-4 text-sm">
                             <span className="text-gray-700">
                               <span className="font-medium">Expected:</span> {product.expectedQty} {product.unit}
+                            </span>
+                            <span className="text-gray-500">
+                              <span className="font-medium">Price:</span> ₱{product.unitPrice?.toFixed(2) || '0.00'}
                             </span>
                           </div>
                           {product.status === 'not_received' && (
@@ -746,6 +1299,18 @@ const MobileDeliveryReceipt = () => {
               
               <div className="space-y-4">
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">DR Number</label>
+                  <input
+                    type="text"
+                    name="drNumber"
+                    value={deliveryData.drNumber}
+                    onChange={handleInputChange}
+                    placeholder="DR-2025-001"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Number</label>
                   <input
                     type="text"
@@ -871,6 +1436,14 @@ const MobileDeliveryReceipt = () => {
             <div className="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
               <h3 className="font-semibold text-gray-900 mb-4">Delivery Details</h3>
               <div className="space-y-3 text-sm">
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-600">PO Number:</span>
+                  <span className="font-medium text-gray-900">{deliveryData.poNumber || '—'}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-600">DR Number:</span>
+                  <span className="font-medium text-gray-900">{deliveryData.drNumber || '—'}</span>
+                </div>
                 <div className="flex justify-between py-2 border-b border-gray-100">
                   <span className="text-gray-600">Invoice Number:</span>
                   <span className="font-medium text-gray-900">{deliveryData.invoiceNumber || '—'}</span>
@@ -1032,165 +1605,29 @@ const MobileDeliveryReceipt = () => {
               </button>
               <button
                 onClick={handleSubmit}
-                className="flex-1 px-4 py-3 text-white font-medium rounded-lg transition-colors"
-                style={{ backgroundColor: '#EC6923' }}
+                disabled={isSubmitting}
+                className={`flex-1 px-4 py-3 text-white font-medium rounded-lg transition-colors ${
+                  isSubmitting 
+                    ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
+                    : 'bg-orange-500 hover:bg-orange-600'
+                }`}
               >
-                Submit Receipt
+                {isSubmitting ? (
+                  <div className="flex flex-col items-center justify-center">
+                    <div className="flex items-center mb-2">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                      Processing...
+                    </div>
+                    {processingStep && (
+                      <div className="text-xs text-gray-200">
+                        {processingStep}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  'Submit Receipt'
+                )}
               </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Printable Receipt - Hidden by default, shown only when printing */}
-      <div className="hidden print:block print:bg-white print:text-black print:p-8 print:max-w-none">
-        <div className="print:border-2 print:border-gray-300 print:p-6 print:min-h-screen">
-          {/* Receipt Header */}
-          <div className="text-center mb-6 print:border-b print:border-gray-300 print:pb-4">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">DELIVERY RECEIPT</h1>
-            <p className="text-sm text-gray-600">Material Receiving & Inspection Report</p>
-            <p className="text-xs text-gray-500 mt-1">Generated: {new Date().toLocaleString()}</p>
-          </div>
-
-          {/* Delivery Information */}
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3 border-b border-gray-200 pb-1">DELIVERY INFORMATION</h2>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="font-medium text-gray-700">Invoice Number:</span>
-                <span className="ml-2 text-gray-900">{deliveryData.invoiceNumber || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="font-medium text-gray-700">DR Number:</span>
-                <span className="ml-2 text-gray-900">{deliveryData.drNumber || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="font-medium text-gray-700">PO Number:</span>
-                <span className="ml-2 text-gray-900">{deliveryData.poNumber || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="font-medium text-gray-700">Supplier:</span>
-                <span className="ml-2 text-gray-900">{deliveryData.supplierName || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="font-medium text-gray-700">Driver Name:</span>
-                <span className="ml-2 text-gray-900">{deliveryData.driverName || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="font-medium text-gray-700">Truck Number:</span>
-                <span className="ml-2 text-gray-900">{deliveryData.truckNumber || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="font-medium text-gray-700">Delivery Date & Time:</span>
-                <span className="ml-2 text-gray-900">{deliveryData.deliveryDateTime || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="font-medium text-gray-700">Received By:</span>
-                <span className="ml-2 text-gray-900">{deliveryData.receivedBy || 'N/A'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Summary Statistics */}
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3 border-b border-gray-200 pb-1">SUMMARY</h2>
-            <div className="grid grid-cols-4 gap-4 text-sm">
-              <div className="text-center p-3 bg-blue-50 border border-blue-200 rounded">
-                <div className="font-semibold text-blue-700">Total Expected</div>
-                <div className="text-2xl font-bold text-blue-800">{summary.totalExpected}</div>
-              </div>
-              <div className="text-center p-3 bg-green-50 border border-green-200 rounded">
-                <div className="font-semibold text-green-700">Accepted</div>
-                <div className="text-2xl font-bold text-green-800">{summary.totalAccepted}</div>
-              </div>
-              <div className="text-center p-3 bg-red-50 border border-red-200 rounded">
-                <div className="font-semibold text-red-700">Rejected</div>
-                <div className="text-2xl font-bold text-red-800">{summary.totalRejected}</div>
-              </div>
-              <div className="text-center p-3 bg-orange-50 border border-orange-200 rounded">
-                <div className="font-semibold text-orange-700">Not Received</div>
-                <div className="text-2xl font-bold text-orange-800">{summary.notReceived}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Product Details */}
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3 border-b border-gray-200 pb-1">PRODUCT DETAILS</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse border border-gray-300">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="border border-gray-300 px-3 py-2 text-left font-semibold">Product</th>
-                    <th className="border border-gray-300 px-3 py-2 text-left font-semibold">SKU</th>
-                    <th className="border border-gray-300 px-3 py-2 text-center font-semibold">Expected</th>
-                    <th className="border border-gray-300 px-3 py-2 text-center font-semibold">Accepted</th>
-                    <th className="border border-gray-300 px-3 py-2 text-center font-semibold">Rejected</th>
-                    <th className="border border-gray-300 px-3 py-2 text-center font-semibold">Status</th>
-                    <th className="border border-gray-300 px-3 py-2 text-left font-semibold">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {deliveryData.products.map((product, index) => (
-                    <tr key={product.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="border border-gray-300 px-3 py-2 font-medium">{product.name}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-gray-600">{product.sku}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-center">{product.expectedQty} {product.unit}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-center text-green-700 font-semibold">{product.acceptedQty || 0}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-center text-red-700 font-semibold">{product.rejectedQty || 0}</td>
-                      <td className="border border-gray-300 px-3 py-2 text-center">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          product.status === 'received' ? 'bg-green-100 text-green-800' :
-                          product.status === 'not_received' ? 'bg-red-100 text-red-800' :
-                          'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {product.status === 'received' ? 'Received' :
-                           product.status === 'not_received' ? 'Not Received' : 'Pending'}
-                        </span>
-                      </td>
-                      <td className="border border-gray-300 px-3 py-2 text-xs">
-                        {product.status === 'not_received' && product.rejectionReason && (
-                          <div className="text-red-700">Not Received: {product.rejectionReason}</div>
-                        )}
-                        {product.rejectedQty > 0 && product.rejectionReason && (
-                          <div className="text-orange-700">Rejected: {product.rejectionReason}</div>
-                        )}
-                        {product.notes && (
-                          <div className="text-gray-600">{product.notes}</div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="mt-8 pt-4 border-t border-gray-300">
-            <div className="grid grid-cols-2 gap-8">
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-2">Received By:</h3>
-                <div className="border-b border-gray-300 pb-1 mb-4">
-                  <span className="text-sm">{deliveryData.receivedBy || '_________________'}</span>
-                </div>
-                <p className="text-xs text-gray-600">Signature</p>
-              </div>
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-2">Date & Time:</h3>
-                <div className="border-b border-gray-300 pb-1 mb-4">
-                  <span className="text-sm">{new Date().toLocaleString()}</span>
-                </div>
-                <p className="text-xs text-gray-600">Inspection Completed</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Additional Notes */}
-          {deliveryData.projectSite && (
-            <div className="mt-6 pt-4 border-t border-gray-300">
-              <h3 className="font-semibold text-gray-900 mb-2">Additional Notes:</h3>
-              <p className="text-sm text-gray-700">{deliveryData.projectSite}</p>
             </div>
           )}
         </div>
@@ -1204,25 +1641,9 @@ const MobileDeliveryReceipt = () => {
         .animate-fadeIn {
           animation: fadeIn 0.3s ease-in-out;
         }
-        
-        /* Print-specific styles */
-        @media print {
-          body * {
-            visibility: hidden;
-          }
-          .print\\:block, .print\\:block * {
-            visibility: visible;
-          }
-          .print\\:block {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-          }
-        }
       `}</style>
     </div>
   );
 };
 
-export default MobileDeliveryReceipt;
+export default MobileReceive;
