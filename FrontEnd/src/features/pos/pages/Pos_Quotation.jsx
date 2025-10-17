@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useServices } from '../../../services/firebase/ProductServices';
@@ -125,9 +124,14 @@ const Pos_Quotation = () => {
         columnIndex: product.columnIndex,
         fullLocation: product.fullLocation,
         quantity: Number(product.quantity) || 0,
+        // Ensure we keep price/ids at location level so selection logic has them
+        price: Number(product.unitPrice ?? product.price ?? 0),
+        unitPrice: Number(product.unitPrice ?? product.price ?? 0),
+        variantId: product.id,
+        baseProductId: product.parentProductId || product.id,
       });
 
-      // Collect all locations for the group
+      // Collect all locations for the group (include price and ids)
       grouped[groupKey].allLocations.push({
         size: product.size || '',
         unit: product.unit || 'pcs',
@@ -137,6 +141,10 @@ const Pos_Quotation = () => {
         columnIndex: product.columnIndex,
         fullLocation: product.fullLocation,
         quantity: Number(product.quantity) || 0,
+        price: Number(product.unitPrice ?? product.price ?? 0),
+        unitPrice: Number(product.unitPrice ?? product.price ?? 0),
+        variantId: product.id,
+        baseProductId: product.parentProductId || product.id,
       });
     });
 
@@ -160,8 +168,8 @@ const Pos_Quotation = () => {
     });
   }, [groupedProducts, searchQuery, selectedCategory, selectedBrand]);
 
-  // Calculate totals
-  const subTotal = addedProducts.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  // Calculate totals (coerce numeric values)
+  const subTotal = addedProducts.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.qty || 0)), 0);
   const tax = subTotal * 0.12; // 12% VAT
   const total = subTotal + tax;
 
@@ -259,25 +267,34 @@ const Pos_Quotation = () => {
   };
 
   // Handle add to cart from QuickQuantityModal
-  // Helper: Add product to cart
+  // Helper: Add product to cart (normalize price/qty)
   const addProduct = (cartItem) => {
+    const normalized = {
+      ...cartItem,
+      price: Number(cartItem.price ?? cartItem.unitPrice ?? 0),
+      qty: Number(cartItem.qty ?? cartItem.quantity ?? 0),
+    };
+
     setAddedProducts(prev => {
-      const existing = prev.find(item => item.id === cartItem.id);
+      const existing = prev.find(item => item.id === normalized.id);
       if (existing) {
         return prev.map(item =>
-          item.id === cartItem.id
-            ? { ...item, qty: item.qty + cartItem.qty }
+          item.id === normalized.id
+            ? { ...item, qty: item.qty + normalized.qty, price: normalized.price }
             : item
         );
       }
-      return [...prev, cartItem];
+      return [...prev, normalized];
     });
   };
 
   // Helper: Get cart item quantity for a variant
   const getCartItemQuantity = (productId, variantId) => {
-    const item = addedProducts.find(item => item.productId === productId && item.id === variantId);
-    return item ? item.qty : 0;
+    const item = addedProducts.find(item =>
+      (variantId && (item.id === variantId || item.variantId === variantId)) ||
+      (!variantId && (item.baseProductId === productId || item.productId === productId))
+    );
+    return item ? Number(item.qty || 0) : 0;
   };
 
   // Handle update quantity in cart
