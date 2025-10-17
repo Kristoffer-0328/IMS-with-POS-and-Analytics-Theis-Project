@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useServices } from '../../../services/firebase/ProductServices';
 import { useAuth } from '../../auth/services/FirebaseAuth';
@@ -36,7 +35,7 @@ const Pos_Quotation = () => {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [variantModalOpen, setVariantModalOpen] = useState(false);
   const [quickQuantityModalOpen, setQuickQuantityModalOpen] = useState(false);
-  const [customerInfoModalOpen, setCustomerInfoModalOpen] = useState(true); // Open by default
+  const [customerInfoModalOpen, setCustomerInfoModalOpen] = useState(false); // Closed by default
 
   // Variant Modal States
   const [activeVariantIndex, setActiveVariantIndex] = useState(0);
@@ -125,9 +124,14 @@ const Pos_Quotation = () => {
         columnIndex: product.columnIndex,
         fullLocation: product.fullLocation,
         quantity: Number(product.quantity) || 0,
+        // Ensure we keep price/ids at location level so selection logic has them
+        price: Number(product.unitPrice ?? product.price ?? 0),
+        unitPrice: Number(product.unitPrice ?? product.price ?? 0),
+        variantId: product.id,
+        baseProductId: product.parentProductId || product.id,
       });
 
-      // Collect all locations for the group
+      // Collect all locations for the group (include price and ids)
       grouped[groupKey].allLocations.push({
         size: product.size || '',
         unit: product.unit || 'pcs',
@@ -137,6 +141,10 @@ const Pos_Quotation = () => {
         columnIndex: product.columnIndex,
         fullLocation: product.fullLocation,
         quantity: Number(product.quantity) || 0,
+        price: Number(product.unitPrice ?? product.price ?? 0),
+        unitPrice: Number(product.unitPrice ?? product.price ?? 0),
+        variantId: product.id,
+        baseProductId: product.parentProductId || product.id,
       });
     });
 
@@ -160,8 +168,8 @@ const Pos_Quotation = () => {
     });
   }, [groupedProducts, searchQuery, selectedCategory, selectedBrand]);
 
-  // Calculate totals
-  const subTotal = addedProducts.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  // Calculate totals (coerce numeric values)
+  const subTotal = addedProducts.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.qty || 0)), 0);
   const tax = subTotal * 0.12; // 12% VAT
   const total = subTotal + tax;
 
@@ -205,70 +213,88 @@ const Pos_Quotation = () => {
     if (!selectedProduct || !selectedProduct.variants) return;
     
     const variant = selectedProduct.variants[activeVariantIndex];
-    // Use price fallback logic
-    const price = Number(variant?.price ?? variant?.unitPrice ?? 0);
-
-    // Create display name with size/unit
-    const displayName = variant.size || variant.unit 
-      ? `${selectedProduct.name} (${variant.size || ''} ${variant.unit || ''})`.trim()
-      : selectedProduct.name;
-
-    const cartItem = {
-      id: variant.variantId,
-      name: displayName,
-      baseName: selectedProduct.name,
-      category: selectedProduct.category,
-      price: price,
-      qty: quantity,
-      unit: variant?.unit || 'pcs',
-      variantDetails: {
-        size: variant.size,
-        type: variant.type,
-        unit: variant.unit
-      },
-      productId: selectedProduct.id,
-      variantIndex: activeVariantIndex
-    };
-
-    setAddedProducts(prev => {
-      const existing = prev.find(item => item.id === cartItem.id);
-      if (existing) {
-        return prev.map(item => 
-          item.id === cartItem.id 
-            ? { ...item, qty: item.qty + quantity }
-            : item
-        );
-      }
-      return [...prev, cartItem];
-    });
-
-    // Reset and close modal
+    
+    // Check if this variant exists in multiple locations
+    const variantLocations = selectedProduct.allLocations?.filter(loc => 
+      loc.size === variant.size && loc.unit === variant.unit
+    ) || [];
+    
+    // Close variant modal first
     setVariantModalOpen(false);
-    setSelectedProduct(null);
-    setActiveVariantIndex(0);
-    setQuantity(1);
+    
+    if (variantLocations.length > 1) {
+      // Multiple locations - show location picker
+      setPendingQuantity(quantity);
+      setSelectedProductForModal(selectedProduct);
+      setSelectedVariantForLocation(variant);
+      setLocationModalOpen(true);
+    } else {
+      // Single location - add directly
+      const locationVariant = variantLocations[0] || variant;
+      const cartQty = getCartItemQuantity(selectedProduct.id, locationVariant.variantId);
+      const availableQty = locationVariant.quantity - cartQty;
+
+      if (availableQty < quantity) {
+          alert(`Cannot add ${quantity} items. Only ${availableQty} available.`);
+          setVariantModalOpen(true); // Reopen modal
+          return;
+      }
+
+      const displayName = locationVariant.size || locationVariant.unit 
+        ? `${selectedProduct.name} (${locationVariant.size || ''} ${locationVariant.unit || ''})`.trim()
+        : selectedProduct.name;
+
+      addProduct({
+        id: locationVariant.variantId,
+        name: displayName,
+        baseName: selectedProduct.name,
+        price: locationVariant.price,
+        qty: quantity,
+        variantId: locationVariant.variantId,
+        category: selectedProduct.category,
+        baseProductId: locationVariant.baseProductId,
+        storageLocation: locationVariant.storageLocation,
+        shelfName: locationVariant.shelfName,
+        rowName: locationVariant.rowName,
+        columnIndex: locationVariant.columnIndex,
+        fullLocation: locationVariant.fullLocation
+      });
+
+      setSelectedProduct(null);
+      setActiveVariantIndex(0);
+      setQuantity(1);
+    }
   };
 
   // Handle add to cart from QuickQuantityModal
-  // Helper: Add product to cart
+  // Helper: Add product to cart (normalize price/qty)
   const addProduct = (cartItem) => {
+    const normalized = {
+      ...cartItem,
+      price: Number(cartItem.price ?? cartItem.unitPrice ?? 0),
+      qty: Number(cartItem.qty ?? cartItem.quantity ?? 0),
+    };
+
     setAddedProducts(prev => {
-      const existing = prev.find(item => item.id === cartItem.id);
+      const existing = prev.find(item => item.id === normalized.id);
       if (existing) {
         return prev.map(item =>
-          item.id === cartItem.id
-            ? { ...item, qty: item.qty + cartItem.qty }
+          item.id === normalized.id
+            ? { ...item, qty: item.qty + normalized.qty, price: normalized.price }
             : item
         );
       }
-      return [...prev, cartItem];
+      return [...prev, normalized];
     });
   };
 
   // Helper: Get cart item quantity for a variant
   const getCartItemQuantity = (productId, variantId) => {
-    const item = addedProducts.find(item => item.productId === productId && item.id === variantId);
-    return item ? item.qty : 0;
+    const item = addedProducts.find(item =>
+      (variantId && (item.id === variantId || item.variantId === variantId)) ||
+      (!variantId && (item.baseProductId === productId || item.productId === productId))
+    );
+    return item ? Number(item.qty || 0) : 0;
   };
 
   // Handle update quantity in cart
@@ -286,6 +312,72 @@ const Pos_Quotation = () => {
   const handleRemoveFromCart = (itemId) => {
     setAddedProducts(prev => prev.filter(item => item.id !== itemId));
   };
+
+  // Handle location selection from LocationSelectionModal
+  const handleSelectLocation = useCallback((locationData) => {
+    if (!selectedProductForModal) {
+      console.error("Invalid location selection - no product selected");
+      return;
+    }
+
+    // Check if locationData is an array (multi-location) or single object
+    if (Array.isArray(locationData)) {
+      // Multi-location allocation
+      console.log('Multi-location selection:', locationData);
+      
+      locationData.forEach(locationVariant => {
+        const displayName = locationVariant.size || locationVariant.unit 
+          ? `${selectedProductForModal.name} (${locationVariant.size || ''} ${locationVariant.unit || ''})`.trim()
+          : selectedProductForModal.name;
+
+        addProduct({
+          id: locationVariant.variantId,
+          name: displayName,
+          baseName: selectedProductForModal.name,
+          price: locationVariant.price,
+          qty: locationVariant.allocatedQuantity, // Use the allocated quantity for this location
+          variantId: locationVariant.variantId,
+          category: selectedProductForModal.category,
+          baseProductId: locationVariant.baseProductId,
+          storageLocation: locationVariant.storageLocation,
+          shelfName: locationVariant.shelfName,
+          rowName: locationVariant.rowName,
+          columnIndex: locationVariant.columnIndex,
+          fullLocation: locationVariant.fullLocation,
+          isMultiLocationAllocation: true // Flag to indicate this is part of multi-location order
+        });
+      });
+    } else {
+      // Single location selection
+      const locationVariant = locationData;
+      const displayName = locationVariant.size || locationVariant.unit 
+        ? `${selectedProductForModal.name} (${locationVariant.size || ''} ${locationVariant.unit || ''})`.trim()
+        : selectedProductForModal.name;
+
+      addProduct({
+        id: locationVariant.variantId,
+        name: displayName,
+        baseName: selectedProductForModal.name,
+        price: locationVariant.price,
+        qty: pendingQuantity,
+        variantId: locationVariant.variantId,
+        category: selectedProductForModal.category,
+        baseProductId: locationVariant.baseProductId,
+        storageLocation: locationVariant.storageLocation,
+        shelfName: locationVariant.shelfName,
+        rowName: locationVariant.rowName,
+        columnIndex: locationVariant.columnIndex,
+        fullLocation: locationVariant.fullLocation
+      });
+    }
+
+    // Reset all modals
+    setLocationModalOpen(false);
+    setSelectedProductForModal(null);
+    setSelectedVariantForLocation(null);
+    setPendingQuantity(1);
+    setQuantity(1);
+  }, [selectedProductForModal, pendingQuantity, addProduct]);
 
   // Handle customer info submit
   const handleCustomerInfoSubmit = (info) => {
@@ -619,69 +711,7 @@ const Pos_Quotation = () => {
           product={selectedProductForModal}
           selectedVariant={selectedVariantForLocation}
           qty={pendingQuantity}
-          onSelectLocation={(selectedLocations) => {
-            // selectedLocations can be a single locationVariant or array (multi-select)
-            if (Array.isArray(selectedLocations)) {
-              selectedLocations.forEach((loc) => {
-                const cartQty = getCartItemQuantity(selectedProductForModal.id, loc.variantId);
-                if (cartQty + loc.allocatedQuantity > loc.quantity) {
-                  alert(`Cannot add ${loc.allocatedQuantity} items from ${loc.fullLocation}. Only ${loc.quantity - cartQty} available.`);
-                  return;
-                }
-                const displayName = loc.size || loc.unit
-                  ? `${selectedProductForModal.name} (${loc.size || ''} ${loc.unit || ''})`.trim()
-                  : selectedProductForModal.name;
-                addProduct({
-                  id: loc.variantId,
-                  name: displayName,
-                  baseName: selectedProductForModal.name,
-                  price: Number(loc?.price ?? loc?.unitPrice ?? 0),
-                  qty: loc.allocatedQuantity,
-                  variantId: loc.variantId,
-                  unit: loc.unit,
-                  category: selectedProductForModal.category,
-                  baseProductId: loc.baseProductId,
-                  storageLocation: loc.storageLocation,
-                  shelfName: loc.shelfName,
-                  rowName: loc.rowName,
-                  columnIndex: loc.columnIndex,
-                  fullLocation: loc.fullLocation
-                });
-              });
-            } else {
-              // Single location selected
-              const loc = selectedLocations;
-              const cartQty = getCartItemQuantity(selectedProductForModal.id, loc.variantId);
-              if (cartQty + pendingQuantity > loc.quantity) {
-                alert(`Cannot add ${pendingQuantity} items from ${loc.fullLocation}. Only ${loc.quantity - cartQty} available.`);
-                return;
-              }
-              const displayName = loc.size || loc.unit
-                ? `${selectedProductForModal.name} (${loc.size || ''} ${loc.unit || ''})`.trim()
-                : selectedProductForModal.name;
-              addProduct({
-                id: loc.variantId,
-                name: displayName,
-                baseName: selectedProductForModal.name,
-                price: Number(loc?.price ?? loc?.unitPrice ?? 0),
-                qty: pendingQuantity,
-                variantId: loc.variantId,
-                unit: loc.unit,
-                category: selectedProductForModal.category,
-                baseProductId: loc.baseProductId,
-                storageLocation: loc.storageLocation,
-                shelfName: loc.shelfName,
-                rowName: loc.rowName,
-                columnIndex: loc.columnIndex,
-                fullLocation: loc.fullLocation
-              });
-            }
-            // Close modal and reset
-            setLocationModalOpen(false);
-            setSelectedProductForModal(null);
-            setSelectedVariantForLocation(null);
-            setPendingQuantity(1);
-          }}
+          onSelectLocation={handleSelectLocation}
           onClose={() => {
             setLocationModalOpen(false);
             setSelectedProductForModal(null);
@@ -694,7 +724,7 @@ const Pos_Quotation = () => {
       <CustomerInfoModal
         isOpen={customerInfoModalOpen}
         onClose={() => setCustomerInfoModalOpen(false)}
-        onCancel={() => !customerDetails.name ? navigate('/pos/newsale') : setCustomerInfoModalOpen(false)}
+        onCancel={() => setCustomerInfoModalOpen(false)}
         onSubmit={handleCustomerInfoSubmit}
         initialData={customerDetails}
       />

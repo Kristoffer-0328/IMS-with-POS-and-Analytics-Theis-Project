@@ -34,8 +34,8 @@ import LoadingScreen from './features/inventory/components/LoadingScreen';
 import PurchaseOrders from './features/inventory/pages/PurchaseOrders';
 import ReceivingManagement from './features/inventory/pages/ReceivingManagement';
 import SupplierManagement from './features/inventory/pages/SupplierManagement';
-import ReceivingMobileView from './features/inventory/pages/receiving_mobile_view';
 import ReleaseMobileView from './features/inventory/pages/release_mobile_view';
+import MobileReceive from './features/inventory/pages/MobileReceive';
 // POS cashier Interface
 
 import Pos_Sidebar from './features/pos/pages/Pos_Sidebar';
@@ -135,7 +135,7 @@ const AppRoutes = () => {
       <Route path="/" element={<Login />} />
       <Route path="/logout" element={<Logout />} />
       <Route path="/loading" element={<LoadingScreen />}/>
-      <Route path="/receiving_mobile" element={<ReceivingMobileView/>}/>
+      <Route path="/receiving_mobile" element={<MobileReceive/>}/>
       <Route path="/release_mobile" element={<ReleaseMobileView/>}/>
       
       {/* Admin */}

@@ -106,7 +106,7 @@ Automatically creates restock requests when:
 ### New Files
 1. **`release_mobile_view.jsx`**
    - Mobile interface for processing releases
-   - Similar structure to `receiving_mobile_view.jsx`
+   - Similar structure to `MobileReceive.jsx`
    - Handles inventory deduction
 
 ### Modified Files
