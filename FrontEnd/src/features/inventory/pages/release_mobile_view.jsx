@@ -8,7 +8,8 @@ import {
   serverTimestamp,
   runTransaction,
   collection,
-  setDoc
+  setDoc,
+  addDoc
 } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
 import { useAuth } from '../../auth/services/FirebaseAuth';
@@ -25,6 +26,32 @@ import {
 
 const db = getFirestore(app);
 
+// Helper function to check if product needs restocking
+const checkRestockingThreshold = (productData, variantIndex) => {
+  let currentQty, restockLevel, maximumStockLevel;
+  
+  if (variantIndex >= 0 && productData.variants?.[variantIndex]) {
+    // Variant product
+    const variant = productData.variants[variantIndex];
+    currentQty = variant.quantity || 0;
+    restockLevel = variant.restockLevel || productData.restockLevel || 10;
+    maximumStockLevel = variant.maximumStockLevel || productData.maximumStockLevel || 100;
+  } else {
+    // Non-variant product
+    currentQty = productData.quantity || 0;
+    restockLevel = productData.restockLevel || productData.reorderPoint || 10;
+    maximumStockLevel = productData.maximumStockLevel || productData.restockLevel * 2 || 100;
+  }
+  
+  return {
+    needsRestock: currentQty <= restockLevel,
+    isLowStock: currentQty <= (restockLevel * 1.5), // Alert when 50% above restock level
+    currentQuantity: currentQty,
+    restockLevel,
+    maximumStockLevel
+  };
+};
+
 const ReleaseMobileView = () => {
   const { currentUser } = useAuth();
   const [releaseId, setReleaseId] = useState(null);
@@ -40,6 +67,13 @@ const ReleaseMobileView = () => {
     releasedTime: '',
     notes: ''
   });
+
+  // New state for step-based UI
+  const [currentStep, setCurrentStep] = useState(0);
+  const [currentProductIndex, setCurrentProductIndex] = useState(0);
+  const [selectedProducts, setSelectedProducts] = useState([]);
+
+  const steps = ['List', 'Verify', 'Info', 'Summary'];
 
   // Read releaseId from URL parameters
   useEffect(() => {
@@ -80,7 +114,6 @@ const ReleaseMobileView = () => {
                   releasedQty: item.quantity || 0, // Default to ordered quantity
                   status: 'pending',
                   remarks: '',
-                  condition: 'complete',
                   productId: item.productId, // This is the actual product document ID
                   variantId: item.variantId, // This is the variant ID within the product
                   variantName: item.variantName,
@@ -90,7 +123,9 @@ const ReleaseMobileView = () => {
                   rowName: item.rowName || '',
                   columnIndex: item.columnIndex,
                   category: item.category || '',
-                  unitPrice: item.unitPrice || 0
+                  unitPrice: item.unitPrice || 0,
+                  photo: null,
+                  photoPreview: null
                 };
                 
                 
@@ -120,18 +155,24 @@ const ReleaseMobileView = () => {
     }
   }, []);
 
-  // Set default release details
+  // Initialize all products as selected for verification
   useEffect(() => {
-    if (currentUser) {
-      const now = new Date();
-      setReleaseDetails(prev => ({
-        ...prev,
-        releasedBy: currentUser.displayName || currentUser.email || 'Unknown User',
-        releasedDate: now.toISOString().split('T')[0],
-        releasedTime: now.toTimeString().split(' ')[0].substring(0, 5)
-      }));
+    if (products.length > 0) {
+      setSelectedProducts(products.map(p => p.id));
     }
-  }, [currentUser]);
+  }, [products]);
+
+  // Handle case where current product is no longer selected
+  useEffect(() => {
+    if (currentStep === 1 && selectedProducts.length > 0) {
+      const selectedProductsForVerification = products.filter(p => selectedProducts.includes(p.id));
+      
+      // If current product index is out of bounds, reset to first available product
+      if (currentProductIndex >= selectedProductsForVerification.length) {
+        setCurrentProductIndex(0);
+      }
+    }
+  }, [selectedProducts, currentStep, currentProductIndex, products]);
 
   const updateReleaseDetails = (field, value) => {
     setReleaseDetails(prev => ({ ...prev, [field]: value }));
@@ -143,21 +184,259 @@ const ReleaseMobileView = () => {
     ));
   };
 
+  const handlePhotoUpload = (productId, event) => {
+    const file = event.target.files[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file');
+        return;
+      }
+      
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        alert('File size must be less than 10MB');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        updateProduct(productId, 'photo', file);
+        updateProduct(productId, 'photoPreview', reader.result);
+      };
+      reader.onerror = () => {
+        alert('Error reading file');
+      };
+      reader.readAsDataURL(file);
+    }
+    
+    // Reset the input value to allow selecting the same file again if needed
+    event.target.value = '';
+  };
+
+  const toggleProductSelection = (productId) => {
+    setSelectedProducts(prev => 
+      prev.includes(productId) 
+        ? prev.filter(id => id !== productId)
+        : [...prev, productId]
+    );
+  };
+  const generateRestockingRequest = async (productData, variantIndex, locationInfo, currentUser) => {
+    try {
+      let variant = null;
+      let isVariantRequest = true;
+      
+      // Check if this is a variant request or non-variant request
+      if (variantIndex >= 0 && productData.variants?.[variantIndex]) {
+        variant = productData.variants[variantIndex];
+        isVariantRequest = true;
+      } else {
+        // Non-variant product
+        isVariantRequest = false;
+      }
+      
+      const restockCheck = checkRestockingThreshold(productData, variantIndex);
+      if (!restockCheck.needsRestock) return null;
+      
+      const requestId = `RSR-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
+      const restockingRequest = {
+        requestId,
+        productId: productData.id || 'unknown',
+        productName: productData.name || 'Unknown Product',
+        variantIndex: isVariantRequest ? variantIndex : -1,
+        variantDetails: isVariantRequest ? {
+          size: variant.size || '',
+          unit: variant.unit || 'pcs',
+          unitPrice: variant.unitPrice || 0
+        } : {
+          size: 'N/A',
+          unit: productData.unit || 'pcs',
+          unitPrice: productData.unitPrice || 0
+        },
+        currentQuantity: restockCheck.currentQuantity,
+        restockLevel: restockCheck.restockLevel,
+        maximumStockLevel: restockCheck.maximumStockLevel,
+        suggestedOrderQuantity: Math.max(50, restockCheck.maximumStockLevel - restockCheck.currentQuantity), // Suggest ordering to reach max level
+        priority: restockCheck.currentQuantity === 0 ? 'urgent' : 'normal',
+        location: {
+          storageLocation: locationInfo.storageLocation,
+          shelfName: locationInfo.shelfName,
+          rowName: locationInfo.rowName,
+          columnIndex: locationInfo.columnIndex,
+          fullPath: `${locationInfo.storageLocation}/${locationInfo.shelfName}/${locationInfo.rowName}/${locationInfo.columnIndex}`
+        },
+        triggeredBy: 'pos_sale',
+        triggeredByUser: currentUser?.uid || 'unknown',
+        triggeredByUserName: currentUser?.displayName || currentUser?.email || 'Unknown User',
+        status: 'pending',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+      
+      // Save to restocking requests collection
+      await addDoc(collection(db, 'RestockingRequests'), restockingRequest);
+
+      // Generate notification for restocking request
+      await generateRestockingNotification(restockingRequest, currentUser);
+
+      return restockingRequest;
+    } catch (error) {
+      console.error('Error generating restocking request:', error);
+      return null;
+    }
+  };
+  // Helper function to generate restocking notification
+const generateRestockingNotification = async (restockingRequest, currentUser) => {
+  try {
+    if (!restockingRequest) return null;
+    
+    const notificationId = `NOT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const notification = {
+      notificationId,
+      type: 'restocking_request',
+      priority: restockingRequest.priority,
+      title: `${restockingRequest.priority === 'urgent' ? '🚨 URGENT' : '⚠️'} Restocking Required`,
+      message: `${restockingRequest.productName} is ${restockingRequest.currentQuantity === 0 ? 'out of stock' : 'running low'} (${restockingRequest.currentQuantity} remaining)`,
+      details: {
+        productName: restockingRequest.productName,
+        currentQuantity: restockingRequest.currentQuantity,
+        restockLevel: restockingRequest.restockLevel,
+        maximumStockLevel: restockingRequest.maximumStockLevel,
+        suggestedOrderQuantity: restockingRequest.suggestedOrderQuantity,
+        location: restockingRequest.location.fullPath,
+        variantDetails: restockingRequest.variantDetails
+      },
+      targetRoles: ['InventoryManager', 'Admin'], // Who should see this notification
+      triggeredBy: restockingRequest.triggeredByUser,
+      triggeredByName: restockingRequest.triggeredByUserName, 
+      relatedRequestId: restockingRequest.requestId,
+      isRead: false,
+      status: 'active',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+    
+    // Save to notifications collection
+    await addDoc(collection(db, 'Notifications'), notification);
+
+    return notification;
+  } catch (error) {
+    console.error('Error generating restocking notification:', error);
+    return null;
+  }
+};
+  const validateCurrentProduct = () => {
+    const selectedProductsForVerification = products.filter(p => selectedProducts.includes(p.id));
+    const product = selectedProductsForVerification[currentProductIndex];
+    
+    if (product && product.status === 'released') {
+      if (!product.photo) {
+        alert('Please upload a photo for this product');
+        return false;
+      }
+      if (!product.releasedQty || product.releasedQty <= 0) {
+        alert('Please enter a valid released quantity');
+        return false;
+      }
+    }
+    
+    return true;
+  };
+
+  const validateReleaseInfo = () => {
+    if (!releaseDetails.releasedBy) {
+      alert('Released By is required');
+      return false;
+    }
+    if (!releaseDetails.releasedDate) {
+      alert('Release Date is required');
+      return false;
+    }
+    if (!releaseDetails.releasedTime) {
+      alert('Release Time is required');
+      return false;
+    }
+    return true;
+  };
+
+  const handleNextProduct = () => {
+    if (validateCurrentProduct()) {
+      const selectedProductsForVerification = products.filter(p => selectedProducts.includes(p.id));
+      if (currentProductIndex < selectedProductsForVerification.length - 1) {
+        setCurrentProductIndex(currentProductIndex + 1);
+      } else {
+        // Move to next step
+        handleStepNavigation('next');
+      }
+    }
+  };
+
+  const handlePreviousProduct = () => {
+    if (currentProductIndex > 0) {
+      setCurrentProductIndex(currentProductIndex - 1);
+    } else {
+      // Move to previous step
+      handleStepNavigation('back');
+    }
+  };
+
+  const handleStepNavigation = (direction) => {
+    if (direction === 'next') {
+      if (currentStep === 0) {
+        // From List to Verify - check if products are selected
+        if (selectedProducts.length === 0) {
+          alert('Please select at least one product to release');
+          return;
+        }
+        setCurrentStep(1);
+        setCurrentProductIndex(0);
+      } else if (currentStep === 1) {
+        // From Verify to Info
+        setCurrentStep(2);
+      } else if (currentStep === 2) {
+        // From Info to Summary
+        if (validateReleaseInfo()) {
+          setCurrentStep(3);
+        }
+      }
+    } else if (direction === 'back') {
+      if (currentStep === 1) {
+        // From Verify to List
+        setCurrentStep(0);
+      } else if (currentStep === 2) {
+        // From Info to Verify
+        setCurrentStep(1);
+        setCurrentProductIndex(selectedProducts.length - 1);
+      } else if (currentStep === 3) {
+        // From Summary to Info
+        setCurrentStep(2);
+      }
+    }
+  };
+
+  const getSummary = () => {
+    const totalOrdered = products.reduce((sum, p) => sum + Number(p.orderedQty), 0);
+    const totalReleased = products.reduce((sum, p) => sum + (p.status === 'released' ? Number(p.releasedQty) : 0), 0);
+    const releasedCount = products.filter(p => p.status === 'released').length;
+    const selectedCount = selectedProducts.length;
+
+    return { totalOrdered, totalReleased, releasedCount, selectedCount, totalProducts: products.length };
+  };
+
+  const summary = getSummary();
+  
+  // Get the selected products for verification
+  const selectedProductsForVerification = products.filter(p => selectedProducts.includes(p.id));
+  const currentProduct = selectedProductsForVerification[currentProductIndex];
+
   // Function to find product in inventory using nested structure
   const findProductInInventory = async (productId, variantId, variantName, storageLocation, shelfName, rowName, columnIndex, category) => {
-    console.log('\n🔍 Finding product in nested inventory structure:');
-    console.log('Product ID:', productId);
-    console.log('Variant ID:', variantId);
-    console.log('Variant Name:', variantName);
-    console.log('Storage Location:', storageLocation);
 
     // Check if this is a quotation-based product (temporary ID)
     const isQuotationProduct = productId && productId.startsWith('quotation-');
-    
-    if (isQuotationProduct) {
-      console.log('📦 Quotation product detected - will search by name and category');
-    }
-    
+   
     try {
       // For quotation products or when we don't have location info, search all storage units
       if (isQuotationProduct || !storageLocation) {
@@ -355,35 +634,17 @@ const ReleaseMobileView = () => {
             
             // Update the product document with modified variants
             transaction.update(inventoryLocation.productRef, {
-              variants: variants,
+              variants: variants, 
               lastUpdated: serverTimestamp()
             });
             
             // Check for low stock on variant
             const restockLevel = variant.restockLevel || productData.restockLevel || productData.reorderPoint || 10;
             if (newQty <= restockLevel) {
-              console.log(`Low stock detected for variant (${newQty} <= ${restockLevel}), creating restock request...`);
-
-              const restockRequestRef = doc(collection(db, 'RestockingRequests'));
-              transaction.set(restockRequestRef, {
-                productId: product.productId,
-                variantId: product.variantId,
-                productName: product.name,
-                currentQuantity: newQty,
-                requestedQuantity: restockLevel - product.maximumStockLevel,
-                storageLocation: inventoryLocation.location.storageLocation,
-                shelfName: inventoryLocation.location.shelfName,
-                rowName: inventoryLocation.location.rowName,
-                columnIndex: inventoryLocation.location.columnIndex,
-                category: product.category || 'Uncategorized',
-                status: 'pending',
-                priority: newQty === 0 ? 'high' : 'medium',
-                reason: `Variant stock depleted after release (Release ID: ${releaseId})`,
-                requestedBy: currentUser?.uid || 'system',
-                requestedByName: currentUser?.displayName || currentUser?.email || 'System',
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-              });
+              console.log(`Low stock detected for variant (${newQty} <= ${restockLevel}), generating restock request...`);
+              
+              // Generate restock request using the centralized function
+              await generateRestockingRequest(productData, variantIndex, inventoryLocation.location, currentUser);
             }
           } else {
             // Product has no variants - update base product quantity
@@ -407,27 +668,10 @@ const ReleaseMobileView = () => {
             // Generate restock request if quantity is low
             const restockLevel = productData.restockLevel || productData.reorderPoint || 10;
             if (newQty <= restockLevel) {
-              console.log(`⚠️ Low stock detected (${newQty} <= ${restockLevel}), creating restock request...`);
-
-              const restockRequestRef = doc(collection(db, 'RestockingRequests'));
-              transaction.set(restockRequestRef, {
-                productId: product.productId,
-                productName: product.name,
-                currentQuantity: newQty,
-                requestedQuantity: restockLevel * 2,
-                storageLocation: inventoryLocation.location.storageLocation,
-                shelfName: inventoryLocation.location.shelfName,
-                rowName: inventoryLocation.location.rowName,
-                columnIndex: inventoryLocation.location.columnIndex,
-                category: product.category || 'Uncategorized',
-                status: 'pending',
-                priority: newQty === 0 ? 'high' : 'medium',
-                reason: `Stock depleted after release (Release ID: ${releaseId})`,
-                requestedBy: currentUser?.uid || 'system',
-                requestedByName: currentUser?.displayName || currentUser?.email || 'System',
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-              });
+              console.log(`⚠️ Low stock detected (${newQty} <= ${restockLevel}), generating restock request...`);
+              
+              // Generate restock request using the centralized function for non-variant products
+              await generateRestockingRequest(productData, -1, inventoryLocation.location, currentUser);
             }
           }
         });
@@ -458,6 +702,14 @@ const ReleaseMobileView = () => {
       const releasedProducts = products.filter(p => p.status === 'released');
       if (releasedProducts.length === 0) {
         alert('Please mark at least one product as released');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Validate that all released products have photos
+      const productsWithoutPhotos = releasedProducts.filter(p => !p.photo);
+      if (productsWithoutPhotos.length > 0) {
+        alert(`Please upload photos for the following products: ${productsWithoutPhotos.map(p => p.name).join(', ')}`);
         setIsSubmitting(false);
         return;
       }
@@ -502,12 +754,12 @@ const ReleaseMobileView = () => {
             orderedQty: Number(p.orderedQty) || 0,
             releasedQty: Number(p.releasedQty) || 0,
             status: p.status || 'pending',
-            condition: p.condition || 'complete',
             remarks: p.remarks || '',
             productId: p.productId,
             productName: p.productName || p.name,
             category: p.category || '',
-            unitPrice: Number(p.unitPrice) || 0
+            unitPrice: Number(p.unitPrice) || 0,
+            hasPhoto: !!p.photoPreview // Store flag instead of actual photo data
           };
           
           // Only add optional fields if they have values
@@ -543,11 +795,11 @@ const ReleaseMobileView = () => {
             productName: p.name || '',
             quantity: Number(p.releasedQty) || 0,
             orderedQty: Number(p.orderedQty) || 0,
-            condition: p.condition || 'complete',
             remarks: p.remarks || '',
             unitPrice: Number(p.unitPrice) || 0,
             totalValue: (Number(p.releasedQty) || 0) * (Number(p.unitPrice) || 0),
-            category: p.category || ''
+            category: p.category || '',
+            hasPhoto: !!p.photoPreview // Store flag instead of actual photo data
           };
           
           // Add optional fields only if they exist
@@ -607,7 +859,6 @@ const ReleaseMobileView = () => {
             cashier: releaseData.cashier?.name || 'Unknown',
             
             // Condition & Status
-            condition: product.condition || 'complete',
             remarks: product.remarks || '',
             status: 'completed',
             
@@ -687,8 +938,21 @@ const ReleaseMobileView = () => {
               </h3>
               <div className="space-y-1 text-sm">
                 {products.filter(p => p.status === 'released').map((product, index) => (
-                  <div key={index} className="flex justify-between">
-                    <span className="text-gray-600">{product.name}</span>
+                  <div key={index} className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      {product.photoPreview ? (
+                        <img 
+                          src={product.photoPreview} 
+                          alt={product.name}
+                          className="w-8 h-8 object-cover rounded mr-2"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 bg-gray-200 rounded mr-2 flex items-center justify-center">
+                          <FiPackage className="w-4 h-4 text-gray-400" />
+                        </div>
+                      )}
+                      <span className="text-gray-600">{product.name}</span>
+                    </div>
                     <span className="font-medium text-red-600">-{product.releasedQty}</span>
                   </div>
                 ))}
@@ -739,227 +1003,497 @@ const ReleaseMobileView = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Mobile Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="px-4 py-3">
-          <h1 className="text-xl font-bold text-gray-800">Release Items</h1>
-          <p className="text-sm text-gray-600">
-            {releaseId ? `Transaction: ${releaseData?.transactionId || releaseId}` : 'Process item release'}
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
+        <div className="max-w-2xl mx-auto px-4 py-4">
+          <h1 className="text-2xl font-bold text-gray-900">Mobile Release</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {releaseData?.transactionId || releaseId}
+            {releaseData?.customerInfo?.name && ` • ${releaseData.customerInfo.name}`}
           </p>
         </div>
       </div>
 
-      {/* Content Area */}
-      <div className="p-4 pb-24">
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mb-4"></div>
-            <p className="text-gray-600">Loading release data...</p>
+      {/* Stepper */}
+      <div className="bg-white border-b border-gray-200 sticky top-20 z-10">
+        <div className="max-w-2xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            {steps.map((step, index) => (
+              <React.Fragment key={step}>
+                <div className="flex flex-col items-center flex-1">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm ${
+                    index <= currentStep 
+                      ? 'bg-orange-500 text-white' 
+                      : 'bg-gray-200 text-gray-500'
+                  }`}>
+                    {index < currentStep ? '✓' : index + 1}
+                  </div>
+                  <p className={`text-xs mt-2 font-medium ${
+                    index <= currentStep ? 'text-orange-600' : 'text-gray-400'
+                  }`}>
+                    {step}
+                  </p>
+                </div>
+                {index < steps.length - 1 && (
+                  <div className={`flex-1 h-1 mx-2 mb-6 ${
+                    index < currentStep ? 'bg-orange-500' : 'bg-gray-200'
+                  }`} />
+                )}
+              </React.Fragment>
+            ))}
           </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Release Details Form */}
-            <div className="bg-white rounded-lg p-4 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Release Details</h3>
+        </div>
+      </div>
+
+      <div className="max-w-2xl mx-auto px-4 py-6 pb-24">
+        {/* STEP 1 - PRODUCTS LIST */}
+        {currentStep === 0 && (
+          <div className="space-y-5 animate-fadeIn">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-blue-50 rounded-lg p-3 border border-blue-200 text-center">
+                <p className="text-blue-600 text-xs font-medium">Total Products</p>
+                <p className="text-2xl font-bold text-blue-700 mt-1">{summary.totalProducts}</p>
+              </div>
+              <div className="bg-orange-50 rounded-lg p-3 border border-orange-200 text-center">
+                <p className="text-orange-600 text-xs font-medium">For Verification</p>
+                <p className="text-2xl font-bold text-orange-700 mt-1">{summary.selectedCount}</p>
+              </div>
+              <div className="bg-green-50 rounded-lg p-3 border border-green-200 text-center">
+                <p className="text-green-600 text-xs font-medium">Ready to Release</p>
+                <p className="text-2xl font-bold text-green-700 mt-1">{summary.releasedCount}</p>
+              </div>
+            </div>
+
+            {/* Product Selection List */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-5">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Products to Release</h2>
+              <p className="text-sm text-gray-600 mb-4">Select products for verification and release</p>
               
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Released By <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <FiUser className="absolute left-3 top-3 text-gray-400" size={18} />
-                    <input
-                      type="text"
-                      value={releaseDetails.releasedBy}
-                      onChange={(e) => updateReleaseDetails('releasedBy', e.target.value)}
-                      placeholder="Enter your name"
-                      className="w-full pl-10 px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Release Date <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <FiCalendar className="absolute left-3 top-3 text-gray-400" size={18} />
-                      <input
-                        type="date"
-                        value={releaseDetails.releasedDate}
-                        onChange={(e) => updateReleaseDetails('releasedDate', e.target.value)}
-                        className="w-full pl-10 px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                      />
+              <div className="space-y-3">
+                {products.map((product) => (
+                  <div key={product.id} className={`border rounded-lg p-4 ${
+                    product.status === 'released' 
+                      ? 'bg-green-50 border-green-300' 
+                      : selectedProducts.includes(product.id)
+                      ? 'bg-blue-50 border-blue-300'
+                      : 'border-gray-200 bg-white'
+                  }`}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start flex-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedProducts.includes(product.id)}
+                          onChange={() => toggleProductSelection(product.id)}
+                          className="mt-1 mr-3 w-5 h-5 text-orange-500 rounded focus:ring-orange-500"
+                        />
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900">{product.name}</h3>
+                          <p className="text-sm text-gray-500">SKU: {product.sku || 'N/A'}</p>
+                          <div className="mt-2 flex items-center gap-4 text-sm">
+                            <span className="text-gray-700">
+                              <span className="font-medium">Ordered:</span> {product.orderedQty}
+                            </span>
+                            <span className="text-gray-500">
+                              <span className="font-medium">Price:</span> ₱{product.unitPrice?.toFixed(2) || '0.00'}
+                            </span>
+                          </div>
+                          {product.status === 'released' && (
+                            <div className="mt-2 text-xs bg-green-100 text-green-700 px-2 py-1 rounded inline-block">
+                              Ready to Release: {product.releasedQty} units
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
+                ))}
+              </div>
+            </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Release Time <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <FiClock className="absolute left-3 top-3 text-gray-400" size={18} />
-                      <input
-                        type="time"
-                        value={releaseDetails.releasedTime}
-                        onChange={(e) => updateReleaseDetails('releasedTime', e.target.value)}
-                        className="w-full pl-10 px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                      />
-                    </div>
-                  </div>
-                </div>
+            {/* Helper Text */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+              <p className="font-medium mb-1">Next Steps:</p>
+              <p>Select products to verify and prepare for release</p>
+              <p className="mt-2 text-xs text-blue-600">Tip: Only selected products will be processed for release</p>
+            </div>
+          </div>
+        )}
 
+        {/* STEP 2 - PRODUCT VERIFICATION */}
+        {currentStep === 1 && currentProduct && (
+          <div className="space-y-5 animate-fadeIn">
+            {/* Progress Bar */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-gray-700">
+                  Product {currentProductIndex + 1} of {selectedProductsForVerification.length}
+                </span>
+                <span className="text-sm text-gray-500">
+                  {Math.round(((currentProductIndex + 1) / selectedProductsForVerification.length) * 100)}% Complete
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-orange-500 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${((currentProductIndex + 1) / selectedProductsForVerification.length) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Product Header */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-5">
+              <div className="flex items-start justify-between mb-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Notes (Optional)
-                  </label>
-                  <textarea
-                    value={releaseDetails.notes}
-                    onChange={(e) => updateReleaseDetails('notes', e.target.value)}
-                    placeholder="Add any notes about this release..."
-                    className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                    rows="3"
-                  />
+                  <h2 className="text-xl font-bold text-gray-900">{currentProduct.name}</h2>
+                  <p className="text-sm text-gray-500 mt-1">Ordered: {currentProduct.orderedQty} units</p>
+                </div>
+                <div className="bg-blue-50 px-3 py-1 rounded-full">
+                  <span className="text-sm font-semibold text-blue-700">
+                    ₱{currentProduct.unitPrice?.toFixed(2) || '0.00'}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Products List */}
-            <div className="bg-white rounded-lg p-4 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                Products to Release ({products.length} items)
-              </h3>
-
-              {products.length === 0 ? (
-                <div className="text-center py-8">
-                  <FiAlertCircle className="mx-auto text-gray-400 mb-2" size={32} />
-                  <p className="text-gray-600">No products found</p>
+            {/* Released Quantity Input */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-5">
+              <h3 className="text-sm font-semibold text-gray-900 mb-4">Release Quantity</h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Actual Released Quantity <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max={currentProduct.orderedQty}
+                    value={currentProduct.releasedQty || ''}
+                    onChange={(e) => updateProduct(currentProduct.id, 'releasedQty', e.target.value)}
+                    className="w-full px-4 py-3 text-lg font-semibold border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="0"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Maximum: {currentProduct.orderedQty} units</p>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  {products.map((product) => (
-                    <div key={product.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                      <div className="flex justify-between items-start mb-3">
-                        <h4 className="font-medium text-gray-800">{product.name}</h4>
-                        <span className="text-sm text-gray-500">Qty: {product.orderedQty}</span>
-                      </div>
 
-                      {/* Released Quantity Input */}
-                      <div className="mb-3">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Actual Released Quantity
-                        </label>
-                        <input
-                          type="number"
-                          value={product.releasedQty}
-                          onChange={(e) => updateProduct(product.id, 'releasedQty', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                          placeholder="Enter released quantity"
-                          min="0"
-                          max={product.orderedQty}
+                {currentProduct.releasedQty > 0 && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <p className="text-sm font-medium text-green-700">
+                      ✓ Ready to release {currentProduct.releasedQty} of {currentProduct.orderedQty} units
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Photo Upload - REQUIRED */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-5">
+              <label className="block text-sm font-semibold text-gray-900 mb-3 flex items-center">
+                <FiPackage className="w-5 h-5 mr-2 text-orange-500" />
+                Product Photo <span className="text-red-500">*</span>
+              </label>
+              
+              <div 
+                onClick={() => document.getElementById(`photo-input-${currentProduct.id}`)?.click()}
+                className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+                  currentProduct.photoPreview
+                    ? 'border-green-300 bg-green-50'
+                    : 'border-gray-300 bg-gray-50 hover:border-orange-400'
+                }`}
+              >
+                {currentProduct.photoPreview ? (
+                  <div className="relative">
+                    <img 
+                      src={currentProduct.photoPreview} 
+                      alt="Product preview" 
+                      className="max-h-48 mx-auto rounded-lg"
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateProduct(currentProduct.id, 'photo', null);
+                        updateProduct(currentProduct.id, 'photoPreview', null);
+                      }}
+                      className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-full hover:bg-red-600"
+                    >
+                      <FiX className="w-4 h-4" />
+                    </button>
+                    <p className="text-sm text-green-700 mt-3 font-medium">✓ Photo uploaded. Tap to change</p>
+                  </div>
+                ) : (
+                  <>
+                    <FiPackage className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                    <p className="font-medium text-gray-900">Tap to Take/Upload Photo</p>
+                    <p className="text-sm text-gray-500 mt-1">Camera or Gallery</p>
+                  </>
+                )}
+              </div>
+              <input
+                id={`photo-input-${currentProduct.id}`}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => handlePhotoUpload(currentProduct.id, e)}
+                className="hidden"
+              />
+              {!currentProduct.photoPreview && (
+                <p className="text-red-600 text-sm mt-2 font-medium">Photo Required</p>
+              )}
+            </div>
+
+            {/* Remarks */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-5">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Remarks (Optional)</label>
+              <textarea
+                value={currentProduct.remarks || ''}
+                onChange={(e) => updateProduct(currentProduct.id, 'remarks', e.target.value)}
+                placeholder="Any observations or comments about this product..."
+                rows="2"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
+              />
+            </div>
+
+            {/* Status Selection */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-5">
+              <h3 className="text-sm font-semibold text-gray-900 mb-4">Release Status</h3>
+              <div className="flex space-x-2">
+                {[
+                  { value: 'released', label: 'Release', icon: FiCheckCircle, color: 'green' },
+                  { value: 'pending', label: 'Skip', icon: FiClock, color: 'yellow' }
+                ].map(({ value, label, icon: Icon, color }) => (
+                  <button
+                    key={value}
+                    onClick={() => updateProduct(currentProduct.id, 'status', value)}
+                    className={`flex items-center px-4 py-3 rounded-lg text-sm font-medium ${
+                      currentProduct.status === value
+                        ? `bg-${color}-100 text-${color}-700 border-2 border-${color}-300`
+                        : 'bg-white text-gray-600 border-2 border-gray-200'
+                    }`}
+                  >
+                    <Icon className="mr-2" size={16} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 3 - RELEASE INFORMATION */}
+        {currentStep === 2 && (
+          <div className="space-y-5 animate-fadeIn">
+            <div className="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <FiUser className="w-5 h-5 mr-2" style={{ color: '#EC6923' }} />
+                Release Information
+              </h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Released By <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={releaseDetails.releasedBy}
+                    onChange={(e) => updateReleaseDetails('releasedBy', e.target.value)}
+                    placeholder="Enter your name"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Release Date <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={releaseDetails.releasedDate}
+                      onChange={(e) => updateReleaseDetails('releasedDate', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Time <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="time"
+                      value={releaseDetails.releasedTime}
+                      onChange={(e) => updateReleaseDetails('releasedTime', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes</label>
+                  <textarea
+                    value={releaseDetails.notes}
+                    onChange={(e) => updateReleaseDetails('notes', e.target.value)}
+                    placeholder="Any additional comments about this release..."
+                    rows="3"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 4 - SUMMARY */}
+        {currentStep === 3 && (
+          <div className="space-y-5 animate-fadeIn">
+            {/* Summary Cards */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                <p className="text-blue-600 text-sm font-medium">Total Ordered</p>
+                <p className="text-3xl font-bold text-blue-700 mt-1">{summary.totalOrdered}</p>
+              </div>
+              <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                <p className="text-green-600 text-sm font-medium">Total Released</p>
+                <p className="text-3xl font-bold text-green-700 mt-1">{summary.totalReleased}</p>
+              </div>
+            </div>
+
+            {/* Success Message */}
+            <div className="bg-green-50 border border-green-200 rounded-lg p-5">
+              <div className="flex items-start">
+                <FiCheckCircle className="w-6 h-6 text-green-600 mr-3 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="font-semibold text-green-900 text-lg">Ready for Release</h3>
+                  <p className="text-sm text-green-700 mt-1">
+                    All products have been verified and are ready for inventory update.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Release Info Summary */}
+            <div className="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+              <h3 className="font-semibold text-gray-900 mb-4">Release Details</h3>
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-600">Transaction ID:</span>
+                  <span className="font-medium text-gray-900">{releaseData?.transactionId}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-600">Released By:</span>
+                  <span className="font-medium text-gray-900">{releaseDetails.releasedBy}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-600">Customer:</span>
+                  <span className="font-medium text-gray-900">{releaseData?.customerInfo?.name || 'Walk-in Customer'}</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-100">
+                  <span className="text-gray-600">Release Date & Time:</span>
+                  <span className="font-medium text-gray-900">{releaseDetails.releasedDate} {releaseDetails.releasedTime}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Product List Summary */}
+            <div className="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+              <h3 className="font-semibold text-gray-900 mb-4">Products Summary</h3>
+              <div className="space-y-3">
+                {products.filter(p => p.status === 'released').map((product, index) => (
+                  <div key={product.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-gray-900">{product.name}</h4>
+                        <p className="text-sm text-gray-500">Ordered: {product.orderedQty} | Released: {product.releasedQty}</p>
+                      </div>
+                      {product.photoPreview ? (
+                        <img 
+                          src={product.photoPreview} 
+                          alt={product.name}
+                          className="w-16 h-16 object-cover rounded ml-3"
                         />
-                      </div>
-
-                      {/* Condition Selection */}
-                      <div className="mb-3">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Product Condition
-                        </label>
-                        <div className="grid grid-cols-3 gap-2">
-                          {['complete', 'partial', 'damaged'].map((condition) => (
-                            <button
-                              key={condition}
-                              onClick={() => updateProduct(product.id, 'condition', condition)}
-                              className={`p-2 rounded-lg text-sm font-medium ${
-                                product.condition === condition
-                                  ? 'bg-orange-100 text-orange-700 border-2 border-orange-300'
-                                  : 'bg-white text-gray-600 border-2 border-gray-200'
-                              }`}
-                            >
-                              {condition.charAt(0).toUpperCase() + condition.slice(1)}
-                            </button>
-                          ))}
+                      ) : (
+                        <div className="w-16 h-16 bg-gray-200 rounded ml-3 flex items-center justify-center">
+                          <FiPackage className="w-6 h-6 text-gray-400" />
                         </div>
-                      </div>
-
-                      {/* Remarks */}
-                      <div className="mb-3">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Remarks
-                        </label>
-                        <textarea
-                          value={product.remarks}
-                          onChange={(e) => updateProduct(product.id, 'remarks', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                          placeholder="Add remarks if needed..."
-                          rows="2"
-                        />
-                      </div>
-
-                      {/* Status Selection */}
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3 text-sm">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Release Status
-                        </label>
-                        <div className="flex space-x-2">
-                          {[
-                            { value: 'released', label: 'Released', icon: FiCheckCircle, color: 'green' },
-                            { value: 'pending', label: 'Pending', icon: FiClock, color: 'yellow' },
-                            { value: 'cancelled', label: 'Cancelled', icon: FiX, color: 'red' }
-                          ].map(({ value, label, icon: Icon, color }) => (
-                            <button
-                              key={value}
-                              onClick={() => updateProduct(product.id, 'status', value)}
-                              className={`flex items-center px-3 py-2 rounded-lg text-sm font-medium ${
-                                product.status === value
-                                  ? `bg-${color}-100 text-${color}-700 border-2 border-${color}-300`
-                                  : 'bg-white text-gray-600 border-2 border-gray-200'
-                              }`}
-                            >
-                              <Icon className="mr-1" size={14} />
-                              {label}
-                            </button>
-                          ))}
-                        </div>
+                        <p className="text-gray-600 text-xs">Quantity</p>
+                        <p className="font-semibold text-green-700">{product.releasedQty}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-600 text-xs">Value</p>
+                        <p className="font-semibold text-gray-900">₱{(Number(product.releasedQty) * Number(product.unitPrice)).toFixed(2)}</p>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+
+                    {product.remarks && (
+                      <div className="mt-3 p-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700">
+                        <span className="font-medium">Remarks:</span> {product.remarks}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Action Button */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow-lg">
-        <button
-          onClick={handleSubmit}
-          disabled={isSubmitting}
-          className={`w-full py-3 rounded-lg font-medium transition-colors ${
-            isSubmitting 
-              ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
-              : 'bg-green-600 text-white hover:bg-green-700'
-          }`}
-        >
-          {isSubmitting ? (
-            <div className="flex flex-col items-center justify-center">
-              <div className="flex items-center mb-2">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                Processing...
-              </div>
-              {processingStep && (
-                <div className="text-xs text-gray-200">
-                  {processingStep}
-                </div>
+      {/* Bottom Action Bar */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+        <div className="max-w-2xl mx-auto px-4 py-3">
+          {currentStep < 3 ? (
+            <div className="flex gap-3">
+              {currentStep > 0 && (
+                <button
+                  onClick={() => handleStepNavigation('back')}
+                  className="px-6 py-3 bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-gray-200 transition-colors flex items-center"
+                >
+                  <FiRefreshCw className="w-5 h-5 mr-1" />
+                  {currentStep === 1 && currentProductIndex > 0 ? 'Previous Product' : 'Back'}
+                </button>
               )}
+              <button
+                onClick={() => {
+                  if (currentStep === 1) {
+                    handleNextProduct();
+                  } else {
+                    handleStepNavigation('next');
+                  }
+                }}
+                className="flex-1 px-6 py-3 text-white font-medium rounded-lg transition-colors flex items-center justify-center"
+                style={{ backgroundColor: '#EC6923' }}
+              >
+                {currentStep === 0 ? 'Start Verification' : 
+                 currentStep === 1 ? (currentProductIndex < selectedProductsForVerification.length - 1 ? 'Next Product' : 'Continue to Info') :
+                 'Continue to Summary'}
+                <FiCheckCircle className="w-5 h-5 ml-1" />
+              </button>
             </div>
           ) : (
-            'Complete Release & Update Inventory'
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className={`w-full py-3 rounded-lg font-medium transition-colors ${
+                isSubmitting 
+                  ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              }`}
+            >
+              {isSubmitting ? (
+                <div className="flex flex-col items-center justify-center">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                  Processing...
+                </div>
+              ) : (
+                'Complete Release & Update Inventory'
+              )}
+            </button>
           )}
-        </button>
+        </div>
       </div>
     </div>
   );

@@ -22,13 +22,14 @@ import Team from './features/admin/pages/Team';
 import AdminSidebar from './features/admin/pages/AdminSidebar';
 import AdminPurchaseOrders from './features/admin/pages/AdminPurchaseOrders';
 import ReportsAndLogs from './features/admin/pages/ReportsAndLogs';
+import Settings from './features/admin/pages/Settings';
+import StorageFacilityMap from './features/admin/pages/StorageFacilityMap';
 
 // IM Interface
 import IMDashboard from './features/inventory/pages/IMDashboard';
 import Inventory from './features/inventory/pages/Inventory';
 import StockTransfer from './features/inventory/pages/StockTransfer';
 import RestockingRequest from './features/inventory/pages/RestockingRequest';
-import Settings from './features/inventory/pages/Settings';
 import IMSidebar from './features/inventory/pages/IMSidebar';
 import LoadingScreen from './features/inventory/components/LoadingScreen';
 import PurchaseOrders from './features/inventory/pages/PurchaseOrders';
@@ -163,6 +164,14 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/admin/settings"
+        element={
+          <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
+            <Settings />
+          </ProtectedRoute>
+        }
+      />
       
       <Route
         path="/admin/team"
@@ -185,6 +194,14 @@ const AppRoutes = () => {
         element={
           <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
             <ReportsAndLogs />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/storage-map"
+        element={
+          <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
+            <StorageFacilityMap />
           </ProtectedRoute>
         }
       />

@@ -3,6 +3,7 @@ import { FiBell, FiCalendar, FiSearch } from 'react-icons/fi';
 import { getFirestore, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import app from '../../../../FirebaseConfig';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../../../auth/services/FirebaseAuth';
 
 // Add this hook to the same file
 const useClickOutside = (ref, handler) => {
@@ -35,6 +36,7 @@ const DashboardHeader = () => {
   const [hasNewNotification, setHasNewNotification] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { currentUser } = useAuth();
 
   // Debug: Log when component renders
   
@@ -42,18 +44,26 @@ const DashboardHeader = () => {
   useClickOutside(notificationsRef, () => setShowNotifications(false));
 
   useEffect(() => {
-    // Query notifications collection
+    if (!currentUser?.role) {
+      console.log('No user role available, skipping notification fetch');
+      return;
+    }
+
+    console.log('Fetching notifications for user role:', currentUser.role);
+
+    // Query notifications collection - filter by user role
     const notificationsQuery = query(
       collection(db, 'Notifications'),
-      where('status', '==', 'pending'),
-      where('type', '==', 'restock_alert')
+      where('status', '==', 'active'),
+      where('type', 'in', ['restock_alert', 'sale_completed']),
+      orderBy('createdAt', 'desc')
     );
 
     // Set up real-time listener with error handling
     const unsubscribe = onSnapshot(
       notificationsQuery, 
       (snapshot) => {
-        const notificationsList = snapshot.docs.map(doc => {
+        const allNotifications = snapshot.docs.map(doc => {
           const data = doc.data();
           return {
             id: doc.id,
@@ -62,17 +72,32 @@ const DashboardHeader = () => {
           };
         });
 
+        // TEMPORARILY DISABLE ROLE FILTERING FOR DEBUGGING
+        // const filteredNotifications = allNotifications.filter(notification => {
+        //   // If notification has targetRoles, check if user role is included
+        //   if (notification.targetRoles && Array.isArray(notification.targetRoles)) {
+        //     const hasAccess = notification.targetRoles.includes(userRole);
+        //     console.log(`🔍 Notification ${notification.notificationId} - Role check: ${userRole} in ${notification.targetRoles} = ${hasAccess}`);
+        //     return hasAccess;
+        //   }
+        //   // If no targetRoles specified, show to everyone
+        //   return true;
+        // });
+        
+        const filteredNotifications = allNotifications; // Show all notifications for debugging
+
+        console.log(`Found ${allNotifications.length} total notifications, ${filteredNotifications.length} for role ${userRole}`);
+
         // Check for new notifications
-        const newNotifications = notificationsList.filter(
+        const newNotifications = filteredNotifications.filter(
           notification => !readNotifications.has(notification.id)
         );
 
         if (newNotifications.length > 0) {
           setHasNewNotification(true);
-          // Optional: Play a sound or show a browser notification
         }
 
-        setNotifications(notificationsList);
+        setNotifications(filteredNotifications);
         setError(null);
       },
       (error) => {
@@ -83,7 +108,7 @@ const DashboardHeader = () => {
 
     // Cleanup subscription on unmount
     return () => unsubscribe();
-  }, [readNotifications]);
+  }, [readNotifications, currentUser?.role]);
 
   // Add function to mark notifications as read
   const handleOpenNotifications = () => {
@@ -102,6 +127,9 @@ const DashboardHeader = () => {
     if (notification.type === 'restock_alert') {
       setShowNotifications(false); // Close the dropdown
       navigate('/im/restocking-request'); // Navigate to restocking page
+    } else if (notification.type === 'sale_completed') {
+      setShowNotifications(false); // Close the dropdown
+      navigate('/im/release-management'); // Navigate to release management page
     }
   };
 
@@ -189,10 +217,14 @@ const DashboardHeader = () => {
                           </p>
                           <div className="mt-1 flex justify-between items-center">
                             <span className="text-xs text-gray-500">
-                              {notification.createdAt ? new Date(notification.createdAt).toLocaleDateString() : 'N/A'}
+                              {notification.createdAt ? new Date(notification.createdAt.seconds * 1000).toLocaleDateString() : 'N/A'}
                             </span>
-                            <span className="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-600 rounded-full">
-                              Restock Alert
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                              notification.type === 'sale_completed'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-orange-100 text-orange-800'
+                            }`}>
+                              {notification.type === 'sale_completed' ? 'Sale' : 'Restock Alert'}
                             </span>
                           </div>
                         </div>
@@ -210,11 +242,11 @@ const DashboardHeader = () => {
             {/* User Profile */}
             <div className="flex items-center gap-3 pl-6 border-l border-gray-200">
               <div className="text-right hidden sm:block">
-                <p className="text-sm font-medium text-gray-800">I love Toff</p>
-                <p className="text-xs text-gray-500 font-medium">Administrator</p>
+                <p className="text-sm font-medium text-gray-800">{currentUser?.name || 'Loading...'}</p>
+                <p className="text-xs text-gray-500 font-medium">{currentUser?.role || 'User'}</p>
               </div>
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center text-white font-medium shadow-sm hover:shadow-md transition-shadow cursor-pointer">
-                IT
+                {currentUser?.name?.[0]?.toUpperCase() || '?'}
               </div>
             </div>
           </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { initializeStorageUnits } from '../../../services/firebase/StorageServices';
+import { initializeStorageUnitsFromConfig } from '../../../../services/firebase/StorageServices';
 
 /**
  * One-time initialization component to set up storage units
@@ -8,6 +8,8 @@ import { initializeStorageUnits } from '../../../services/firebase/StorageServic
 const InitializeStorageUnits = () => {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  console.log('InitializeStorageUnits component is rendering');
 
   const handleInitialize = async () => {
     if (!window.confirm('This will create storage units in the StorageUnits collection. Continue?')) {
@@ -18,7 +20,7 @@ const InitializeStorageUnits = () => {
     setStatus(null);
 
     try {
-      const result = await initializeStorageUnits();
+      const result = await initializeStorageUnitsFromConfig();
       
       if (result.success) {
         setStatus({
@@ -44,10 +46,11 @@ const InitializeStorageUnits = () => {
   return (
     <div className="p-6 bg-blue-50 border border-blue-200 rounded-lg">
       <h3 className="text-lg font-semibold mb-2 text-blue-900">
-        🏗️ Initialize Storage Units
+        🏗️ Initialize Storage Units from Config
       </h3>
       <p className="text-sm text-blue-700 mb-4">
-        This will create 9 storage units (Unit 01 - Unit 09) in the StorageUnits collection.
+        This will create storage units from the detailed configuration in StorageUnitsConfig.js.
+        Each unit will include complete shelf and row structures with capacity details.
         You only need to run this once.
       </p>
       
@@ -78,16 +81,19 @@ const InitializeStorageUnits = () => {
       <div className="mt-6 p-4 bg-white rounded border border-blue-200">
         <h4 className="font-medium text-sm mb-2 text-gray-900">Storage Units to be created:</h4>
         <ul className="text-xs text-gray-600 space-y-1">
-          <li>• Unit 01 - Steel & Heavy Materials (161 slots)</li>
-          <li>• Unit 02 - Lumber & Wood (32 slots)</li>
-          <li>• Unit 03 - Cement & Aggregate (64 slots)</li>
-          <li>• Unit 04 - Electrical & Plumbing (64 slots)</li>
-          <li>• Unit 05 - Paint & Coating (64 slots)</li>
-          <li>• Unit 06 - Insulation & Foam (64 slots)</li>
-          <li>• Unit 07 - Specialty Materials (12 slots)</li>
-          <li>• Unit 08 - Roofing Materials (140 slots)</li>
-          <li>• Unit 09 - Hardware & Fasteners (96 slots)</li>
+          <li>• Unit 01 - Steel & Heavy Materials (3,936 capacity)</li>
+          <li>• Unit 02 - Plywood & Sheet Materials (38 capacity)</li>
+          <li>• Unit 03 - Cement & Aggregates (1,200 capacity)</li>
+          <li>• Unit 04 - Electrical & Plumbing (248 capacity)</li>
+          <li>• Unit 05 - Paint & Coatings (160 capacity)</li>
+          <li>• Unit 06 - Insulation & Foam (16 capacity)</li>
+          <li>• Unit 07 - Miscellaneous (16 capacity)</li>
+          <li>• Unit 08 - Roofing Materials (16 capacity)</li>
+          <li>• Unit 09 - Hardware & Fasteners (16 capacity)</li>
         </ul>
+        <p className="text-xs text-gray-500 mt-2">
+          Each unit includes detailed shelf and row configurations with capacity calculations.
+        </p>
       </div>
     </div>
   );

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { FiPlus, FiEdit2, FiTrash2, FiPackage, FiGrid, FiList, FiBell, FiCalendar, FiUsers, FiShoppingBag } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiPackage, FiGrid, FiList, FiBell, FiCalendar, FiUsers, FiShoppingBag, FiUpload } from 'react-icons/fi';
 import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import { useSupplierServices } from '../../../services/firebase/SupplierServices';
 import EditSupplierModal from '../components/Supplier/EditSupplierModal';
 import SupplierProducts from '../components/Supplier/SupplierProducts';
+import BulkProductImport from '../components/BulkProductImport';
 
 // Import Purchase Orders component
 import PurchaseOrders from './PurchaseOrders';
@@ -14,6 +15,7 @@ const SupplierManagement = () => {
   const [loading, setLoading] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showProductsModal, setShowProductsModal] = useState(false);
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [viewMode, setViewMode] = useState('card'); // 'table' or 'card'
   
@@ -239,6 +241,13 @@ const SupplierManagement = () => {
                   <FiPlus size={20} />
                   <span>Add New Supplier</span>
                 </button>
+                <button
+                  onClick={() => setShowBulkImportModal(true)}
+                  className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+                >
+                  <FiUpload size={20} />
+                  <span>Bulk Import Products</span>
+                </button>
               </div>
               <button
                 onClick={toggleViewMode}
@@ -286,6 +295,14 @@ const SupplierManagement = () => {
           <SupplierProducts
             supplier={selectedSupplier}
             onClose={handleModalClose}
+          />
+        )}
+
+        {showBulkImportModal && (
+          <BulkProductImport
+            isOpen={showBulkImportModal}
+            onClose={() => setShowBulkImportModal(false)}
+            suppliers={suppliers}
           />
         )}
       </div>
