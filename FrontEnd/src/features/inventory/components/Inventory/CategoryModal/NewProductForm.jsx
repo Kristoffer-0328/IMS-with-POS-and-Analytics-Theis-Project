@@ -307,6 +307,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                     name: productName.trim(),
                     quantity: locationQty,
                     unitPrice: Number(unitPrice) || 0,
+                    supplierPrice: Number(supplierPrice) || Number(unitPrice) || 0, // Add supplierPrice to product data
                     category: unitCategory,
                     storageLocation: location.unit,
                     shelfName: location.shelf,

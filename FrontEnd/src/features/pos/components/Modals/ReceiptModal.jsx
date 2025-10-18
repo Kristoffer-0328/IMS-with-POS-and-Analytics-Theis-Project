@@ -26,17 +26,40 @@ const ReceiptModal = ({ transaction, onClose }) => {
 
   // Format the timestamp when the modal opens
   const formatDateTime = (timestamp) => {
-    if (!timestamp || !timestamp.toDate) {
-      return { dateString: 'N/A', timeString: 'N/A' };
+    // If no timestamp, use current date/time
+    if (!timestamp) {
+      const now = new Date();
+      return {
+        dateString: now.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: '2-digit'
+        }),
+        timeString: now.toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        })
+      };
     }
 
-    const date = timestamp.toDate();
+    // Handle Firestore timestamp
+    let date;
+    if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      date = timestamp.toDate();
+    } else if (timestamp instanceof Date) {
+      date = timestamp;
+    } else {
+      // Fallback to current time if timestamp format is unexpected
+      date = new Date();
+    }
+
     return {
       dateString: date.toLocaleDateString('en-US', {
-        day: '2-digit',
+        year: 'numeric',
         month: 'short',
-        year: 'numeric'
-      }).replace(/,/g, '').toUpperCase(),
+        day: '2-digit'
+      }),
       timeString: date.toLocaleTimeString('en-US', {
         hour: '2-digit',
         minute: '2-digit',
@@ -45,24 +68,10 @@ const ReceiptModal = ({ transaction, onClose }) => {
     };
   };
 
-  const { dateString, timeString } = formatDateTime(transaction.timestamp);
+  const { dateString, timeString } = formatDateTime(transaction.createdAt);
 
   const handlePrintReceipt = () => {
-    printReceiptContent({
-      receiptNumber: transaction.id,
-      timestamp: transaction.timestamp?.toDate(),
-      items: transaction.items,
-      customerName: transaction.customerName,
-      customerDetails: transaction.customerDetails,
-      cashierName: transaction.cashierName,
-      paymentMethod: transaction.paymentMethod,
-      subTotal: transaction.subTotal,
-      tax: transaction.tax,
-      total: transaction.total,
-      amountPaid: transaction.amountPaid,
-      change: transaction.change,
-      isBulkOrder: transaction.isBulkOrder
-    });
+    printReceiptContent(transaction);
   };
 
   return (
@@ -87,7 +96,7 @@ const ReceiptModal = ({ transaction, onClose }) => {
             <div className="text-center space-y-3 bg-gradient-to-b from-white to-orange-50 py-6 rounded-xl">
               <h3 className="text-2xl font-bold text-gray-800">Glory Sales</h3>
               <div className="space-y-1 text-gray-600">
-                <p className="text-sm font-medium">Receipt #{transaction.id}</p>
+                <p className="text-sm font-medium">Receipt #{transaction.transactionId}</p>
                 <p className="text-sm">{dateString} at {timeString}</p>
               </div>
             </div>

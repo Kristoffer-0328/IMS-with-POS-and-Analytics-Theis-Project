@@ -145,11 +145,13 @@ export const linkProductToSupplier = async (productId, supplierId, supplierData)
   try {
     // First, create the supplier-product relationship record
     const supplierProductRef = doc(db, 'supplier_products', supplierId, 'products', productId);
+    const now = new Date().toISOString();
     await setDoc(supplierProductRef, {
       productId,
       supplierPrice: supplierData.supplierPrice || 0,
       supplierSKU: supplierData.supplierSKU || '',
-      lastUpdated: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     });
 
     // Then, update the product's variant array with supplier information
@@ -199,7 +201,7 @@ const updateProductVariantsWithSupplier = async (productId, supplierId, supplier
               const productRef = doc(db, 'Products', storageLocation, 'products', productId);
               await updateDoc(productRef, {
                 variants: updatedVariants,
-                lastUpdated: new Date().toISOString()
+                updatedAt: new Date().toISOString()
               });
 
               return; // Found and updated, no need to continue searching
@@ -268,7 +270,7 @@ const removeSupplierFromProductVariants = async (productId, supplierId) => {
               const productRef = doc(db, 'Products', storageLocation, 'products', productId);
               await updateDoc(productRef, {
                 variants: updatedVariants,
-                lastUpdated: new Date().toISOString()
+                updatedAt: new Date().toISOString()
               });
 
               return; // Found and updated, no need to continue searching
@@ -291,7 +293,7 @@ export const updateSupplierProductDetails = async (productId, supplierId, update
     const supplierProductRef = doc(db, 'supplier_products', supplierId, 'products', productId);
     await updateDoc(supplierProductRef, {
       ...updates,
-      lastUpdated: new Date().toISOString()
+      updatedAt: new Date().toISOString()
     });
     return { success: true };
   } catch (error) {

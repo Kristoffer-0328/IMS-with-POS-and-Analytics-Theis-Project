@@ -553,6 +553,99 @@ const generateRestockingNotification = async (restockingRequest, currentUser) =>
     }
   };
 
+  // Function to find all locations where a product exists with available quantities
+  const findAllProductLocations = async (productId, variantId, variantName) => {
+    try {
+      console.log(`🔍 Finding all locations for product: ${variantName} (ID: ${productId})`);
+      
+      const allLocations = [];
+      const productsRef = collection(db, 'Products');
+      const storageUnitsSnapshot = await getDocs(productsRef);
+      
+      for (const storageUnitDoc of storageUnitsSnapshot.docs) {
+        const unitId = storageUnitDoc.id;
+        
+        // Skip non-storage unit documents
+        if (!unitId.startsWith('Unit ')) continue;
+        
+        try {
+          // Search products subcollection in this unit
+          const unitProductsRef = collection(db, 'Products', unitId, 'products');
+          const productsSnapshot = await getDocs(unitProductsRef);
+          
+          for (const productDoc of productsSnapshot.docs) {
+            const productData = productDoc.data();
+            
+            // Check if this matches our product
+            if (productData.id !== productId && productData.productId !== productId) continue;
+            
+            // Check if this product has variants
+            const hasVariants = productData.variants && Array.isArray(productData.variants) && productData.variants.length > 0;
+            
+            if (hasVariants && variantId) {
+              // Find the specific variant
+              const variantIndex = productData.variants.findIndex(v => 
+                v.id === variantId || 
+                v.size === variantId || 
+                String(v.size) === String(variantId) ||
+                (v.name && v.name === variantName)
+              );
+              
+              if (variantIndex !== -1) {
+                const variant = productData.variants[variantIndex];
+                const availableQty = Number(variant.quantity) || 0;
+                
+                if (availableQty > 0) {
+                  allLocations.push({
+                    productRef: productDoc.ref,
+                    currentQty: availableQty,
+                    variantIndex,
+                    variant,
+                    location: {
+                      storageLocation: unitId,
+                      shelfName: productData.shelfName,
+                      rowName: productData.rowName,
+                      columnIndex: productData.columnIndex
+                    },
+                    productData
+                  });
+                }
+              }
+            } else if (!hasVariants) {
+              // Non-variant product
+              const availableQty = Number(productData.quantity) || 0;
+              
+              if (availableQty > 0) {
+                allLocations.push({
+                  productRef: productDoc.ref,
+                  currentQty: availableQty,
+                  variantIndex: -1,
+                  variant: null,
+                  location: {
+                    storageLocation: unitId,
+                    shelfName: productData.shelfName,
+                    rowName: productData.rowName,
+                    columnIndex: productData.columnIndex
+                  },
+                  productData
+                });
+              }
+            }
+          }
+        } catch (error) {
+          console.warn(`Error searching in unit ${unitId}:`, error);
+          continue;
+        }
+      }
+      
+      console.log(`✅ Found ${allLocations.length} locations for ${variantName}`);
+      return allLocations;
+    } catch (error) {
+      console.error(`Error finding all locations for product ${variantName}:`, error);
+      throw error;
+    }
+  };
+
   // Function to update inventory by deducting released items
   const updateInventoryQuantities = async (releasedProducts) => {
     try {
@@ -572,111 +665,134 @@ const generateRestockingNotification = async (restockingRequest, currentUser) =>
 
         console.log(`\n🔄 Processing ${product.name} - Qty to release: ${releasedQty}`);
 
-        // Find the product in inventory
-        const inventoryLocation = await findProductInInventory(
+        // Find all locations where this product exists
+        const allLocations = await findAllProductLocations(
           product.productId,
           product.variantId,
-          product.name,
-          product.storageLocation,
-          product.shelfName,
-          product.rowName,
-          product.columnIndex,
-          product.category
+          product.name
         );
 
-        if (!inventoryLocation) {
-          console.error(`❌ Product ${product.name} not found in inventory`);
+        if (allLocations.length === 0) {
+          console.error(`❌ Product ${product.name} not found in any inventory location`);
           throw new Error(`Product ${product.name} not found in inventory`);
         }
 
-        console.log(`✅ Found product at: Products/${inventoryLocation.location.storageLocation}/products/${product.productId}`);
-        console.log(`📊 Current quantity: ${inventoryLocation.currentQty}`);
+        // Sort locations by available quantity (descending) to prioritize locations with more stock
+        allLocations.sort((a, b) => b.currentQty - a.currentQty);
 
-        // Deduct from inventory using transaction
-        await runTransaction(db, async (transaction) => {
-          const productDoc = await transaction.get(inventoryLocation.productRef);
-          
-          if (!productDoc.exists()) {
-            throw new Error(`Product ${product.name} no longer exists`);
-          }
-
-          const productData = productDoc.data();
-          
-          // Check if this product has variants
-          const hasVariants = productData.variants && Array.isArray(productData.variants) && productData.variants.length > 0;
-          
-          if (hasVariants && product.variantId) {
-            // Product has variants - update the specific variant's quantity
-            console.log(`🔍 Product has variants, searching for variant ID: ${product.variantId}`);
-            
-            const variants = [...productData.variants];
-            const variantIndex = variants.findIndex(v => v.id === product.variantId);
-            
-            if (variantIndex === -1) {
-              throw new Error(`Variant ${product.name} not found in product`);
-            }
-            
-            const variant = variants[variantIndex];
-            const currentQty = Number(variant.quantity) || 0;
-            const newQty = currentQty - releasedQty;
-            
-            if (newQty < 0) {
-              throw new Error(`Insufficient stock for ${product.name}. Available: ${currentQty}, Requested: ${releasedQty}`);
-            }
-            
-            console.log(`➡️ Updating variant quantity: ${currentQty} - ${releasedQty} = ${newQty}`);
-            
-            // Update the variant quantity
-            variants[variantIndex] = {
-              ...variant,
-              quantity: newQty
-            };
-            
-            // Update the product document with modified variants
-            transaction.update(inventoryLocation.productRef, {
-              variants: variants, 
-              lastUpdated: serverTimestamp()
-            });
-            
-            // Check for low stock on variant
-            const restockLevel = variant.restockLevel || productData.restockLevel || productData.reorderPoint || 10;
-            if (newQty <= restockLevel) {
-              console.log(`Low stock detected for variant (${newQty} <= ${restockLevel}), generating restock request...`);
-              
-              // Generate restock request using the centralized function
-              await generateRestockingRequest(productData, variantIndex, inventoryLocation.location, currentUser);
-            }
-          } else {
-            // Product has no variants - update base product quantity
-            console.log(`📦 Product has no variants, updating base product quantity`);
-            
-            const currentQty = Number(productData.quantity) || 0;
-            const newQty = currentQty - releasedQty;
-
-            if (newQty < 0) {
-              throw new Error(`Insufficient stock for ${product.name}. Available: ${currentQty}, Requested: ${releasedQty}`);
-            }
-
-            console.log(`➡️ Updating quantity: ${currentQty} - ${releasedQty} = ${newQty}`);
-
-            // Update product quantity
-            transaction.update(inventoryLocation.productRef, {
-              quantity: newQty,
-              lastUpdated: serverTimestamp()
-            });
-
-            // Generate restock request if quantity is low
-            const restockLevel = productData.restockLevel || productData.reorderPoint || 10;
-            if (newQty <= restockLevel) {
-              console.log(`⚠️ Low stock detected (${newQty} <= ${restockLevel}), generating restock request...`);
-              
-              // Generate restock request using the centralized function for non-variant products
-              await generateRestockingRequest(productData, -1, inventoryLocation.location, currentUser);
-            }
-          }
+        console.log(`📍 Found product in ${allLocations.length} locations:`);
+        allLocations.forEach((loc, index) => {
+          console.log(`  ${index + 1}. ${loc.location.storageLocation}/${loc.location.shelfName}/${loc.location.rowName}/${loc.location.columnIndex}: ${loc.currentQty} units`);
         });
 
-        console.log(`✅ Successfully updated ${product.name}`);
+        // Calculate total available quantity across all locations
+        const totalAvailable = allLocations.reduce((sum, loc) => sum + loc.currentQty, 0);
+        console.log(`📊 Total available across all locations: ${totalAvailable} units`);
+
+        if (totalAvailable < releasedQty) {
+          // For quotation products, allow negative inventory with warning
+          const isQuotationProduct = product.productId && product.productId.startsWith('quotation-');
+          if (isQuotationProduct) {
+            console.warn(`⚠️ WARNING: Allowing release with insufficient stock for quotation product ${product.name}. Available: ${totalAvailable}, Requested: ${releasedQty}. Inventory will go negative.`);
+          } else {
+            throw new Error(`Insufficient stock for ${product.name}. Available: ${totalAvailable}, Requested: ${releasedQty}. Please add more stock to inventory or reduce release quantity.`);
+          }
+        }
+
+        // Deduct from multiple locations as needed
+        let remainingQty = releasedQty;
+        const deductionDetails = [];
+
+        for (const location of allLocations) {
+          if (remainingQty <= 0) break;
+
+          const deductQty = Math.min(remainingQty, location.currentQty);
+          
+          console.log(`🔄 Deducting ${deductQty} units from ${location.location.storageLocation}/${location.location.shelfName}/${location.location.rowName}/${location.location.columnIndex}`);
+
+          // Deduct from this location using transaction
+          await runTransaction(db, async (transaction) => {
+            const productDoc = await transaction.get(location.productRef);
+            
+            if (!productDoc.exists()) {
+              throw new Error(`Product ${product.name} no longer exists at ${location.location.storageLocation}`);
+            }
+
+            const productData = productDoc.data();
+            
+            // Check if this product has variants
+            const hasVariants = productData.variants && Array.isArray(productData.variants) && productData.variants.length > 0;
+            
+            if (hasVariants && location.variantIndex >= 0) {
+              // Product has variants - update the specific variant's quantity
+              console.log(`� Updating variant at ${location.location.storageLocation}`);
+              
+              const variants = [...productData.variants];
+              const variant = variants[location.variantIndex];
+              const currentQty = Number(variant.quantity) || 0;
+              const newQty = currentQty - deductQty;
+              
+              console.log(`📊 Variant ${variant.size || variant.name} - Current: ${currentQty}, Deducting: ${deductQty}, New: ${newQty}`);
+              
+              // Update the variant quantity
+              variants[location.variantIndex] = {
+                ...variant,
+                quantity: newQty
+              };
+              
+              // Update the product document with modified variants
+              transaction.update(location.productRef, {
+                variants: variants, 
+                lastUpdated: serverTimestamp()
+              });
+
+              // Check for low stock on variant
+              const restockLevel = variant.restockLevel || productData.restockLevel || productData.reorderPoint || 10;
+              if (newQty <= restockLevel) {
+                console.log(`Low stock detected for variant (${newQty} <= ${restockLevel}), generating restock request...`);
+                
+                // Generate restock request using the centralized function
+                await generateRestockingRequest(productData, location.variantIndex, location.location, currentUser);
+              }
+            } else {
+              // Product has no variants - update base product quantity
+              console.log(`📦 Updating non-variant product at ${location.location.storageLocation}`);
+              
+              const currentQty = Number(productData.quantity) || 0;
+              const newQty = currentQty - deductQty;
+
+              console.log(`➡️ Updating quantity: ${currentQty} - ${deductQty} = ${newQty}`);
+
+              // Update product quantity
+              transaction.update(location.productRef, {
+                quantity: newQty,
+                lastUpdated: serverTimestamp()
+              });
+
+              // Generate restock request if quantity is low
+              const restockLevel = productData.restockLevel || productData.reorderPoint || 10;
+              if (newQty <= restockLevel) {
+                console.log(`⚠️ Low stock detected (${newQty} <= ${restockLevel}), generating restock request...`);
+                
+                // Generate restock request using the centralized function for non-variant products
+                await generateRestockingRequest(productData, -1, location.location, currentUser);
+              }
+            }
+          });
+
+          deductionDetails.push({
+            location: location.location,
+            deductedQty: deductQty,
+            remainingAtLocation: location.currentQty - deductQty
+          });
+
+          remainingQty -= deductQty;
+        }
+
+        console.log(`✅ Successfully processed ${product.name}:`);
+        deductionDetails.forEach((detail, index) => {
+          console.log(`  ${index + 1}. ${detail.location.storageLocation}/${detail.location.shelfName}/${detail.location.rowName}/${detail.location.columnIndex}: -${detail.deductedQty} units (remaining: ${detail.remainingAtLocation})`);
+        });
       }
 
       console.log('\n✅ All inventory updates completed successfully');
@@ -1090,6 +1206,12 @@ const generateRestockingNotification = async (restockingRequest, currentUser) =>
                         <div className="flex-1">
                           <h3 className="font-semibold text-gray-900">{product.name}</h3>
                           <p className="text-sm text-gray-500">SKU: {product.sku || 'N/A'}</p>
+                          {(product.storageLocation || product.shelfName || product.rowName) && (
+                            <p className="text-xs text-blue-600 mt-1">
+                              📍 {product.storageLocation || 'Unknown'}/{product.shelfName || 'Unknown'}/{product.rowName || 'Unknown'}
+                              {product.columnIndex !== undefined && product.columnIndex !== null ? `/${product.columnIndex}` : ''}
+                            </p>
+                          )}
                           <div className="mt-2 flex items-center gap-4 text-sm">
                             <span className="text-gray-700">
                               <span className="font-medium">Ordered:</span> {product.orderedQty}
@@ -1147,6 +1269,12 @@ const generateRestockingNotification = async (restockingRequest, currentUser) =>
                 <div>
                   <h2 className="text-xl font-bold text-gray-900">{currentProduct.name}</h2>
                   <p className="text-sm text-gray-500 mt-1">Ordered: {currentProduct.orderedQty} units</p>
+                  {(currentProduct.storageLocation || currentProduct.shelfName || currentProduct.rowName) && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      📍 Location: {currentProduct.storageLocation || 'Unknown'}/{currentProduct.shelfName || 'Unknown'}/{currentProduct.rowName || 'Unknown'}
+                      {currentProduct.columnIndex !== undefined && currentProduct.columnIndex !== null ? `/${currentProduct.columnIndex}` : ''}
+                    </p>
+                  )}
                 </div>
                 <div className="bg-blue-50 px-3 py-1 rounded-full">
                   <span className="text-sm font-semibold text-blue-700">
@@ -1404,6 +1532,12 @@ const generateRestockingNotification = async (restockingRequest, currentUser) =>
                       <div className="flex-1">
                         <h4 className="font-semibold text-gray-900">{product.name}</h4>
                         <p className="text-sm text-gray-500">Ordered: {product.orderedQty} | Released: {product.releasedQty}</p>
+                        {(product.storageLocation || product.shelfName || product.rowName) && (
+                          <p className="text-xs text-blue-600 mt-1">
+                            📍 {product.storageLocation || 'Unknown'}/{product.shelfName || 'Unknown'}/{product.rowName || 'Unknown'}
+                            {product.columnIndex !== undefined && product.columnIndex !== null ? `/${product.columnIndex}` : ''}
+                          </p>
+                        )}
                       </div>
                       {product.photoPreview ? (
                         <img 
