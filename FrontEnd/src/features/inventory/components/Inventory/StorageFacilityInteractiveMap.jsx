@@ -1,8 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { getFirestore, collection, getDocs } from 'firebase/firestore';
-import app from '../../../../FirebaseConfig';
-import ShelfViewModal from './ShelfViewModal';
-import { getStorageUnits, updateStorageUnit, deleteStorageUnit, createStorageUnit } from '../../../../services/firebase/StorageServices';
 
 const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onChangesMade }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -13,13 +9,173 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
   const [editingUnit, setEditingUnit] = useState(null);
   const [showAddUnit, setShowAddUnit] = useState(false);
   const [addingShelfToUnit, setAddingShelfToUnit] = useState(null);
-  const db = getFirestore(app);
 
-  // Transform storage units into a lookup object for modal display
+  // Mock data for demonstration
+  const mockStorageUnits = [
+    {
+      id: 'unit-01',
+      name: 'Steel & Heavy Materials',
+      type: 'Heavy Duty',
+      capacity: 384,
+      shelves: [
+        {
+          name: 'I-Beams',
+          rows: [
+            { name: 'Row 1', capacity: 96, columns: 4 },
+            { name: 'Row 2', capacity: 96, columns: 4 }
+          ]
+        },
+        {
+          name: 'Steel Plates',
+          rows: [
+            { name: 'Row 1', capacity: 96, columns: 4 },
+            { name: 'Row 2', capacity: 96, columns: 4 }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'unit-02',
+      name: 'Lumber & Wood',
+      type: 'Standard',
+      capacity: 288,
+      shelves: [
+        {
+          name: 'Plywood',
+          rows: [{ name: 'Row 1', capacity: 144, columns: 6 }]
+        },
+        {
+          name: '2x4 Lumber',
+          rows: [{ name: 'Row 1', capacity: 144, columns: 6 }]
+        }
+      ]
+    },
+    {
+      id: 'unit-03',
+      name: 'Cement & Aggregates',
+      type: 'Heavy Duty',
+      capacity: 320,
+      shelves: [
+        {
+          name: 'Bags',
+          rows: [{ name: 'Row 1', capacity: 160, columns: 8 }, { name: 'Row 2', capacity: 160, columns: 8 }]
+        }
+      ]
+    },
+    {
+      id: 'unit-04',
+      name: 'Electrical & Plumbing',
+      type: 'Standard',
+      capacity: 256,
+      shelves: [
+        {
+          name: 'Electrical',
+          rows: [{ name: 'Row 1', capacity: 128, columns: 8 }]
+        },
+        {
+          name: 'Plumbing',
+          rows: [{ name: 'Row 1', capacity: 128, columns: 8 }]
+        }
+      ]
+    },
+    {
+      id: 'unit-05',
+      name: 'Paint & Coatings',
+      type: 'Standard',
+      capacity: 192,
+      shelves: [
+        {
+          name: 'Paints',
+          rows: [{ name: 'Row 1', capacity: 96, columns: 6 }]
+        },
+        {
+          name: 'Coatings',
+          rows: [{ name: 'Row 1', capacity: 96, columns: 6 }]
+        }
+      ]
+    },
+    {
+      id: 'unit-06',
+      name: 'Insulation & Foam',
+      type: 'Light',
+      capacity: 160,
+      shelves: [
+        {
+          name: 'Insulation',
+          rows: [{ name: 'Row 1', capacity: 160, columns: 8 }]
+        }
+      ]
+    },
+    {
+      id: 'unit-07',
+      name: 'Miscellaneous',
+      type: 'Standard',
+      capacity: 200,
+      shelves: [
+        {
+          name: 'General',
+          rows: [{ name: 'Row 1', capacity: 200, columns: 10 }]
+        }
+      ]
+    },
+    {
+      id: 'unit-08',
+      name: 'Roofing Materials',
+      type: 'Standard',
+      capacity: 240,
+      shelves: [
+        {
+          name: 'Shingles',
+          rows: [{ name: 'Row 1', capacity: 120, columns: 6 }]
+        },
+        {
+          name: 'Metal',
+          rows: [{ name: 'Row 1', capacity: 120, columns: 6 }]
+        }
+      ]
+    },
+    {
+      id: 'unit-09',
+      name: 'Hardware & Fasteners',
+      type: 'Light',
+      capacity: 180,
+      shelves: [
+        {
+          name: 'Screws & Bolts',
+          rows: [{ name: 'Row 1', capacity: 90, columns: 6 }]
+        },
+        {
+          name: 'Nails',
+          rows: [{ name: 'Row 1', capacity: 90, columns: 6 }]
+        }
+      ]
+    }
+  ];
+
+  // Mock capacity data
+  const mockCapacities = {
+    'Unit 01': { productCount: 350, totalSlots: 384, occupancyRate: 0.91, status: 'full' },
+    'Unit 02': { productCount: 210, totalSlots: 288, occupancyRate: 0.73, status: 'occupied' },
+    'Unit 03': { productCount: 290, totalSlots: 320, occupancyRate: 0.91, status: 'full' },
+    'Unit 04': { productCount: 180, totalSlots: 256, occupancyRate: 0.70, status: 'occupied' },
+    'Unit 05': { productCount: 100, totalSlots: 192, occupancyRate: 0.52, status: 'available' },
+    'Unit 06': { productCount: 85, totalSlots: 160, occupancyRate: 0.53, status: 'available' },
+    'Unit 07': { productCount: 130, totalSlots: 200, occupancyRate: 0.65, status: 'occupied' },
+    'Unit 08': { productCount: 45, totalSlots: 240, occupancyRate: 0.19, status: 'available' },
+    'Unit 09': { productCount: 110, totalSlots: 180, occupancyRate: 0.61, status: 'occupied' }
+  };
+
+  useEffect(() => {
+    setTimeout(() => {
+      setStorageUnits(mockStorageUnits);
+      setUnitCapacities(mockCapacities);
+      setLoading(false);
+    }, 1000);
+  }, []);
+
   const shelfLayouts = storageUnits.reduce((acc, unit) => {
-    // Map unit-01 to unit1, unit-02 to unit2, etc. (remove hyphen and leading zero)
-    const unitNumber = unit.id.split('-')[1]; // Gets "01", "02", etc.
-    const unitKey = 'unit' + parseInt(unitNumber); // Converts to "unit1", "unit2", etc.
+    const unitNumber = unit.id.split('-')[1];
+    const unitKey = 'unit' + parseInt(unitNumber);
     acc[unitKey] = {
       title: `Unit ${unitNumber} - ${unit.name}`,
       type: unit.type,
@@ -32,125 +188,6 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
     return acc;
   }, {});
 
-  // Fetch storage units from database
-  const fetchStorageUnits = async () => {
-    try {
-      const result = await getStorageUnits();
-      if (result.success) {
-        setStorageUnits(result.data);
-      } else {
-        console.error('Error fetching storage units:', result.error);
-      }
-    } catch (error) {
-      console.error('Error fetching storage units:', error);
-    }
-  };
-
-  // Fetch unit capacities on component mount
-  useEffect(() => {
-    fetchStorageUnits();
-  }, []);
-
-  // Fetch capacities when storage units are loaded
-  useEffect(() => {
-    if (storageUnits.length > 0) {
-      fetchUnitCapacities();
-    }
-  }, [storageUnits]);
-
-  // Calculate unit capacity based on actual products vs total slots
-  const fetchUnitCapacities = async () => {
-    try {
-      const capacities = {};
-      
-      // Create a lookup for total slots from storage units data
-      const unitTotalSlots = {};
-      storageUnits.forEach(unit => {
-        // Convert unit ID like "unit-01" to display name "Unit 01"
-        const unitNumber = unit.id.split('-')[1];
-        const displayName = `Unit ${unitNumber}`;
-        unitTotalSlots[displayName] = unit.capacity;
-      });
-
-      // Fetch products from nested structure: Products/{storageUnit}/products/{productId}
-      const productsRef = collection(db, 'Products');
-      const storageUnitsSnapshot = await getDocs(productsRef);
-      
-      // Count products per unit (group base products + variants)
-      const unitProductCounts = {};
-      const processedParentIds = new Set(); // Track base products we've already counted
-      
-      // Iterate through each storage unit
-      for (const storageUnitDoc of storageUnitsSnapshot.docs) {
-        const unitId = storageUnitDoc.id;
-        
-        // Skip non-storage unit documents
-        if (!unitId.startsWith('Unit ')) {
-          continue;
-        }
-        
-        // Fetch products subcollection for this storage unit
-        const productsSubcollectionRef = collection(db, 'Products', unitId, 'products');
-        const productsSnapshot = await getDocs(productsSubcollectionRef);
-        
-        // Initialize counter for this unit
-        if (!unitProductCounts[unitId]) {
-          unitProductCounts[unitId] = 0;
-        }
-        
-        productsSnapshot.docs.forEach(doc => {
-          const product = doc.data();
-          
-          // If it's a variant, only count if we haven't counted its parent
-          if (product.isVariant && product.parentProductId) {
-            const parentKey = `${unitId}_${product.parentProductId}`;
-            if (!processedParentIds.has(parentKey)) {
-              processedParentIds.add(parentKey);
-              unitProductCounts[unitId]++;
-            }
-          } else if (!product.isVariant) {
-            // It's a base product, count it once
-            const productKey = `${unitId}_${doc.id}`;
-            if (!processedParentIds.has(productKey)) {
-              processedParentIds.add(productKey);
-              unitProductCounts[unitId]++;
-            }
-          }
-        });
-      }
-      
-      // Calculate capacities for each unit
-      for (const unitName in unitTotalSlots) {
-        const productCount = unitProductCounts[unitName] || 0;
-        const totalSlots = unitTotalSlots[unitName];
-        const occupancyRate = productCount / totalSlots;
-        
-        capacities[unitName] = {
-          productCount,
-          totalSlots,
-          occupancyRate,
-          status: getCapacityStatus(occupancyRate)
-        };
-        
-        console.log(`${unitName}: ${productCount} products / ${totalSlots} slots (${(occupancyRate * 100).toFixed(1)}%)`);
-      }
-      
-      setUnitCapacities(capacities);
-    } catch (error) {
-      console.error('Error fetching unit capacities:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Determine capacity status based on occupancy rate
-  const getCapacityStatus = (occupancyRate) => {
-    if (occupancyRate >= 0.9) return 'full';      // 90%+ = full (red)
-    if (occupancyRate >= 0.6) return 'occupied';  // 60-89% = occupied (yellow/orange)
-    return 'available';                           // <60% = available (green)
-  };
-
-  // Open shelf view modal
   const openShelfView = (unitId) => {
     setSelectedUnit(shelfLayouts[unitId]);
     setIsModalOpen(true);
@@ -161,7 +198,6 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
     setSelectedUnit(null);
   };
 
-  // Edit mode functions
   const handleEditUnit = (unitId) => {
     const unit = storageUnits.find(u => u.id === unitId);
     if (unit) {
@@ -169,97 +205,46 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
     }
   };
 
-  const handleDeleteUnit = async (unitId) => {
-    if (!confirm('Are you sure you want to delete this storage unit? This action cannot be undone.')) {
-      return;
-    }
-
-    try {
-      const result = await deleteStorageUnit(unitId);
-      if (result.success) {
-        // Refresh the storage units list
-        await fetchStorageUnits();
-        onChangesMade && onChangesMade();
-        alert('Storage unit deleted successfully');
-      } else {
-        alert('Failed to delete storage unit: ' + result.error);
-      }
-    } catch (error) {
-      console.error('Error deleting unit:', error);
-      alert('Failed to delete storage unit');
-    }
+  const handleDeleteUnit = (unitId) => {
+    if (!confirm('Are you sure you want to delete this storage unit?')) return;
+    const updatedUnits = storageUnits.filter(u => u.id !== unitId);
+    setStorageUnits(updatedUnits);
+    alert('Storage unit deleted successfully');
   };
 
   const handleAddShelf = (unitId) => {
     setAddingShelfToUnit(unitId);
   };
 
-  const handleSaveUnit = async (unitData) => {
-    try {
-      let result;
-      if (showAddUnit) {
-        // Creating new unit
-        result = await createStorageUnit(unitData);
-      } else {
-        // Updating existing unit
-        result = await updateStorageUnit(unitData.id, unitData);
-      }
-
-      if (result.success) {
-        // Refresh the storage units list
-        await fetchStorageUnits();
-        setEditingUnit(null);
-        setShowAddUnit(false);
-        onChangesMade && onChangesMade();
-        alert(showAddUnit ? 'Storage unit created successfully' : 'Storage unit updated successfully');
-      } else {
-        alert(`Failed to ${showAddUnit ? 'create' : 'update'} storage unit: ` + result.error);
-      }
-    } catch (error) {
-      console.error('Error saving unit:', error);
-      alert(`Failed to ${showAddUnit ? 'create' : 'update'} storage unit`);
+  const handleSaveUnit = (unitData) => {
+    if (showAddUnit) {
+      setStorageUnits([...storageUnits, unitData]);
+      alert('Storage unit created successfully');
+    } else {
+      const updatedUnits = storageUnits.map(u => u.id === unitData.id ? unitData : u);
+      setStorageUnits(updatedUnits);
+      alert('Storage unit updated successfully');
     }
+    setEditingUnit(null);
+    setShowAddUnit(false);
   };
 
-  const handleSaveShelf = async (shelfData) => {
-    try {
-      // Find the unit to add the shelf to
-      const unit = storageUnits.find(u => u.id === addingShelfToUnit);
-      if (!unit) {
-        alert('Unit not found');
-        return;
-      }
-
-      // Create the new shelf structure matching StorageUnitsConfig.js
-      const newShelf = {
-        name: shelfData.name,
-        rows: shelfData.rows.map((row, index) => ({
-          name: row.name,
-          capacity: row.capacity,
-          columns: row.columns
-        }))
-      };
-
-      // Add the new shelf to the unit
-      const updatedUnit = {
-        ...unit,
-        shelves: [...unit.shelves, newShelf]
-      };
-
-      const result = await updateStorageUnit(unit.id, updatedUnit);
-      if (result.success) {
-        // Refresh the storage units list
-        await fetchStorageUnits();
-        setAddingShelfToUnit(null);
-        onChangesMade && onChangesMade();
-        alert('Shelf added successfully');
-      } else {
-        alert('Failed to add shelf: ' + result.error);
-      }
-    } catch (error) {
-      console.error('Error adding shelf:', error);
-      alert('Failed to add shelf');
+  const handleSaveShelf = (shelfData) => {
+    const unit = storageUnits.find(u => u.id === addingShelfToUnit);
+    if (!unit) {
+      alert('Unit not found');
+      return;
     }
+
+    const updatedUnit = {
+      ...unit,
+      shelves: [...unit.shelves, shelfData]
+    };
+
+    const updatedUnits = storageUnits.map(u => u.id === unit.id ? updatedUnit : u);
+    setStorageUnits(updatedUnits);
+    setAddingShelfToUnit(null);
+    alert('Shelf added successfully');
   };
 
   const handleCancelEdit = () => {
@@ -270,17 +255,28 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
 
   const getStatusColor = (unitName) => {
     const capacity = unitCapacities[unitName];
-    if (!capacity) return 'bg-gray-400'; // Loading or no data
+    if (!capacity) return 'bg-slate-400';
     
     switch (capacity.status) {
-      case 'full': return 'bg-red-500';      // 90%+ occupied
-      case 'occupied': return 'bg-yellow-500'; // 60-89% occupied  
-      case 'available': return 'bg-green-500'; // <60% occupied
-      default: return 'bg-gray-400';
+      case 'full': return 'bg-red-500';
+      case 'occupied': return 'bg-amber-500';
+      case 'available': return 'bg-emerald-500';
+      default: return 'bg-slate-400';
     }
   };
 
-  // Get capacity info for tooltip
+  const getStatusGlow = (unitName) => {
+    const capacity = unitCapacities[unitName];
+    if (!capacity) return '';
+    
+    switch (capacity.status) {
+      case 'full': return 'shadow-[0_0_15px_rgba(239,68,68,0.4)]';
+      case 'occupied': return 'shadow-[0_0_15px_rgba(245,158,11,0.4)]';
+      case 'available': return 'shadow-[0_0_15px_rgba(16,185,129,0.4)]';
+      default: return '';
+    }
+  };
+
   const getCapacityInfo = (unitName) => {
     const capacity = unitCapacities[unitName];
     if (!capacity) return 'Loading...';
@@ -289,392 +285,209 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
     return `${capacity.productCount}/${capacity.totalSlots} slots (${percentage}%)`;
   };
 
+  const getUnitBorderColor = (status) => {
+    switch (status) {
+      case 'full': return 'border-red-400 hover:border-red-500';
+      case 'occupied': return 'border-amber-400 hover:border-amber-500';
+      case 'available': return 'border-emerald-400 hover:border-emerald-500';
+      default: return 'border-slate-300 hover:border-slate-400';
+    }
+  };
+
+  const getUnitBgColor = (status) => {
+    switch (status) {
+      case 'full': return 'bg-red-50/80 hover:bg-red-50';
+      case 'occupied': return 'bg-amber-50/80 hover:bg-amber-50';
+      case 'available': return 'bg-emerald-50/80 hover:bg-emerald-50';
+      default: return 'bg-white hover:bg-slate-50';
+    }
+  };
+
+  const StorageUnitCard = ({ unitId, unitNumber, unitName, position }) => {
+    const displayName = `Unit ${unitNumber}`;
+    const capacity = unitCapacities[displayName];
+    const status = capacity?.status || 'loading';
+    
+    return (
+      <div 
+        className={`relative ${getUnitBgColor(status)} border-2 ${getUnitBorderColor(status)} 
+                    p-4 cursor-pointer transition-all duration-300 
+                    flex flex-col justify-center items-center text-center min-h-[100px]
+                    hover:shadow-xl hover:scale-[1.02] hover:-translate-y-1
+                    backdrop-blur-sm ${position} rounded-lg`}
+        onClick={() => !editMode && openShelfView(`unit${parseInt(unitNumber)}`)}
+        title={`${displayName} - ${getCapacityInfo(displayName)}`}
+      >
+        {editMode && (
+          <div className="absolute top-2 right-2 flex gap-1.5 z-20">
+            <button
+              onClick={(e) => { e.stopPropagation(); handleAddShelf(unitId); }}
+              className="w-7 h-7 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg 
+                       flex items-center justify-center text-xs font-semibold shadow-lg 
+                       hover:shadow-xl transition-all duration-200 hover:scale-110"
+              title="Add Shelf"
+            >
+              +
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleEditUnit(unitId); }}
+              className="w-7 h-7 bg-blue-500 hover:bg-blue-600 text-white rounded-lg 
+                       flex items-center justify-center text-[10px] font-semibold shadow-lg 
+                       hover:shadow-xl transition-all duration-200 hover:scale-110"
+              title="Edit Unit"
+            >
+              ✎
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleDeleteUnit(unitId); }}
+              className="w-7 h-7 bg-red-500 hover:bg-red-600 text-white rounded-lg 
+                       flex items-center justify-center text-xs font-semibold shadow-lg 
+                       hover:shadow-xl transition-all duration-200 hover:scale-110"
+              title="Delete Unit"
+            >
+              ×
+            </button>
+          </div>
+        )}
+        
+        <div className={`absolute top-2 left-2 w-4 h-4 rounded-full ${getStatusColor(displayName)} 
+                        ${getStatusGlow(displayName)} animate-pulse`}></div>
+        
+        <div className="space-y-1">
+          <div className="text-xl font-bold text-slate-800 tracking-tight">
+            Unit {unitNumber}
+          </div>
+          <div className="text-sm text-slate-600 font-medium">
+            {unitName}
+          </div>
+          {capacity && (
+            <div className="text-xs text-slate-500 mt-2 font-semibold">
+              {(capacity.occupancyRate * 100).toFixed(0)}% Full
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="max-w-7xl mx-auto p-5">
-      {/* Legend */}
-      <div className="flex justify-center gap-5 mb-8 flex-wrap">
-        <div className="flex items-center gap-2 px-4 py-2 bg-white/90 rounded-full text-sm font-medium">
-          <div className="w-3 h-3 rounded-full bg-green-500"></div>
-          <span>Available (&lt;60%)</span>
+    <div className="max-w-7xl mx-auto p-6">
+      <div className="text-center mb-8">
+        <h1 className="text-4xl font-bold text-slate-800 mb-2">Storage Facility Map</h1>
+        <p className="text-slate-600">Interactive storage unit management system</p>
+      </div>
+
+      <div className="flex justify-center gap-4 mb-10 flex-wrap">
+        <div className="flex items-center gap-2.5 px-5 py-3 bg-gradient-to-r from-emerald-50 to-emerald-100 
+                      rounded-xl text-sm font-semibold shadow-md border border-emerald-200">
+          <div className="w-4 h-4 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
+          <span className="text-emerald-800">Available (&lt;60%)</span>
         </div>
-        <div className="flex items-center gap-2 px-4 py-2 bg-white/90 rounded-full text-sm font-medium">
-          <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-          <span>Occupied (60-89%)</span>
+        <div className="flex items-center gap-2.5 px-5 py-3 bg-gradient-to-r from-amber-50 to-amber-100 
+                      rounded-xl text-sm font-semibold shadow-md border border-amber-200">
+          <div className="w-4 h-4 rounded-full bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]"></div>
+          <span className="text-amber-800">Occupied (60-89%)</span>
         </div>
-        <div className="flex items-center gap-2 px-4 py-2 bg-white/90 rounded-full text-sm font-medium">
-          <div className="w-3 h-3 rounded-full bg-red-500"></div>
-          <span>Full (90%+)</span>
+        <div className="flex items-center gap-2.5 px-5 py-3 bg-gradient-to-r from-red-50 to-red-100 
+                      rounded-xl text-sm font-semibold shadow-md border border-red-200">
+          <div className="w-4 h-4 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]"></div>
+          <span className="text-red-800">Full (90%+)</span>
         </div>
         {loading && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-blue-100 rounded-full text-sm font-medium">
-            <div className="w-3 h-3 rounded-full bg-blue-500 animate-pulse"></div>
-            <span>Loading capacity data...</span>
+          <div className="flex items-center gap-2.5 px-5 py-3 bg-gradient-to-r from-blue-50 to-blue-100 
+                        rounded-xl text-sm font-semibold shadow-md border border-blue-200">
+            <div className="w-4 h-4 rounded-full bg-blue-500 animate-pulse"></div>
+            <span className="text-blue-800">Loading...</span>
           </div>
         )}
       </div>
 
-      {/* Facility Map */}
-      <div className="bg-transparent rounded-2xl p-10 relative min-h-[600px]">
-        <div className="grid grid-cols-7 grid-rows-3 gap-0.5 h-[500px] relative bg-gray-50 border-4 border-slate-800 p-1 w-full">
-          {/* Construction Materials Units 01-05 (Bottom row) */}
-          <div 
-            className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-red-500 bg-red-50 row-start-3 col-start-1"
-            onClick={() => !editMode && openShelfView('unit1')}
-            title={`Unit 01 - ${getCapacityInfo('Unit 01')}`}
-          >
-            {editMode && (
-              <div className="absolute top-1 right-1 flex gap-1 z-20">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-01'); }}
-                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Add Shelf"
-                >
-                  +
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-01'); }}
-                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Edit Unit"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-01'); }}
-                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Delete Unit"
-                >
-                  Del
-                </button>
-              </div>
-            )}
-            <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 01')}`}></div>
-            <div className="text-lg font-bold mb-1 text-slate-800">Unit 01</div>
-            <div className="text-sm text-gray-600 font-medium">Steel & Heavy Materials</div>
-          </div>
+      <div className="bg-gradient-to-br from-slate-100 via-slate-50 to-slate-100 rounded-3xl p-8 
+                    shadow-2xl border border-slate-200 relative min-h-[650px]">
+        <div className="grid grid-cols-7 grid-rows-3 gap-3 h-[550px] relative 
+                      bg-gradient-to-br from-slate-50 to-white 
+                      border-4 border-slate-700 rounded-xl p-4 shadow-inner">
           
-          <div 
-            className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-red-500 bg-red-50 row-start-3 col-start-2"
-            onClick={() => !editMode && openShelfView('unit2')}
-            title={`Unit 02 - ${getCapacityInfo('Unit 02')}`}
-          >
-            {editMode && (
-              <div className="absolute top-1 right-1 flex gap-1 z-20">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-02'); }}
-                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Add Shelf"
-                >
-                  +
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-02'); }}
-                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Edit Unit"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-02'); }}
-                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Delete Unit"
-                >
-                  Del
-                </button>
-              </div>
-            )}
-            <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 02')}`}></div>
-            <div className="text-lg font-bold mb-1 text-slate-800">Unit 02</div>
-            <div className="text-sm text-gray-600 font-medium">Lumber & Wood</div>
-          </div>
+          <StorageUnitCard unitId="unit-01" unitNumber="01" unitName="Steel & Heavy Materials" position="row-start-3 col-start-1" />
+          <StorageUnitCard unitId="unit-02" unitNumber="02" unitName="Lumber & Wood" position="row-start-3 col-start-2" />
+          <StorageUnitCard unitId="unit-03" unitNumber="03" unitName="Cement & Aggregates" position="row-start-3 col-start-3" />
+          <StorageUnitCard unitId="unit-04" unitNumber="04" unitName="Electrical & Plumbing" position="row-start-3 col-start-4" />
+          <StorageUnitCard unitId="unit-05" unitNumber="05" unitName="Paint & Coatings" position="row-start-3 col-start-5" />
+          <StorageUnitCard unitId="unit-06" unitNumber="06" unitName="Insulation & Foam" position="row-start-1 col-start-6" />
+          <StorageUnitCard unitId="unit-07" unitNumber="07" unitName="Miscellaneous" position="row-start-2 col-start-6" />
+          <StorageUnitCard unitId="unit-08" unitNumber="08" unitName="Roofing Materials" position="row-start-1 col-start-7" />
+          <StorageUnitCard unitId="unit-09" unitNumber="09" unitName="Hardware & Fasteners" position="row-start-2 col-start-7" />
           
-          <div 
-            className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-red-500 bg-red-50 row-start-3 col-start-3"
-            onClick={() => !editMode && openShelfView('unit3')}
-            title={`Unit 03 - ${getCapacityInfo('Unit 03')}`}
-          >
-            {editMode && (
-              <div className="absolute top-1 right-1 flex gap-1 z-20">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-03'); }}
-                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Add Shelf"
-                >
-                  +
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-03'); }}
-                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Edit Unit"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-03'); }}
-                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Delete Unit"
-                >
-                  Del
-                </button>
-              </div>
-            )}
-            <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 03')}`}></div>
-            <div className="text-lg font-bold mb-1 text-slate-800">Unit 03</div>
-            <div className="text-sm text-gray-600 font-medium">Cement & Aggregates</div>
+          <div className="bg-gradient-to-br from-slate-300 to-slate-400 border-2 border-slate-600 
+                        p-4 relative flex flex-col justify-center items-center text-center 
+                        min-h-[100px] shadow-lg rounded-lg row-start-3 col-start-6 col-span-2">
+            <div className="text-lg font-bold text-slate-800 mb-1">🏢</div>
+            <div className="text-sm text-slate-700 font-bold">Front Desk</div>
           </div>
-          
-          <div 
-            className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-red-500 bg-red-50 row-start-3 col-start-4"
-            onClick={() => !editMode && openShelfView('unit4')}
-            title={`Unit 04 - ${getCapacityInfo('Unit 04')}`}
-          >
-            {editMode && (
-              <div className="absolute top-1 right-1 flex gap-1 z-20">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-04'); }}
-                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Add Shelf"
-                >
-                  +
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-04'); }}
-                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Edit Unit"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-04'); }}
-                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Delete Unit"
-                >
-                  Del
-                </button>
-              </div>
-            )}
-            <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 04')}`}></div>
-            <div className="text-lg font-bold mb-1 text-slate-800">Unit 04</div>
-            <div className="text-sm text-gray-600 font-medium">Electrical & Plumbing</div>
-          </div>
-          
-          <div 
-            className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-orange-500 bg-orange-50 row-start-3 col-start-5"
-            onClick={() => !editMode && openShelfView('unit5')}
-            title={`Unit 05 - ${getCapacityInfo('Unit 05')}`}
-          >
-            {editMode && (
-              <div className="absolute top-1 right-1 flex gap-1 z-20">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-05'); }}
-                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Add Shelf"
-                >
-                  +
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-05'); }}
-                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Edit Unit"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-05'); }}
-                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Delete Unit"
-                >
-                  Del
-                </button>
-              </div>
-            )}
-            <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 05')}`}></div>
-            <div className="text-lg font-bold mb-1 text-slate-800">Unit 05</div>
-            <div className="text-sm text-gray-600 font-medium">Paint & Coatings</div>
-          </div>
-          
-          {/* Upper units */}
-          <div 
-            className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-orange-500 bg-orange-50 row-start-1 col-start-6"
-            onClick={() => !editMode && openShelfView('unit6')}
-            title={`Unit 06 - ${getCapacityInfo('Unit 06')}`}
-          >
-            {editMode && (
-              <div className="absolute top-1 right-1 flex gap-1 z-20">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-06'); }}
-                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Add Shelf"
-                >
-                  +
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-06'); }}
-                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Edit Unit"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-06'); }}
-                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Delete Unit"
-                >
-                  Del
-                </button>
-              </div>
-            )}
-            <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 06')}`}></div>
-            <div className="text-lg font-bold mb-1 text-slate-800">Unit 06</div>
-            <div className="text-sm text-gray-600 font-medium">Insulation & Foam</div>
-          </div>
-          
-          <div 
-            className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-orange-500 bg-orange-50 row-start-2 col-start-6"
-            onClick={() => !editMode && openShelfView('unit7')}
-            title={`Unit 07 - ${getCapacityInfo('Unit 07')}`}
-          >
-            {editMode && (
-              <div className="absolute top-1 right-1 flex gap-1 z-20">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-07'); }}
-                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Add Shelf"
-                >
-                  +
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-07'); }}
-                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Edit Unit"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-07'); }}
-                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Delete Unit"
-                >
-                  Del
-                </button>
-              </div>
-            )}
-            <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 07')}`}></div>
-            <div className="text-lg font-bold mb-1 text-slate-800">Unit 07</div>
-            <div className="text-sm text-gray-600 font-medium">Miscellaneous</div>
-          </div>
-          
-          <div 
-            className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-green-500 bg-green-50 row-start-1 col-start-7"
-            onClick={() => !editMode && openShelfView('unit8')}
-            title={`Unit 08 - ${getCapacityInfo('Unit 08')}`}
-          >
-            {editMode && (
-              <div className="absolute top-1 right-1 flex gap-1 z-20">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-08'); }}
-                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Add Shelf"
-                >
-                  +
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-08'); }}
-                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Edit Unit"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-08'); }}
-                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Delete Unit"
-                >
-                  Del
-                </button>
-              </div>
-            )}
-            <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 08')}`}></div>
-            <div className="text-lg font-bold mb-1 text-slate-800">Unit 08</div>
-            <div className="text-sm text-gray-600 font-medium">Roofing Materials</div>
-          </div>
-          
-          <div 
-            className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-green-500 bg-green-50 row-start-2 col-start-7"
-            onClick={() => !editMode && openShelfView('unit9')}
-            title={`Unit 09 - ${getCapacityInfo('Unit 09')}`}
-          >
-            {editMode && (
-              <div className="absolute top-1 right-1 flex gap-1 z-20">
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-09'); }}
-                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Add Shelf"
-                >
-                  +
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-09'); }}
-                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Edit Unit"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-09'); }}
-                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
-                  title="Delete Unit"
-                >
-                  Del
-                </button>
-              </div>
-            )}
-            <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 09')}`}></div>
-            <div className="text-lg font-bold mb-1 text-slate-800">Unit 09</div>
-            <div className="text-sm text-gray-600 font-medium">Hardware & Fasteners</div>
-          </div>
-          
-          {/* Front Desk - Static, non-clickable */}
-          <div className="bg-gray-300 border-2 border-gray-500 p-4 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm font-bold row-start-3 col-start-6 col-span-2">
-            <div className="text-sm text-gray-600 font-medium">Front Desk</div>
-          </div>
-          
         </div>
       </div>
 
-      {/* Shelf View Modal */}
-      <ShelfViewModal 
-        isOpen={isModalOpen}
-        onClose={closeShelfView}
-        selectedUnit={selectedUnit}
-        viewOnly={viewOnly}
-      />
-
-      {/* Edit Unit Modal */}
-      {(editingUnit || showAddUnit) && (
-        <EditUnitModal
-          unit={editingUnit}
-          isOpen={true}
-          onClose={handleCancelEdit}
-          onSave={handleSaveUnit}
-          isNew={showAddUnit}
-        />
+      {isModalOpen && selectedUnit && (
+        <ShelfViewModal isOpen={isModalOpen} onClose={closeShelfView} selectedUnit={selectedUnit} viewOnly={viewOnly} />
       )}
 
-      {/* Add Shelf Modal */}
+      {(editingUnit || showAddUnit) && (
+        <EditUnitModal unit={editingUnit} isOpen={true} onClose={handleCancelEdit} onSave={handleSaveUnit} isNew={showAddUnit} storageUnits={storageUnits} />
+      )}
+
       {addingShelfToUnit && (
-        <AddShelfModal
-          unitId={addingShelfToUnit}
-          isOpen={true}
-          onClose={handleCancelEdit}
-          onSave={handleSaveShelf}
-        />
+        <AddShelfModal unitId={addingShelfToUnit} isOpen={true} onClose={handleCancelEdit} onSave={handleSaveShelf} />
       )}
     </div>
   );
 };
 
-// Edit Unit Modal Component
-const EditUnitModal = ({ unit, isOpen, onClose, onSave, isNew }) => {
+const ShelfViewModal = ({ isOpen, onClose, selectedUnit, viewOnly }) => {
+  if (!isOpen || !selectedUnit) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[80]">
+      <div className="bg-white rounded-3xl p-8 max-w-5xl max-h-[90vh] overflow-y-auto relative shadow-2xl border border-slate-200">
+        <button className="absolute top-6 right-6 text-3xl text-slate-400 hover:text-red-500 transition-colors w-10 h-10 flex items-center justify-center hover:bg-red-50 rounded-full" onClick={onClose}>×</button>
+        
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold text-slate-900 mb-2">{selectedUnit.title}</h2>
+          <p className="text-slate-600">{selectedUnit.info.description}</p>
+          <div className="mt-2 text-sm text-slate-500">
+            Capacity: {selectedUnit.info.capacity} slots | Type: {selectedUnit.type}
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          {selectedUnit.shelves && selectedUnit.shelves.map((shelf, idx) => (
+            <div key={idx} className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-6 border border-slate-200 shadow-sm">
+              <h3 className="text-xl font-bold text-slate-900 mb-4">📚 {shelf.name}</h3>
+              <div className="space-y-3">
+                {shelf.rows.map((row, rowIdx) => (
+                  <div key={rowIdx} className="bg-white rounded-xl p-4 border border-slate-200">
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="font-semibold text-slate-700">{row.name}</span>
+                      <span className="text-sm text-slate-500">Capacity: {row.capacity} | Columns: {row.columns}</span>
+                    </div>
+                    <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${row.columns}, 1fr)` }}>
+                      {Array.from({ length: row.columns }).map((_, colIdx) => (
+                        <div key={colIdx} className="h-16 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg border border-blue-300 flex items-center justify-center text-xs font-semibold text-blue-800">
+                          Col {colIdx + 1}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const EditUnitModal = ({ unit, isOpen, onClose, onSave, isNew, storageUnits }) => {
   const [formData, setFormData] = useState({
     name: unit?.name || '',
     type: unit?.type || '',
@@ -682,12 +495,11 @@ const EditUnitModal = ({ unit, isOpen, onClose, onSave, isNew }) => {
     shelves: unit?.shelves || []
   });
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleSubmit = () => {
     onSave({
       ...unit,
       ...formData,
-      id: unit?.id || `unit-${String(storageUnits.length + 1).padStart(2, '0')}`
+      id: unit?.id || `unit-${String((storageUnits?.length || 0) + 1).padStart(2, '0')}`
     });
   };
 
@@ -713,27 +525,22 @@ const EditUnitModal = ({ unit, isOpen, onClose, onSave, isNew }) => {
   const addShelf = () => {
     setFormData({
       ...formData,
-      shelves: [...formData.shelves, { 
-        name: `Shelf ${formData.shelves.length + 1}`, 
-        rows: [{ name: 'Row 1', capacity: 96, columns: 4 }] 
-      }]
+      shelves: [...formData.shelves, { name: `Shelf ${formData.shelves.length + 1}`, rows: [{ name: 'Row 1', capacity: 96, columns: 4 }] }]
     });
   };
 
   const addRowToShelf = (shelfIndex) => {
     const updatedShelves = [...formData.shelves];
     const shelf = updatedShelves[shelfIndex];
-    const newRowNumber = shelf.rows.length + 1;
     updatedShelves[shelfIndex] = {
       ...shelf,
-      rows: [...shelf.rows, { name: `Row ${newRowNumber}`, capacity: 96, columns: 4 }]
+      rows: [...shelf.rows, { name: `Row ${shelf.rows.length + 1}`, capacity: 96, columns: 4 }]
     };
     setFormData({ ...formData, shelves: updatedShelves });
   };
 
   const removeShelf = (index) => {
-    const updatedShelves = formData.shelves.filter((_, i) => i !== index);
-    setFormData({ ...formData, shelves: updatedShelves });
+    setFormData({ ...formData, shelves: formData.shelves.filter((_, i) => i !== index) });
   };
 
   const removeRowFromShelf = (shelfIndex, rowIndex) => {
@@ -751,158 +558,78 @@ const EditUnitModal = ({ unit, isOpen, onClose, onSave, isNew }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[80]">
-      <div className="bg-white rounded-2xl p-8 max-w-4xl max-h-[90vh] overflow-y-auto relative animate-in zoom-in-95 duration-300">
-        <button 
-          className="absolute top-4 right-5 text-2xl cursor-pointer text-gray-500 hover:text-red-500 bg-none border-none p-1"
-          onClick={onClose}
-        >
-          ×
-        </button>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[80]">
+      <div className="bg-white rounded-3xl p-8 max-w-4xl max-h-[90vh] overflow-y-auto relative shadow-2xl border border-slate-200">
+        <button className="absolute top-6 right-6 text-3xl text-slate-400 hover:text-red-500 transition-colors w-10 h-10 flex items-center justify-center hover:bg-red-50 rounded-full" onClick={onClose}>×</button>
         
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">
-            {isNew ? 'Add New Storage Unit' : 'Edit Storage Unit'}
-          </h2>
-          <p className="text-gray-600 mt-1">
-            {isNew ? 'Create a new storage unit with shelves and configuration' : 'Modify the storage unit configuration'}
-          </p>
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold text-slate-900 mb-2">{isNew ? '✨ Add New Storage Unit' : '✏️ Edit Storage Unit'}</h2>
+          <p className="text-slate-600">{isNew ? 'Create a new storage unit with shelves and configuration' : 'Modify the storage unit configuration'}</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Basic Information */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Unit Name</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                required
-              />
+        <div className="space-y-8">
+          <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-6 border border-slate-200 shadow-sm">
+            <h3 className="text-lg font-bold text-slate-900 mb-4">📋 Basic Information</h3>
+            <div className="grid grid-cols-2 gap-5">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Unit Name</label>
+                <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white" placeholder="e.g., Steel & Heavy Materials" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Type</label>
+                <input type="text" value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value })} className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white" placeholder="e.g., Heavy Duty" />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-              <input
-                type="text"
-                value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                required
-              />
+            <div className="mt-5">
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Total Capacity</label>
+              <input type="number" value={formData.capacity} onChange={(e) => setFormData({ ...formData, capacity: parseInt(e.target.value) || 0 })} className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white" min="1" placeholder="e.g., 384" />
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Total Capacity</label>
-            <input
-              type="number"
-              value={formData.capacity}
-              onChange={(e) => setFormData({ ...formData, capacity: parseInt(e.target.value) || 0 })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              min="1"
-              required
-            />
-          </div>
-
-          {/* Shelves Configuration */}
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Shelves Configuration</h3>
-              <button
-                type="button"
-                onClick={addShelf}
-                className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-              >
-                + Add Shelf
-              </button>
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-200 shadow-sm">
+            <div className="flex justify-between items-center mb-5">
+              <h3 className="text-lg font-bold text-slate-900">📚 Shelves Configuration</h3>
+              <button type="button" onClick={addShelf} className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-700 font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-105">+ Add Shelf</button>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-5">
               {formData.shelves.map((shelf, shelfIndex) => (
-                <div key={shelfIndex} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                  <div className="flex justify-between items-start mb-3">
+                <div key={shelfIndex} className="border-2 border-slate-200 rounded-xl p-5 bg-white shadow-md">
+                  <div className="flex justify-between items-start mb-4">
                     <div className="flex-1 mr-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Name</label>
-                      <input
-                        type="text"
-                        value={shelf.name}
-                        onChange={(e) => updateShelf(shelfIndex, 'name', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="e.g., Round Tubes"
-                      />
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Shelf Name</label>
+                      <input type="text" value={shelf.name} onChange={(e) => updateShelf(shelfIndex, 'name', e.target.value)} className="w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all" placeholder="e.g., Round Tubes" />
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => removeShelf(shelfIndex)}
-                      className="text-red-600 hover:text-red-800 text-sm mt-6"
-                    >
-                      Remove Shelf
-                    </button>
+                    <button type="button" onClick={() => removeShelf(shelfIndex)} className="text-red-600 hover:text-white hover:bg-red-500 px-3 py-2 rounded-lg text-sm font-semibold transition-all mt-7">🗑️ Remove</button>
                   </div>
 
-                  {/* Rows for this shelf */}
-                  <div className="ml-4">
-                    <div className="flex justify-between items-center mb-2">
-                      <h4 className="font-medium text-gray-900">Rows</h4>
-                      <button
-                        type="button"
-                        onClick={() => addRowToShelf(shelfIndex)}
-                        className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-                      >
-                        + Add Row
-                      </button>
+                  <div className="ml-2 mt-4">
+                    <div className="flex justify-between items-center mb-3">
+                      <h4 className="font-semibold text-slate-900">Rows</h4>
+                      <button type="button" onClick={() => addRowToShelf(shelfIndex)} className="px-3 py-1 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600 font-semibold shadow-md hover:shadow-lg transition-all">+ Add Row</button>
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {shelf.rows && shelf.rows.map((row, rowIndex) => (
-                        <div key={rowIndex} className="border border-gray-300 rounded p-3 bg-white">
-                          <div className="flex justify-between items-start mb-2">
-                            <span className="text-sm font-medium text-gray-700">Row {rowIndex + 1}</span>
+                        <div key={rowIndex} className="border border-slate-300 rounded-lg p-4 bg-slate-50">
+                          <div className="flex justify-between items-start mb-3">
+                            <span className="text-sm font-semibold text-slate-700">Row {rowIndex + 1}</span>
                             {shelf.rows.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => removeRowFromShelf(shelfIndex, rowIndex)}
-                                className="text-red-600 hover:text-red-800 text-xs"
-                              >
-                                Remove
-                              </button>
+                              <button type="button" onClick={() => removeRowFromShelf(shelfIndex, rowIndex)} className="text-red-600 hover:text-red-800 text-xs font-semibold">Remove</button>
                             )}
                           </div>
-
-                          <div className="grid grid-cols-3 gap-2">
+                          <div className="grid grid-cols-3 gap-3">
                             <div>
-                              <label className="block text-xs text-gray-600 mb-1">Name</label>
-                              <input
-                                type="text"
-                                value={row.name}
-                                onChange={(e) => updateRow(shelfIndex, rowIndex, 'name', e.target.value)}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Row 1"
-                              />
+                              <label className="block text-xs font-semibold text-slate-600 mb-1">Name</label>
+                              <input type="text" value={row.name} onChange={(e) => updateRow(shelfIndex, rowIndex, 'name', e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white" placeholder="Row 1" />
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-600 mb-1">Capacity</label>
-                              <input
-                                type="number"
-                                value={row.capacity}
-                                onChange={(e) => updateRow(shelfIndex, rowIndex, 'capacity', e.target.value)}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                min="1"
-                                placeholder="96"
-                              />
+                              <label className="block text-xs font-semibold text-slate-600 mb-1">Capacity</label>
+                              <input type="number" value={row.capacity} onChange={(e) => updateRow(shelfIndex, rowIndex, 'capacity', e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white" min="1" placeholder="96" />
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-600 mb-1">Columns</label>
-                              <input
-                                type="number"
-                                value={row.columns}
-                                onChange={(e) => updateRow(shelfIndex, rowIndex, 'columns', e.target.value)}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                min="1"
-                                placeholder="4"
-                              />
+                              <label className="block text-xs font-semibold text-slate-600 mb-1">Columns</label>
+                              <input type="number" value={row.columns} onChange={(e) => updateRow(shelfIndex, rowIndex, 'columns', e.target.value)} className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white" min="1" placeholder="4" />
                             </div>
                           </div>
                         </div>
@@ -914,35 +641,21 @@ const EditUnitModal = ({ unit, isOpen, onClose, onSave, isNew }) => {
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              {isNew ? 'Create Unit' : 'Save Changes'}
-            </button>
+          <div className="flex justify-end gap-4 pt-6 border-t-2 border-slate-200">
+            <button type="button" onClick={onClose} className="px-6 py-3 text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 font-semibold transition-all hover:scale-105 shadow-md">Cancel</button>
+            <button type="button" onClick={handleSubmit} className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-105">{isNew ? '✨ Create Unit' : '💾 Save Changes'}</button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
 };
 
-// Add Shelf Modal Component
 const AddShelfModal = ({ unitId, isOpen, onClose, onSave }) => {
   const [shelfName, setShelfName] = useState('');
   const [rows, setRows] = useState([{ name: 'Row 1', capacity: 96, columns: 4 }]);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleSubmit = () => {
     if (!shelfName.trim()) {
       alert('Please enter a shelf name');
       return;
@@ -951,15 +664,11 @@ const AddShelfModal = ({ unitId, isOpen, onClose, onSave }) => {
       alert('Please add at least one row');
       return;
     }
-    onSave({
-      name: shelfName.trim(),
-      rows: rows
-    });
+    onSave({ name: shelfName.trim(), rows: rows });
   };
 
   const addRow = () => {
-    const newRowNumber = rows.length + 1;
-    setRows([...rows, { name: `Row ${newRowNumber}`, capacity: 96, columns: 4 }]);
+    setRows([...rows, { name: `Row ${rows.length + 1}`, capacity: 96, columns: 4 }]);
   };
 
   const updateRow = (index, field, value) => {
@@ -977,99 +686,49 @@ const AddShelfModal = ({ unitId, isOpen, onClose, onSave }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[80]">
-      <div className="bg-white rounded-2xl p-8 max-w-2xl max-h-[90vh] overflow-y-auto relative animate-in zoom-in-95 duration-300">
-        <button 
-          className="absolute top-4 right-5 text-2xl cursor-pointer text-gray-500 hover:text-red-500 bg-none border-none p-1"
-          onClick={onClose}
-        >
-          ×
-        </button>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[80]">
+      <div className="bg-white rounded-3xl p-8 max-w-2xl max-h-[90vh] overflow-y-auto relative shadow-2xl border border-slate-200">
+        <button className="absolute top-6 right-6 text-3xl text-slate-400 hover:text-red-500 transition-colors w-10 h-10 flex items-center justify-center hover:bg-red-50 rounded-full" onClick={onClose}>×</button>
         
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">
-            Add New Shelf to Unit {unitId.split('-')[1]}
-          </h2>
-          <p className="text-gray-600 mt-1">
-            Configure the shelf name and row details
-          </p>
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold text-slate-900 mb-2">📚 Add New Shelf to Unit {unitId.split('-')[1]}</h2>
+          <p className="text-slate-600">Configure the shelf name and row details</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Shelf Name */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Shelf Name</label>
-            <input
-              type="text"
-              value={shelfName}
-              onChange={(e) => setShelfName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="e.g., Round Tubes"
-              required
-            />
+        <div className="space-y-8">
+          <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-6 border border-slate-200 shadow-sm">
+            <label className="block text-sm font-semibold text-slate-700 mb-3">Shelf Name</label>
+            <input type="text" value={shelfName} onChange={(e) => setShelfName(e.target.value)} className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-white" placeholder="e.g., Round Tubes" />
           </div>
 
-          {/* Rows Configuration */}
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Rows Configuration</h3>
-              <button
-                type="button"
-                onClick={addRow}
-                className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-              >
-                + Add Row
-              </button>
+          <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl p-6 border border-emerald-200 shadow-sm">
+            <div className="flex justify-between items-center mb-5">
+              <h3 className="text-lg font-bold text-slate-900">Rows Configuration</h3>
+              <button type="button" onClick={addRow} className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-700 font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-105">+ Add Row</button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-4">
               {rows.map((row, index) => (
-                <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                  <div className="flex justify-between items-start mb-3">
-                    <h4 className="font-medium text-gray-900">Row {index + 1}</h4>
+                <div key={index} className="border-2 border-slate-200 rounded-xl p-5 bg-white shadow-md">
+                  <div className="flex justify-between items-start mb-4">
+                    <h4 className="font-semibold text-slate-900">Row {index + 1}</h4>
                     {rows.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeRow(index)}
-                        className="text-red-600 hover:text-red-800 text-sm"
-                      >
-                        Remove
-                      </button>
+                      <button type="button" onClick={() => removeRow(index)} className="text-red-600 hover:text-white hover:bg-red-500 px-3 py-1 rounded-lg text-sm font-semibold transition-all">Remove</button>
                     )}
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Row Name</label>
-                      <input
-                        type="text"
-                        value={row.name}
-                        onChange={(e) => updateRow(index, 'name', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="e.g., Row 1"
-                      />
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Row Name</label>
+                      <input type="text" value={row.name} onChange={(e) => updateRow(index, 'name', e.target.value)} className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-white" placeholder="e.g., Row 1" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
-                      <input
-                        type="number"
-                        value={row.capacity}
-                        onChange={(e) => updateRow(index, 'capacity', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        min="1"
-                        placeholder="96"
-                      />
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Capacity</label>
+                      <input type="number" value={row.capacity} onChange={(e) => updateRow(index, 'capacity', e.target.value)} className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-white" min="1" placeholder="96" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Columns</label>
-                      <input
-                        type="number"
-                        value={row.columns}
-                        onChange={(e) => updateRow(index, 'columns', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        min="1"
-                        placeholder="4"
-                      />
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Columns</label>
+                      <input type="number" value={row.columns} onChange={(e) => updateRow(index, 'columns', e.target.value)} className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-white" min="1" placeholder="4" />
                     </div>
                   </div>
                 </div>
@@ -1077,23 +736,11 @@ const AddShelfModal = ({ unitId, isOpen, onClose, onSave }) => {
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-            >
-              Add Shelf
-            </button>
+          <div className="flex justify-end gap-4 pt-6 border-t-2 border-slate-200">
+            <button type="button" onClick={onClose} className="px-6 py-3 text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 font-semibold transition-all hover:scale-105 shadow-md">Cancel</button>
+            <button type="button" onClick={handleSubmit} className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-700 font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-105">✨ Add Shelf</button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
