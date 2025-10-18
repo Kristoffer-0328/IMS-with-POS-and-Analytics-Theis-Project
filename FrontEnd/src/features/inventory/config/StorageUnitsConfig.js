@@ -7,61 +7,61 @@ export const STORAGE_UNITS = [
     id: 'unit-01',
     title: 'Unit 01 - Steel & Heavy Materials',
     type: 'Heavy Duty Storage',
-    capacity: 140, // Total cells (32 + 48 + 28 + 32)
+    capacity: 3936, // Total capacity: Round Tubes (768) + Square Bars (1152) + Channels (1456) + Angle Irons (560)
     shelves: [
       {
         name: "Round Tubes",
         rows: [
-          { name: "Row 1", capacity: 44, columns: 4 },  // Round Tubes - 22 pcs per cell
-          { name: "Row 2", capacity: 44, columns: 4 },
-          { name: "Row 3", capacity: 44, columns: 4 },
-          { name: "Row 4", capacity: 44, columns: 4 },
-          { name: "Row 5", capacity: 44, columns: 4 },
-          { name: "Row 6", capacity: 44, columns: 4 },
-          { name: "Row 7", capacity: 44, columns: 4 },
-          { name: "Row 8", capacity: 44, columns: 4 }
+           { name: "Row 1", capacity: 96, columns: 4 },  // 24 pieces per cell
+          { name: "Row 2", capacity: 96, columns: 4 },  // 24 pieces per cell
+          { name: "Row 3", capacity: 96, columns: 4 },  // 24 pieces per cell
+          { name: "Row 4", capacity: 96, columns: 4 },  // 24 pieces per cell
+          { name: "Row 5", capacity: 96, columns: 4 },  // 24 pieces per cell
+          { name: "Row 6", capacity: 96, columns: 4 },  // 24 pieces per cell
+          { name: "Row 7", capacity: 96, columns: 4 },  // 24 pieces per cell
+          { name: "Row 8", capacity: 96, columns: 4 } 
         ]
       },
       {
         name: "Square Bars",
         rows: [
-          { name: "Row 1", capacity: 22, columns: 4 },  // Square Bars - 11 pcs per cell
-          { name: "Row 2", capacity: 22, columns: 4 },
-          { name: "Row 3", capacity: 22, columns: 4 },
-          { name: "Row 4", capacity: 22, columns: 4 },
-          { name: "Row 5", capacity: 22, columns: 4 },
-          { name: "Row 6", capacity: 22, columns: 4 },
-          { name: "Row 7", capacity: 22, columns: 4 },
-          { name: "Row 8", capacity: 22, columns: 4 },
-          { name: "Row 9", capacity: 22, columns: 4 },
-          { name: "Row 10", capacity: 22, columns: 4 },
-          { name: "Row 11", capacity: 22, columns: 4 },
-          { name: "Row 12", capacity: 22, columns: 4 }
+          { name: "Row 1", capacity: 96, columns: 4 },  // Square Bars - 24 pcs per cell
+          { name: "Row 2", capacity: 96, columns: 4 },
+          { name: "Row 3", capacity: 96, columns: 4 },
+          { name: "Row 4", capacity: 96, columns: 4 },
+          { name: "Row 5", capacity: 96, columns: 4 },
+          { name: "Row 6", capacity: 96, columns: 4 },
+          { name: "Row 7", capacity: 96, columns: 4 },
+          { name: "Row 8", capacity: 96, columns: 4 },
+          { name: "Row 9", capacity: 96, columns: 4 },
+          { name: "Row 10", capacity: 96, columns: 4 },
+          { name: "Row 11", capacity: 96, columns: 4 },
+          { name: "Row 12", capacity: 96, columns: 4 }
         ]
       },
       {
         name: "Channels & Flat Bars",
         rows: [
-          { name: "Row 1", capacity: 14, columns: 4 },   // C-Channels - 7 pcs per cell
-          { name: "Row 2", capacity: 14, columns: 4 },
-          { name: "Row 3", capacity: 70, columns: 4 },  // Flat Bars - 35 pcs per cell
-          { name: "Row 4", capacity: 70, columns: 4 },
-          { name: "Row 5", capacity: 70, columns: 4 },
-          { name: "Row 6", capacity: 70, columns: 4 },
-          { name: "Row 7", capacity: 70, columns: 4 }
+          { name: "Row 1", capacity: 28, columns: 4 },   // C-Channels - 7 pcs per cell
+          { name: "Row 2", capacity: 28, columns: 4 },
+          { name: "Row 3", capacity: 280, columns: 4 },  // Flat Bars - 35 pcs per cell
+          { name: "Row 4", capacity: 280, columns: 4 },
+          { name: "Row 5", capacity: 280, columns: 4 },
+          { name: "Row 6", capacity: 280, columns: 4 },
+          { name: "Row 7", capacity: 280, columns: 4 }
         ]
       },
       {
         name: "Angle Irons & L-Beams",
         rows: [
-          { name: "Row 1", capacity: 30, columns: 4 },  // Angle Irons - 15 pcs per cell
-          { name: "Row 2", capacity: 30, columns: 4 },
-          { name: "Row 3", capacity: 30, columns: 4 },
-          { name: "Row 4", capacity: 30, columns: 4 },
-          { name: "Row 5", capacity: 40, columns: 4 },  // L-Beams - 20 pcs per cell
-          { name: "Row 6", capacity: 40, columns: 4 },
-          { name: "Row 7", capacity: 40, columns: 4 },
-          { name: "Row 8", capacity: 40, columns: 4 }
+          { name: "Row 1", capacity: 60, columns: 4 },  // Angle Irons - 15 pcs per cell
+          { name: "Row 2", capacity: 60, columns: 4 },
+          { name: "Row 3", capacity: 60, columns: 4 },
+          { name: "Row 4", capacity: 60, columns: 4 },
+          { name: "Row 5", capacity: 80, columns: 4 },  // L-Beams - 20 pcs per cell
+          { name: "Row 6", capacity: 80, columns: 4 },
+          { name: "Row 7", capacity: 80, columns: 4 },
+          { name: "Row 8", capacity: 80, columns: 4 }
         ]
       }
     ]
@@ -133,21 +133,21 @@ export const STORAGE_UNITS = [
     id: 'unit-03',
     title: 'Unit 03 - Cement & Aggregates',
     type: 'Storage Unit',
-    capacity: 300, // 15 columns × 10 rows = 150 pallets
+    capacity: 1200, // 10 rows × 120 bags per row (15 columns × 8 bags per column) = 1200 bags
     shelves: [
       {
         name: "Zone 1",
         rows: [
-          { name: "Row 1", capacity: 16, columns: 15 },  // 8 bags per pallet
-          { name: "Row 2", capacity: 16, columns: 15 },
-          { name: "Row 3", capacity: 16, columns: 15 },
-          { name: "Row 4", capacity: 16, columns: 15 },
-          { name: "Row 5", capacity: 16, columns: 15 },
-          { name: "Row 6", capacity: 16, columns: 15 },
-          { name: "Row 7", capacity: 16, columns: 15 },
-          { name: "Row 8", capacity: 16, columns: 15 },
-          { name: "Row 9", capacity: 16, columns: 15 },
-          { name: "Row 10", capacity: 16, columns: 15 }
+          { name: "Row 1", capacity: 120, columns: 15 },  // 15 columns × 8 bags per column = 120 bags per row
+          { name: "Row 2", capacity: 120, columns: 15 },
+          { name: "Row 3", capacity: 120, columns: 15 },
+          { name: "Row 4", capacity: 120, columns: 15 },
+          { name: "Row 5", capacity: 120, columns: 15 },
+          { name: "Row 6", capacity: 120, columns: 15 },
+          { name: "Row 7", capacity: 120, columns: 15 },
+          { name: "Row 8", capacity: 120, columns: 15 },
+          { name: "Row 9", capacity: 120, columns: 15 },
+          { name: "Row 10", capacity: 120, columns: 15 }
         ]
       }
     ]

@@ -908,7 +908,8 @@ const MobileReceive = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
+    <>
+      <div className="min-h-screen bg-gray-50 pb-24">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 py-4">
@@ -1162,7 +1163,7 @@ const MobileReceive = () => {
                   <input
                     type="number"
                     min="0"
-                    value={currentProduct.acceptedQty}
+                    value={currentProduct.acceptedQty === 0 ? '' : currentProduct.acceptedQty}
                     onChange={(e) => handleProductChange(currentProductIndex, 'acceptedQty', e.target.value)}
                     className="w-full px-4 py-3 text-lg font-semibold border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="0"
@@ -1177,7 +1178,7 @@ const MobileReceive = () => {
                   <input
                     type="number"
                     min="0"
-                    value={currentProduct.rejectedQty}
+                    value={currentProduct.rejectedQty === 0 ? '' : currentProduct.rejectedQty}
                     onChange={(e) => handleProductChange(currentProductIndex, 'rejectedQty', e.target.value)}
                     className="w-full px-4 py-3 text-lg font-semibold border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     placeholder="0"
@@ -1560,89 +1561,82 @@ const MobileReceive = () => {
         </div>
       )}
 
-      {/* Bottom Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-20">
-        <div className="max-w-2xl mx-auto px-4 py-3">
-          {currentStep < 3 ? (
-            <div className="flex gap-3">
-              {(currentStep > 0 || (currentStep === 1 && currentProductIndex > 0)) && (
-                <button
-                  onClick={() => handleStepNavigation('back')}
-                  className="px-6 py-3 bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-gray-200 transition-colors flex items-center"
-                >
-                  <ChevronLeft className="w-5 h-5 mr-1" />
-                  {currentStep === 1 && currentProductIndex > 0 ? 'Previous Product' : 'Back'}
-                </button>
-              )}
-              <button
-                onClick={() => handleStepNavigation('next')}
-                className="flex-1 px-6 py-3 text-white font-medium rounded-lg transition-colors flex items-center justify-center"
-                style={{ backgroundColor: '#EC6923' }}
-              >
-                {currentStep === 0 ? 'Start Inspection' : 
-                 currentStep === 1 ? (currentProductIndex < selectedProductsForInspection.length - 1 ? 'Next Product' : 'Continue to Info') :
-                 'Continue to Summary'}
-                <ChevronRight className="w-5 h-5 ml-1" />
-              </button>
-            </div>
-          ) : (
-            <div className="flex gap-3">
-              <button
-                onClick={() => window.print()}
-                className="flex-1 px-4 py-3 bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Print
-              </button>
-              <button
-                onClick={() => {
-                  if (window.confirm('Are you sure you want to start over?')) {
-                    window.location.reload();
-                  }
-                }}
-                className="flex-1 px-4 py-3 bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Start Over
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={isSubmitting}
-                className={`flex-1 px-4 py-3 text-white font-medium rounded-lg transition-colors ${
-                  isSubmitting 
-                    ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
-                    : 'bg-orange-500 hover:bg-orange-600'
-                }`}
-              >
-                {isSubmitting ? (
-                  <div className="flex flex-col items-center justify-center">
-                    <div className="flex items-center mb-2">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                      Processing...
-                    </div>
-                    {processingStep && (
-                      <div className="text-xs text-gray-200">
-                        {processingStep}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  'Submit Receipt'
-                )}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <style jsx>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fadeIn {
-          animation: fadeIn 0.3s ease-in-out;
-        }
-      `}</style>
+      {/* Removed vanilla CSS for bottom bar, all responsive behavior is now handled by Tailwind classes */}
     </div>
+
+    {/* Bottom Action Bar */}
+    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+      <div className="max-w-2xl mx-auto px-4 py-3">
+        {currentStep < 3 ? (
+          <div className="flex gap-3">
+            {(currentStep > 0 || (currentStep === 1 && currentProductIndex > 0)) && (
+              <button
+                onClick={() => handleStepNavigation('back')}
+                className="px-6 py-3 bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-gray-200 transition-colors flex items-center"
+              >
+                <ChevronLeft className="w-5 h-5 mr-1" />
+                {currentStep === 1 && currentProductIndex > 0 ? 'Previous Product' : 'Back'}
+              </button>
+            )}
+            <button
+              onClick={() => handleStepNavigation('next')}
+              className="flex-1 px-6 py-3 text-white font-medium rounded-lg transition-colors flex items-center justify-center"
+              style={{ backgroundColor: '#EC6923' }}
+            >
+              {currentStep === 0 ? 'Start Inspection' : 
+               currentStep === 1 ? (currentProductIndex < selectedProductsForInspection.length - 1 ? 'Next Product' : 'Continue to Info') :
+               'Continue to Summary'}
+              <ChevronRight className="w-5 h-5 ml-1" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-3">
+            <button
+              onClick={() => window.print()}
+              className="flex-1 px-4 py-3 bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              Print
+            </button>
+            <button
+              onClick={() => {
+                if (window.confirm('Are you sure you want to start over?')) {
+                  window.location.reload();
+                }
+              }}
+              className="flex-1 px-4 py-3 bg-gray-100 text-gray-800 font-medium rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              Start Over
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className={`flex-1 px-4 py-3 text-white font-medium rounded-lg transition-colors ${
+                isSubmitting 
+                  ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
+                  : 'bg-orange-500 hover:bg-orange-600'
+              }`}
+            >
+              {isSubmitting ? (
+                <div className="flex flex-col items-center justify-center">
+                  <div className="flex items-center mb-2">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    Processing...
+                  </div>
+                  {processingStep && (
+                    <div className="text-xs text-gray-200">
+                      {processingStep}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                'Submit Receipt'
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+    </>
   );
 };
 

@@ -147,8 +147,8 @@ const generateRestockingRequest = async (productData, variantIndex, locationInfo
   }
 };
 
-// Helper function to generate notification
-const generateNotification = async (restockingRequest, currentUser) => {
+// Helper function to generate restocking notification
+const generateRestockingNotification = async (restockingRequest, currentUser) => {
   try {
     if (!restockingRequest) return null;
     
@@ -169,9 +169,9 @@ const generateNotification = async (restockingRequest, currentUser) => {
         location: restockingRequest.location.fullPath,
         variantDetails: restockingRequest.variantDetails
       },
-      targetRoles: ['inventory_manager', 'admin', 'manager'], // Who should see this notification
+      targetRoles: ['InventoryManager', 'Admin'], // Who should see this notification
       triggeredBy: restockingRequest.triggeredByUser,
-      triggeredByName: restockingRequest.triggeredByUserName,
+      triggeredByName: restockingRequest.triggeredByUserName, 
       relatedRequestId: restockingRequest.requestId,
       isRead: false,
       status: 'active',
@@ -184,7 +184,87 @@ const generateNotification = async (restockingRequest, currentUser) => {
 
     return notification;
   } catch (error) {
-    console.error('Error generating notification:', error);
+    console.error('Error generating restocking notification:', error);
+    return null;
+  }
+};
+
+// Helper function to generate sale notification
+const generateSaleNotification = async (transactionData, currentUser) => {
+  try {
+    if (!transactionData) return null;
+    
+    const notificationId = `SALE-NOT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const notification = {
+      notificationId,
+      type: 'sale_completed',
+      priority: 'normal',
+      title: '�Sale Completed',
+      message: `Sale ${transactionData.transactionId} completed for ₱${transactionData.totals.total.toLocaleString()}`,
+      details: {
+        transactionId: transactionData.transactionId,
+        totalAmount: transactionData.totals.total,
+        itemCount: transactionData.items.length,
+        paymentMethod: transactionData.paymentMethod,
+        customerInfo: transactionData.customerInfo,
+        items: transactionData.items.map(item => ({
+          productName: item.productName,
+          variantName: item.variantName,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalPrice,
+          category: item.category
+        }))
+      },
+      targetRoles: ['InventoryManager', 'Admin'], // Who should see this notification
+      triggeredBy: currentUser?.uid || 'system',
+      triggeredByName: currentUser?.displayName || currentUser?.email || 'POS System',
+      relatedTransactionId: transactionData.transactionId,
+      isRead: false,
+      status: 'active',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+    
+    // Save to notifications collection
+    await addDoc(collection(db, 'Notifications'), notification);
+
+    return notification;
+  } catch (error) {
+    console.error('Error generating sale notification:', error);
+    return null;
+  }
+};
+
+// Test function to manually create a notification (call from browser console)
+window.testNotification = async () => {
+  try {
+    const testNotification = {
+      notificationId: `TEST-${Date.now()}`,
+      type: 'sale_completed',
+      priority: 'normal',
+      title: '🧪 Test Notification',
+      message: 'This is a test notification to verify database write',
+      details: {
+        test: true,
+        timestamp: new Date().toISOString()
+      },
+      targetRoles: ['InventoryManager', 'admin'],
+      triggeredBy: 'test_system',
+      triggeredByName: 'Test System',
+      isRead: false,
+      status: 'active',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+
+    const docRef = await addDoc(collection(db, 'Notifications'), testNotification);
+    console.log('✅ Test notification saved with ID:', docRef.id);
+    
+    return docRef.id;
+  } catch (error) {
+    console.error('❌ Test notification failed:', error);
     return null;
   }
 };
@@ -558,13 +638,6 @@ export default function Pos_NewSale() {
       
       // Determine if product has actual variants (different sizes/units)
       group.hasVariants = group.variants.length > 1;
-      
-      console.log('Processed group:', {
-        name: group.name,
-        variants: group.variants.length,
-        allLocations: group.allLocations.length,
-        hasVariants: group.hasVariants
-      });
     });
 
     return Object.values(grouped);
@@ -678,20 +751,13 @@ export default function Pos_NewSale() {
 
   // --- Product Selection Logic ---
   const handleAddProduct = useCallback((productGroup) => {
-    console.log('handleAddProduct called with:', productGroup);
-    
     if (!productGroup || !productGroup.variants || isProcessing) {
         console.warn("Add product blocked:", { productGroup, isProcessing });
         return;
     }
 
-    console.log('Product has variants:', productGroup.hasVariants);
-    console.log('Variant count:', productGroup.variants.length);
-    console.log('All locations:', productGroup.allLocations);
-
     // If product has variants (different sizes/units), show variant selection
     if (productGroup.hasVariants && productGroup.variants.length > 1) {
-        console.log('Opening variant modal');
         setQuantity(1);
         setSelectedProductForModal(productGroup);
         setActiveVariantIndex(0);
@@ -700,17 +766,13 @@ export default function Pos_NewSale() {
     // If only one variant, proceed directly to location selection or quick add
     else if (productGroup.variants.length === 1) {
         const variant = productGroup.variants[0];
-        console.log('Single variant:', variant);
         
         // Check if this variant exists in multiple locations
         const variantLocations = productGroup.allLocations?.filter(loc => 
           loc.size === variant.size && loc.unit === variant.unit
         ) || [];
         
-        console.log('Variant locations found:', variantLocations.length);
-        
         if (variantLocations.length > 1) {
-          console.log('Multiple locations - opening quick quantity modal first');
           // Multiple locations - show location picker after quantity selection
           setPendingQuantity(1);
           setSelectedProductForModal(productGroup); // For location modal later
@@ -721,7 +783,6 @@ export default function Pos_NewSale() {
           });
           setQuickQuantityModalOpen(true); // First ask quantity
         } else {
-          console.log('Single location - opening quick quantity modal');
           // Single location - show quick quantity modal
           const cartQty = getCartItemQuantity(productGroup.id, variant.variantId);
           const availableQty = (variant.totalQuantity || variant.quantity) - cartQty;
@@ -812,7 +873,6 @@ export default function Pos_NewSale() {
     // Check if locationData is an array (multi-location) or single object
     if (Array.isArray(locationData)) {
       // Multi-location allocation
-      console.log('Multi-location selection:', locationData);
       
       locationData.forEach(locationVariant => {
         const displayName = locationVariant.size || locationVariant.unit 
@@ -1031,6 +1091,13 @@ export default function Pos_NewSale() {
         const transactionRef = doc(db, 'posTransactions', receiptNumber);
         await setDoc(transactionRef, transactionData);
 
+        // Generate sale notification for inventory manager
+        try {
+          await generateSaleNotification(transactionData, currentUser);
+        } catch (notificationError) {
+          console.error('Failed to generate sale notification:', notificationError);
+          // Don't fail the transaction if notification fails
+        }
 
         // Collect analytics
         collectAnalyticsData({

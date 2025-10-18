@@ -2,54 +2,75 @@ import React, { useState, useEffect } from 'react';
 import { getFirestore, collection, getDocs } from 'firebase/firestore';
 import app from '../../../../FirebaseConfig';
 import ShelfViewModal from './ShelfViewModal';
-import { STORAGE_UNITS } from '../../config/StorageUnitsConfig';
+import { getStorageUnits, updateStorageUnit, deleteStorageUnit, createStorageUnit } from '../../../../services/firebase/StorageServices';
 
-const StorageFacilityInteractiveMap = ({ viewOnly = false }) => {
+const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onChangesMade }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState(null);
   const [unitCapacities, setUnitCapacities] = useState({});
   const [loading, setLoading] = useState(true);
+  const [storageUnits, setStorageUnits] = useState([]);
+  const [editingUnit, setEditingUnit] = useState(null);
+  const [showAddUnit, setShowAddUnit] = useState(false);
+  const [addingShelfToUnit, setAddingShelfToUnit] = useState(null);
   const db = getFirestore(app);
 
-  // Transform STORAGE_UNITS into a lookup object for modal display
-  const shelfLayouts = STORAGE_UNITS.reduce((acc, unit) => {
+  // Transform storage units into a lookup object for modal display
+  const shelfLayouts = storageUnits.reduce((acc, unit) => {
     // Map unit-01 to unit1, unit-02 to unit2, etc. (remove hyphen and leading zero)
     const unitNumber = unit.id.split('-')[1]; // Gets "01", "02", etc.
     const unitKey = 'unit' + parseInt(unitNumber); // Converts to "unit1", "unit2", etc.
     acc[unitKey] = {
-      title: unit.title,
+      title: `Unit ${unitNumber} - ${unit.name}`,
       type: unit.type,
       shelves: unit.shelves,
       info: {
         capacity: unit.capacity,
-        description: `${unit.title} storage area`
+        description: `${unit.name} storage area`
       }
     };
     return acc;
   }, {});
 
+  // Fetch storage units from database
+  const fetchStorageUnits = async () => {
+    try {
+      const result = await getStorageUnits();
+      if (result.success) {
+        setStorageUnits(result.data);
+      } else {
+        console.error('Error fetching storage units:', result.error);
+      }
+    } catch (error) {
+      console.error('Error fetching storage units:', error);
+    }
+  };
+
   // Fetch unit capacities on component mount
   useEffect(() => {
-    fetchUnitCapacities();
+    fetchStorageUnits();
   }, []);
+
+  // Fetch capacities when storage units are loaded
+  useEffect(() => {
+    if (storageUnits.length > 0) {
+      fetchUnitCapacities();
+    }
+  }, [storageUnits]);
 
   // Calculate unit capacity based on actual products vs total slots
   const fetchUnitCapacities = async () => {
     try {
       const capacities = {};
       
-      // Define total slots for each unit based on shelf layout
-      const unitTotalSlots = {
-        'Unit 01': 4 * 8 + 4 * 12 + 4 * 7 + 4 * 8, // Round Tubes (4×8) + Square Bars (4×12) + Channels & Flat Bars (4×7) + Angle Irons & L-Beams (4×8) = 140
-        'Unit 02': 4 * 8 + 6, // Shelf A (4 cols * 8 rows) + 6 Bulk Zones (6 large areas)
-        'Unit 03': 15 * 10, // Zone 1 (15 cols × 10 rows) = 150 pallets
-        'Unit 04': 4 * 8 * 4, // 4 Shelves (Shelf 1-2 Electrical, Shelf 3-4 Plumbing) × 8 rows × 4 cols = 128
-        'Unit 05': 5 * 8 * 4, // 5 Shelves × 8 rows × 4 cols = 160
-        'Unit 06': 4 * 8 * 4, // 4 Shelves (Fiberglass, Foam, Vapor Barriers, Tools) × 8 rows × 4 cols = 128
-        'Unit 07': 4 * 8 * 4, // 4 Shelves (Safety, Adhesives, Accessories, Spare Materials) × 8 rows × 4 cols = 128
-        'Unit 08': 4 * 8 * 4, // 4 Shelves (Roofing Sheets, Flashing, Accessories, Gutters) × 8 rows × 4 cols = 128
-        'Unit 09': 4 * 8 * 4 // 4 Shelves (Screws, Nails, Hand Tools, Power Tools) × 8 rows × 4 cols = 128
-      };
+      // Create a lookup for total slots from storage units data
+      const unitTotalSlots = {};
+      storageUnits.forEach(unit => {
+        // Convert unit ID like "unit-01" to display name "Unit 01"
+        const unitNumber = unit.id.split('-')[1];
+        const displayName = `Unit ${unitNumber}`;
+        unitTotalSlots[displayName] = unit.capacity;
+      });
 
       // Fetch products from nested structure: Products/{storageUnit}/products/{productId}
       const productsRef = collection(db, 'Products');
@@ -140,6 +161,113 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false }) => {
     setSelectedUnit(null);
   };
 
+  // Edit mode functions
+  const handleEditUnit = (unitId) => {
+    const unit = storageUnits.find(u => u.id === unitId);
+    if (unit) {
+      setEditingUnit(unit);
+    }
+  };
+
+  const handleDeleteUnit = async (unitId) => {
+    if (!confirm('Are you sure you want to delete this storage unit? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const result = await deleteStorageUnit(unitId);
+      if (result.success) {
+        // Refresh the storage units list
+        await fetchStorageUnits();
+        onChangesMade && onChangesMade();
+        alert('Storage unit deleted successfully');
+      } else {
+        alert('Failed to delete storage unit: ' + result.error);
+      }
+    } catch (error) {
+      console.error('Error deleting unit:', error);
+      alert('Failed to delete storage unit');
+    }
+  };
+
+  const handleAddShelf = (unitId) => {
+    setAddingShelfToUnit(unitId);
+  };
+
+  const handleSaveUnit = async (unitData) => {
+    try {
+      let result;
+      if (showAddUnit) {
+        // Creating new unit
+        result = await createStorageUnit(unitData);
+      } else {
+        // Updating existing unit
+        result = await updateStorageUnit(unitData.id, unitData);
+      }
+
+      if (result.success) {
+        // Refresh the storage units list
+        await fetchStorageUnits();
+        setEditingUnit(null);
+        setShowAddUnit(false);
+        onChangesMade && onChangesMade();
+        alert(showAddUnit ? 'Storage unit created successfully' : 'Storage unit updated successfully');
+      } else {
+        alert(`Failed to ${showAddUnit ? 'create' : 'update'} storage unit: ` + result.error);
+      }
+    } catch (error) {
+      console.error('Error saving unit:', error);
+      alert(`Failed to ${showAddUnit ? 'create' : 'update'} storage unit`);
+    }
+  };
+
+  const handleSaveShelf = async (shelfData) => {
+    try {
+      // Find the unit to add the shelf to
+      const unit = storageUnits.find(u => u.id === addingShelfToUnit);
+      if (!unit) {
+        alert('Unit not found');
+        return;
+      }
+
+      // Create the new shelf structure matching StorageUnitsConfig.js
+      const newShelf = {
+        name: shelfData.name,
+        rows: shelfData.rows.map((row, index) => ({
+          name: row.name,
+          capacity: row.capacity,
+          columns: row.columns
+        }))
+      };
+
+      // Add the new shelf to the unit
+      const updatedUnit = {
+        ...unit,
+        shelves: [...unit.shelves, newShelf]
+      };
+
+      const result = await updateStorageUnit(unit.id, updatedUnit);
+      if (result.success) {
+        // Refresh the storage units list
+        await fetchStorageUnits();
+        setAddingShelfToUnit(null);
+        onChangesMade && onChangesMade();
+        alert('Shelf added successfully');
+      } else {
+        alert('Failed to add shelf: ' + result.error);
+      }
+    } catch (error) {
+      console.error('Error adding shelf:', error);
+      alert('Failed to add shelf');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingUnit(null);
+    setShowAddUnit(false);
+    setAddingShelfToUnit(null);
+  };
+
   const getStatusColor = (unitName) => {
     const capacity = unitCapacities[unitName];
     if (!capacity) return 'bg-gray-400'; // Loading or no data
@@ -191,9 +319,34 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false }) => {
           {/* Construction Materials Units 01-05 (Bottom row) */}
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-red-500 bg-red-50 row-start-3 col-start-1"
-            onClick={() => openShelfView('unit1')}
+            onClick={() => !editMode && openShelfView('unit1')}
             title={`Unit 01 - ${getCapacityInfo('Unit 01')}`}
           >
+            {editMode && (
+              <div className="absolute top-1 right-1 flex gap-1 z-20">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-01'); }}
+                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Add Shelf"
+                >
+                  +
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-01'); }}
+                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Edit Unit"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-01'); }}
+                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Delete Unit"
+                >
+                  Del
+                </button>
+              </div>
+            )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 01')}`}></div>
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 01</div>
             <div className="text-sm text-gray-600 font-medium">Steel & Heavy Materials</div>
@@ -201,9 +354,34 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false }) => {
           
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-red-500 bg-red-50 row-start-3 col-start-2"
-            onClick={() => openShelfView('unit2')}
+            onClick={() => !editMode && openShelfView('unit2')}
             title={`Unit 02 - ${getCapacityInfo('Unit 02')}`}
           >
+            {editMode && (
+              <div className="absolute top-1 right-1 flex gap-1 z-20">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-02'); }}
+                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Add Shelf"
+                >
+                  +
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-02'); }}
+                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Edit Unit"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-02'); }}
+                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Delete Unit"
+                >
+                  Del
+                </button>
+              </div>
+            )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 02')}`}></div>
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 02</div>
             <div className="text-sm text-gray-600 font-medium">Lumber & Wood</div>
@@ -211,9 +389,34 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false }) => {
           
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-red-500 bg-red-50 row-start-3 col-start-3"
-            onClick={() => openShelfView('unit3')}
+            onClick={() => !editMode && openShelfView('unit3')}
             title={`Unit 03 - ${getCapacityInfo('Unit 03')}`}
           >
+            {editMode && (
+              <div className="absolute top-1 right-1 flex gap-1 z-20">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-03'); }}
+                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Add Shelf"
+                >
+                  +
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-03'); }}
+                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Edit Unit"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-03'); }}
+                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Delete Unit"
+                >
+                  Del
+                </button>
+              </div>
+            )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 03')}`}></div>
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 03</div>
             <div className="text-sm text-gray-600 font-medium">Cement & Aggregates</div>
@@ -221,9 +424,34 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false }) => {
           
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-red-500 bg-red-50 row-start-3 col-start-4"
-            onClick={() => openShelfView('unit4')}
+            onClick={() => !editMode && openShelfView('unit4')}
             title={`Unit 04 - ${getCapacityInfo('Unit 04')}`}
           >
+            {editMode && (
+              <div className="absolute top-1 right-1 flex gap-1 z-20">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-04'); }}
+                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Add Shelf"
+                >
+                  +
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-04'); }}
+                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Edit Unit"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-04'); }}
+                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Delete Unit"
+                >
+                  Del
+                </button>
+              </div>
+            )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 04')}`}></div>
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 04</div>
             <div className="text-sm text-gray-600 font-medium">Electrical & Plumbing</div>
@@ -231,9 +459,34 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false }) => {
           
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-orange-500 bg-orange-50 row-start-3 col-start-5"
-            onClick={() => openShelfView('unit5')}
+            onClick={() => !editMode && openShelfView('unit5')}
             title={`Unit 05 - ${getCapacityInfo('Unit 05')}`}
           >
+            {editMode && (
+              <div className="absolute top-1 right-1 flex gap-1 z-20">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-05'); }}
+                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Add Shelf"
+                >
+                  +
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-05'); }}
+                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Edit Unit"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-05'); }}
+                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Delete Unit"
+                >
+                  Del
+                </button>
+              </div>
+            )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 05')}`}></div>
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 05</div>
             <div className="text-sm text-gray-600 font-medium">Paint & Coatings</div>
@@ -242,9 +495,34 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false }) => {
           {/* Upper units */}
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-orange-500 bg-orange-50 row-start-1 col-start-6"
-            onClick={() => openShelfView('unit6')}
+            onClick={() => !editMode && openShelfView('unit6')}
             title={`Unit 06 - ${getCapacityInfo('Unit 06')}`}
           >
+            {editMode && (
+              <div className="absolute top-1 right-1 flex gap-1 z-20">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-06'); }}
+                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Add Shelf"
+                >
+                  +
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-06'); }}
+                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Edit Unit"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-06'); }}
+                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Delete Unit"
+                >
+                  Del
+                </button>
+              </div>
+            )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 06')}`}></div>
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 06</div>
             <div className="text-sm text-gray-600 font-medium">Insulation & Foam</div>
@@ -252,9 +530,34 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false }) => {
           
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-orange-500 bg-orange-50 row-start-2 col-start-6"
-            onClick={() => openShelfView('unit7')}
+            onClick={() => !editMode && openShelfView('unit7')}
             title={`Unit 07 - ${getCapacityInfo('Unit 07')}`}
           >
+            {editMode && (
+              <div className="absolute top-1 right-1 flex gap-1 z-20">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-07'); }}
+                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Add Shelf"
+                >
+                  +
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-07'); }}
+                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Edit Unit"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-07'); }}
+                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Delete Unit"
+                >
+                  Del
+                </button>
+              </div>
+            )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 07')}`}></div>
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 07</div>
             <div className="text-sm text-gray-600 font-medium">Miscellaneous</div>
@@ -262,9 +565,34 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false }) => {
           
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-green-500 bg-green-50 row-start-1 col-start-7"
-            onClick={() => openShelfView('unit8')}
+            onClick={() => !editMode && openShelfView('unit8')}
             title={`Unit 08 - ${getCapacityInfo('Unit 08')}`}
           >
+            {editMode && (
+              <div className="absolute top-1 right-1 flex gap-1 z-20">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-08'); }}
+                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Add Shelf"
+                >
+                  +
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-08'); }}
+                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Edit Unit"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-08'); }}
+                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Delete Unit"
+                >
+                  Del
+                </button>
+              </div>
+            )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 08')}`}></div>
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 08</div>
             <div className="text-sm text-gray-600 font-medium">Roofing Materials</div>
@@ -272,9 +600,34 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false }) => {
           
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-green-500 bg-green-50 row-start-2 col-start-7"
-            onClick={() => openShelfView('unit9')}
+            onClick={() => !editMode && openShelfView('unit9')}
             title={`Unit 09 - ${getCapacityInfo('Unit 09')}`}
           >
+            {editMode && (
+              <div className="absolute top-1 right-1 flex gap-1 z-20">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-09'); }}
+                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Add Shelf"
+                >
+                  +
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-09'); }}
+                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Edit Unit"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteUnit('unit-09'); }}
+                  className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Delete Unit"
+                >
+                  Del
+                </button>
+              </div>
+            )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 09')}`}></div>
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 09</div>
             <div className="text-sm text-gray-600 font-medium">Hardware & Fasteners</div>
@@ -284,6 +637,7 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false }) => {
           <div className="bg-gray-300 border-2 border-gray-500 p-4 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm font-bold row-start-3 col-start-6 col-span-2">
             <div className="text-sm text-gray-600 font-medium">Front Desk</div>
           </div>
+          
         </div>
       </div>
 
@@ -294,6 +648,453 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false }) => {
         selectedUnit={selectedUnit}
         viewOnly={viewOnly}
       />
+
+      {/* Edit Unit Modal */}
+      {(editingUnit || showAddUnit) && (
+        <EditUnitModal
+          unit={editingUnit}
+          isOpen={true}
+          onClose={handleCancelEdit}
+          onSave={handleSaveUnit}
+          isNew={showAddUnit}
+        />
+      )}
+
+      {/* Add Shelf Modal */}
+      {addingShelfToUnit && (
+        <AddShelfModal
+          unitId={addingShelfToUnit}
+          isOpen={true}
+          onClose={handleCancelEdit}
+          onSave={handleSaveShelf}
+        />
+      )}
+    </div>
+  );
+};
+
+// Edit Unit Modal Component
+const EditUnitModal = ({ unit, isOpen, onClose, onSave, isNew }) => {
+  const [formData, setFormData] = useState({
+    name: unit?.name || '',
+    type: unit?.type || '',
+    capacity: unit?.capacity || 0,
+    shelves: unit?.shelves || []
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave({
+      ...unit,
+      ...formData,
+      id: unit?.id || `unit-${String(storageUnits.length + 1).padStart(2, '0')}`
+    });
+  };
+
+  const updateShelf = (shelfIndex, field, value) => {
+    const updatedShelves = [...formData.shelves];
+    if (field === 'name') {
+      updatedShelves[shelfIndex] = { ...updatedShelves[shelfIndex], name: value };
+    }
+    setFormData({ ...formData, shelves: updatedShelves });
+  };
+
+  const updateRow = (shelfIndex, rowIndex, field, value) => {
+    const updatedShelves = [...formData.shelves];
+    const updatedRows = [...updatedShelves[shelfIndex].rows];
+    updatedRows[rowIndex] = { 
+      ...updatedRows[rowIndex], 
+      [field]: field === 'name' ? value : parseInt(value) || 0 
+    };
+    updatedShelves[shelfIndex] = { ...updatedShelves[shelfIndex], rows: updatedRows };
+    setFormData({ ...formData, shelves: updatedShelves });
+  };
+
+  const addShelf = () => {
+    setFormData({
+      ...formData,
+      shelves: [...formData.shelves, { 
+        name: `Shelf ${formData.shelves.length + 1}`, 
+        rows: [{ name: 'Row 1', capacity: 96, columns: 4 }] 
+      }]
+    });
+  };
+
+  const addRowToShelf = (shelfIndex) => {
+    const updatedShelves = [...formData.shelves];
+    const shelf = updatedShelves[shelfIndex];
+    const newRowNumber = shelf.rows.length + 1;
+    updatedShelves[shelfIndex] = {
+      ...shelf,
+      rows: [...shelf.rows, { name: `Row ${newRowNumber}`, capacity: 96, columns: 4 }]
+    };
+    setFormData({ ...formData, shelves: updatedShelves });
+  };
+
+  const removeShelf = (index) => {
+    const updatedShelves = formData.shelves.filter((_, i) => i !== index);
+    setFormData({ ...formData, shelves: updatedShelves });
+  };
+
+  const removeRowFromShelf = (shelfIndex, rowIndex) => {
+    const updatedShelves = [...formData.shelves];
+    const shelf = updatedShelves[shelfIndex];
+    if (shelf.rows.length > 1) {
+      updatedShelves[shelfIndex] = {
+        ...shelf,
+        rows: shelf.rows.filter((_, i) => i !== rowIndex)
+      };
+      setFormData({ ...formData, shelves: updatedShelves });
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[80]">
+      <div className="bg-white rounded-2xl p-8 max-w-4xl max-h-[90vh] overflow-y-auto relative animate-in zoom-in-95 duration-300">
+        <button 
+          className="absolute top-4 right-5 text-2xl cursor-pointer text-gray-500 hover:text-red-500 bg-none border-none p-1"
+          onClick={onClose}
+        >
+          ×
+        </button>
+        
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">
+            {isNew ? 'Add New Storage Unit' : 'Edit Storage Unit'}
+          </h2>
+          <p className="text-gray-600 mt-1">
+            {isNew ? 'Create a new storage unit with shelves and configuration' : 'Modify the storage unit configuration'}
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Basic Information */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Unit Name</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+              <input
+                type="text"
+                value={formData.type}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Total Capacity</label>
+            <input
+              type="number"
+              value={formData.capacity}
+              onChange={(e) => setFormData({ ...formData, capacity: parseInt(e.target.value) || 0 })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              min="1"
+              required
+            />
+          </div>
+
+          {/* Shelves Configuration */}
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Shelves Configuration</h3>
+              <button
+                type="button"
+                onClick={addShelf}
+                className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+              >
+                + Add Shelf
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {formData.shelves.map((shelf, shelfIndex) => (
+                <div key={shelfIndex} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex-1 mr-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Shelf Name</label>
+                      <input
+                        type="text"
+                        value={shelf.name}
+                        onChange={(e) => updateShelf(shelfIndex, 'name', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="e.g., Round Tubes"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeShelf(shelfIndex)}
+                      className="text-red-600 hover:text-red-800 text-sm mt-6"
+                    >
+                      Remove Shelf
+                    </button>
+                  </div>
+
+                  {/* Rows for this shelf */}
+                  <div className="ml-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <h4 className="font-medium text-gray-900">Rows</h4>
+                      <button
+                        type="button"
+                        onClick={() => addRowToShelf(shelfIndex)}
+                        className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                      >
+                        + Add Row
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      {shelf.rows && shelf.rows.map((row, rowIndex) => (
+                        <div key={rowIndex} className="border border-gray-300 rounded p-3 bg-white">
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="text-sm font-medium text-gray-700">Row {rowIndex + 1}</span>
+                            {shelf.rows.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeRowFromShelf(shelfIndex, rowIndex)}
+                                className="text-red-600 hover:text-red-800 text-xs"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-1">Name</label>
+                              <input
+                                type="text"
+                                value={row.name}
+                                onChange={(e) => updateRow(shelfIndex, rowIndex, 'name', e.target.value)}
+                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="Row 1"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-1">Capacity</label>
+                              <input
+                                type="number"
+                                value={row.capacity}
+                                onChange={(e) => updateRow(shelfIndex, rowIndex, 'capacity', e.target.value)}
+                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                min="1"
+                                placeholder="96"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-1">Columns</label>
+                              <input
+                                type="number"
+                                value={row.columns}
+                                onChange={(e) => updateRow(shelfIndex, rowIndex, 'columns', e.target.value)}
+                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                min="1"
+                                placeholder="4"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              {isNew ? 'Create Unit' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// Add Shelf Modal Component
+const AddShelfModal = ({ unitId, isOpen, onClose, onSave }) => {
+  const [shelfName, setShelfName] = useState('');
+  const [rows, setRows] = useState([{ name: 'Row 1', capacity: 96, columns: 4 }]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!shelfName.trim()) {
+      alert('Please enter a shelf name');
+      return;
+    }
+    if (rows.length === 0) {
+      alert('Please add at least one row');
+      return;
+    }
+    onSave({
+      name: shelfName.trim(),
+      rows: rows
+    });
+  };
+
+  const addRow = () => {
+    const newRowNumber = rows.length + 1;
+    setRows([...rows, { name: `Row ${newRowNumber}`, capacity: 96, columns: 4 }]);
+  };
+
+  const updateRow = (index, field, value) => {
+    const updatedRows = [...rows];
+    updatedRows[index] = { ...updatedRows[index], [field]: field === 'name' ? value : parseInt(value) || 0 };
+    setRows(updatedRows);
+  };
+
+  const removeRow = (index) => {
+    if (rows.length > 1) {
+      setRows(rows.filter((_, i) => i !== index));
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[80]">
+      <div className="bg-white rounded-2xl p-8 max-w-2xl max-h-[90vh] overflow-y-auto relative animate-in zoom-in-95 duration-300">
+        <button 
+          className="absolute top-4 right-5 text-2xl cursor-pointer text-gray-500 hover:text-red-500 bg-none border-none p-1"
+          onClick={onClose}
+        >
+          ×
+        </button>
+        
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">
+            Add New Shelf to Unit {unitId.split('-')[1]}
+          </h2>
+          <p className="text-gray-600 mt-1">
+            Configure the shelf name and row details
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Shelf Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Shelf Name</label>
+            <input
+              type="text"
+              value={shelfName}
+              onChange={(e) => setShelfName(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="e.g., Round Tubes"
+              required
+            />
+          </div>
+
+          {/* Rows Configuration */}
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Rows Configuration</h3>
+              <button
+                type="button"
+                onClick={addRow}
+                className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+              >
+                + Add Row
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {rows.map((row, index) => (
+                <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                  <div className="flex justify-between items-start mb-3">
+                    <h4 className="font-medium text-gray-900">Row {index + 1}</h4>
+                    {rows.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeRow(index)}
+                        className="text-red-600 hover:text-red-800 text-sm"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Row Name</label>
+                      <input
+                        type="text"
+                        value={row.name}
+                        onChange={(e) => updateRow(index, 'name', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="e.g., Row 1"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
+                      <input
+                        type="number"
+                        value={row.capacity}
+                        onChange={(e) => updateRow(index, 'capacity', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        min="1"
+                        placeholder="96"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Columns</label>
+                      <input
+                        type="number"
+                        value={row.columns}
+                        onChange={(e) => updateRow(index, 'columns', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        min="1"
+                        placeholder="4"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+            >
+              Add Shelf
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 };

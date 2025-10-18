@@ -165,62 +165,50 @@ export const linkProductToSupplier = async (productId, supplierId, supplierData)
 // Helper function to update product variants with supplier information
 const updateProductVariantsWithSupplier = async (productId, supplierId, supplierData) => {
   try {
-    // Find the product in the new nested structure
+    // Find the product in the nested structure: Products/{storageLocation}/products/{productId}
     const storageLocationsRef = collection(db, 'Products');
     const storageLocationsSnapshot = await getDocs(storageLocationsRef);
     
     for (const storageLocationDoc of storageLocationsSnapshot.docs) {
       const storageLocation = storageLocationDoc.id;
-      const shelvesRef = collection(db, 'Products', storageLocation);
-      const shelvesSnapshot = await getDocs(shelvesRef);
       
-      for (const shelfDoc of shelvesSnapshot.docs) {
-        const shelfName = shelfDoc.id;
-        const rowsRef = collection(db, 'Products', storageLocation, shelfName);
-        const rowsSnapshot = await getDocs(rowsRef);
+      // Check if this storage location has a products subcollection
+      const productsRef = collection(db, 'Products', storageLocation, 'products');
+      
+      try {
+        const productsSnapshot = await getDocs(productsRef);
         
-        for (const rowDoc of rowsSnapshot.docs) {
-          const rowName = rowDoc.id;
-          const columnsRef = collection(db, 'Products', storageLocation, shelfName, rowName);
-          const columnsSnapshot = await getDocs(columnsRef);
-          
-          for (const columnDoc of columnsSnapshot.docs) {
-            const columnIndex = columnDoc.id;
-            const productRef = doc(db, 'Products', storageLocation, shelfName, rowName, columnIndex, productId);
+        for (const productDoc of productsSnapshot.docs) {
+          if (productDoc.id === productId) {
+            const productData = productDoc.data();
             
-            try {
-              const productSnap = await getDoc(productRef);
-              if (productSnap.exists()) {
-                const productData = productSnap.data();
-                
-                // Update variants with supplier information
-                if (productData.variants && Array.isArray(productData.variants)) {
-                  const updatedVariants = productData.variants.map(variant => ({
-                    ...variant,
-                    supplier: {
-                      name: supplierData.supplierName || 'Unknown',
-                      code: supplierData.supplierCode || supplierData.supplierSKU || '',
-                      id: supplierId,
-                      price: supplierData.supplierPrice || variant.unitPrice || 0,
-                      sku: supplierData.supplierSKU || ''
-                    }
-                  }));
-                  
-                  // Update the product document with the new variants
-                  await updateDoc(productRef, {
-                    variants: updatedVariants,
-                    lastUpdated: new Date().toISOString()
-                  });
-
-                  return; // Found and updated, no need to continue searching
+            // Update variants with supplier information
+            if (productData.variants && Array.isArray(productData.variants)) {
+              const updatedVariants = productData.variants.map(variant => ({
+                ...variant,
+                supplier: {
+                  name: supplierData.supplierName || 'Unknown',
+                  code: supplierData.supplierCode || supplierData.supplierSKU || '',
+                  id: supplierId,
+                  price: supplierData.supplierPrice || variant.unitPrice || 0,
+                  sku: supplierData.supplierSKU || ''
                 }
-              }
-            } catch (err) {
-              // Continue to next location if this one fails
-              continue;
+              }));
+              
+              // Update the product document with the new variants
+              const productRef = doc(db, 'Products', storageLocation, 'products', productId);
+              await updateDoc(productRef, {
+                variants: updatedVariants,
+                lastUpdated: new Date().toISOString()
+              });
+
+              return; // Found and updated, no need to continue searching
             }
           }
         }
+      } catch (err) {
+        // Continue to next storage location if this one fails
+        continue;
       }
     }
   } catch (error) {
@@ -248,60 +236,48 @@ export const unlinkProductFromSupplier = async (productId, supplierId) => {
 // Helper function to remove supplier information from product variants
 const removeSupplierFromProductVariants = async (productId, supplierId) => {
   try {
-    // Find the product in the new nested structure
+    // Find the product in the nested structure: Products/{storageLocation}/products/{productId}
     const storageLocationsRef = collection(db, 'Products');
     const storageLocationsSnapshot = await getDocs(storageLocationsRef);
     
     for (const storageLocationDoc of storageLocationsSnapshot.docs) {
       const storageLocation = storageLocationDoc.id;
-      const shelvesRef = collection(db, 'Products', storageLocation);
-      const shelvesSnapshot = await getDocs(shelvesRef);
       
-      for (const shelfDoc of shelvesSnapshot.docs) {
-        const shelfName = shelfDoc.id;
-        const rowsRef = collection(db, 'Products', storageLocation, shelfName);
-        const rowsSnapshot = await getDocs(rowsRef);
+      // Check if this storage location has a products subcollection
+      const productsRef = collection(db, 'Products', storageLocation, 'products');
+      
+      try {
+        const productsSnapshot = await getDocs(productsRef);
         
-        for (const rowDoc of rowsSnapshot.docs) {
-          const rowName = rowDoc.id;
-          const columnsRef = collection(db, 'Products', storageLocation, shelfName, rowName);
-          const columnsSnapshot = await getDocs(columnsRef);
-          
-          for (const columnDoc of columnsSnapshot.docs) {
-            const columnIndex = columnDoc.id;
-            const productRef = doc(db, 'Products', storageLocation, shelfName, rowName, columnIndex, productId);
+        for (const productDoc of productsSnapshot.docs) {
+          if (productDoc.id === productId) {
+            const productData = productDoc.data();
             
-            try {
-              const productSnap = await getDoc(productRef);
-              if (productSnap.exists()) {
-                const productData = productSnap.data();
-                
-                // Remove supplier information from variants
-                if (productData.variants && Array.isArray(productData.variants)) {
-                  const updatedVariants = productData.variants.map(variant => {
-                    // Remove supplier info if it matches the supplier being unlinked
-                    if (variant.supplier && variant.supplier.id === supplierId) {
-                      const { supplier, ...variantWithoutSupplier } = variant;
-                      return variantWithoutSupplier;
-                    }
-                    return variant;
-                  });
-                  
-                  // Update the product document with the updated variants
-                  await updateDoc(productRef, {
-                    variants: updatedVariants,
-                    lastUpdated: new Date().toISOString()
-                  });
-
-                  return; // Found and updated, no need to continue searching
+            // Remove supplier information from variants
+            if (productData.variants && Array.isArray(productData.variants)) {
+              const updatedVariants = productData.variants.map(variant => {
+                // Remove supplier info if it matches the supplier being unlinked
+                if (variant.supplier && variant.supplier.id === supplierId) {
+                  const { supplier, ...variantWithoutSupplier } = variant;
+                  return variantWithoutSupplier;
                 }
-              }
-            } catch (err) {
-              // Continue to next location if this one fails
-              continue;
+                return variant;
+              });
+              
+              // Update the product document with the updated variants
+              const productRef = doc(db, 'Products', storageLocation, 'products', productId);
+              await updateDoc(productRef, {
+                variants: updatedVariants,
+                lastUpdated: new Date().toISOString()
+              });
+
+              return; // Found and updated, no need to continue searching
             }
           }
         }
+      } catch (err) {
+        // Continue to next storage location if this one fails
+        continue;
       }
     }
   } catch (error) {

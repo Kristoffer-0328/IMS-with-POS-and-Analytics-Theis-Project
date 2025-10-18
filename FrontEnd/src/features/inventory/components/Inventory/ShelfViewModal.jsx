@@ -21,134 +21,40 @@ const ShelfViewModal = ({
   const [loading, setLoading] = useState(false);
   const db = getFirestore(app);
   
-  // Debug: Log props changes
-  useEffect(() => {
-    console.log('🔄 ShelfViewModal props updated:', {
-      totalQuantity,
-      allocatedQuantity,
-      selectedLocationsCount: selectedLocations.length,
-      selectedLocations: selectedLocations.map(loc => ({
-        id: loc.id,
-        allocatedQuantity: loc.allocatedQuantity || loc.quantity
-      }))
-    });
-  }, [totalQuantity, allocatedQuantity, selectedLocations]);
+ 
   
-  // Calculate remaining quantity to allocate
-  const getRemainingQuantity = () => {
-    console.log('🧮 getRemainingQuantity called:', {
-      totalQuantity,
-      allocatedQuantity_prop: allocatedQuantity,
-      calculated_remaining: totalQuantity - allocatedQuantity
-    });
-    return totalQuantity - allocatedQuantity;
-  };
-  
-  // Check if a location is currently selected (for multi-select mode)
+
   const isLocationSelected = (shelfName, rowName, columnIndex) => {
     if (!multiSelect) return false;
     const locationKey = `${selectedUnit?.title?.split(' - ')[0]}-${shelfName}-${rowName}-${columnIndex}`;
     return selectedLocations.some(loc => loc.id === locationKey);
   };
   
+  // Calculate remaining quantity to allocate
+  const getRemainingQuantity = () => {
+    return Math.max(0, totalQuantity - allocatedQuantity);
+  };
+  
   // Handle cell click with auto-allocation
   const handleCellClick = (shelfName, rowName, columnIndex, cellCapacity) => {
-    console.log('🖱️ ===== CELL CLICK EVENT =====');
-    console.log('📍 Location:', { shelfName, rowName, columnIndex, cellCapacity });
+    if (viewOnly || !multiSelect) return;
     
-    if (viewOnly) {
-      console.log('❌ View-only mode - selection disabled');
-      return;
-    }
-    
-    const product = getProductAtLocation(shelfName, rowName, columnIndex);
-    console.log('📦 Product at location:', product ? {
-      name: product.name,
-      quantity: product.quantity,
-      locationKey: product.locationKey
-    } : 'No product found');
-    
-    // Check if cell is occupied by a DIFFERENT product (not the highlighted one)
-    if (product) {
-      const isHighlighted = isHighlightedLocation(shelfName, rowName, columnIndex);
-      console.log('🎯 Is highlighted product?', isHighlighted);
-      
-      if (!isHighlighted) {
-        console.log('❌ Cell occupied by different product - cannot select');
-        return;
-      }
-      console.log('✅ Cell has highlighted product - can select');
-    }
-    
-    if (!multiSelect || !onLocationSelect) {
-      console.log('❌ Multi-select not enabled or no callback');
-      return;
-    }
-    
-    // Check if this location is already selected - if so, remove it
     const locationKey = `${selectedUnit?.title?.split(' - ')[0]}-${shelfName}-${rowName}-${columnIndex}`;
-    const existingSelection = selectedLocations.find(loc => loc.id === locationKey);
+    const existingAllocation = selectedLocations.find(loc => loc.id === locationKey);
     
-    console.log('🔍 Checking existing selection:', {
-      locationKey,
-      alreadySelected: !!existingSelection,
-      currentSelections: selectedLocations.length
-    });
-    
-    if (existingSelection) {
-      console.log('🗑️ Removing existing allocation:', {
-        locationKey,
-        previousQuantity: existingSelection.allocatedQuantity || existingSelection.quantity
-      });
-      onLocationSelect(shelfName, rowName, columnIndex, -1); // -1 indicates removal
-      return;
+    if (existingAllocation) {
+      // Remove allocation
+      onLocationSelect(shelfName, rowName, columnIndex, -1);
+    } else {
+      // Add allocation
+      const remainingQty = getRemainingQuantity();
+      if (remainingQty > 0) {
+        const allocateQty = Math.min(remainingQty, cellCapacity);
+        onLocationSelect(shelfName, rowName, columnIndex, allocateQty);
+      }
     }
-    
-    const remainingQty = getRemainingQuantity();
-    console.log('📊 Allocation Status:', {
-      totalQuantity,
-      allocatedQuantity,
-      remainingQty,
-      selectedLocationsCount: selectedLocations.length
-    });
-    
-    if (remainingQty <= 0) {
-      console.log('⚠️ No remaining quantity to allocate');
-      alert('All products have been allocated! Click on selected cells (blue) to remove allocations.');
-      return;
-    }
-    
-    // Get actual quantity available at this location
-    const actualQuantityAtLocation = product ? (product.quantity || 0) : 0;
-    
-    // Auto-allocate: use the minimum of:
-    // 1. Remaining quantity needed
-    // 2. Cell capacity (max the cell can hold)
-    // 3. Actual quantity available at this location
-    const quantityToAllocate = Math.min(
-      remainingQty, 
-      cellCapacity, 
-      actualQuantityAtLocation > 0 ? actualQuantityAtLocation : cellCapacity
-    );
-    
-    console.log('🎯 AUTO-ALLOCATION CALCULATION:', {
-      option1_remainingQty: remainingQty,
-      option2_cellCapacity: cellCapacity,
-      option3_actualAtLocation: actualQuantityAtLocation > 0 ? actualQuantityAtLocation : cellCapacity,
-      FINAL_quantityToAllocate: quantityToAllocate,
-      reason: quantityToAllocate === remainingQty 
-        ? 'Limited by REMAINING quantity (last cell scenario)' 
-        : quantityToAllocate === cellCapacity 
-          ? 'Limited by CELL CAPACITY' 
-          : 'Limited by ACTUAL stock at location'
-    });
-    
-    console.log('✅ Calling onLocationSelect with quantity:', quantityToAllocate);
-    console.log('===== END CELL CLICK =====\n');
-    
-    // Call parent's onLocationSelect with auto-calculated quantity
-    onLocationSelect(shelfName, rowName, columnIndex, quantityToAllocate);
   };
+ 
 
   // Handle keyboard events
   React.useEffect(() => {
@@ -197,14 +103,7 @@ const ShelfViewModal = ({
             isVariant: false
           };
 
-          console.log('📦 Base product loaded:', {
-            name: productInfo.name,
-            location: productInfo.locationKey,
-            shelf: productInfo.shelfName,
-            row: productInfo.rowName,
-            column: productInfo.columnIndex
-          });
-
+       
           products.push(productInfo);
         }
         
@@ -615,7 +514,7 @@ const ShelfViewModal = ({
                         <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-3 text-center">
                           <div className="mb-2">
                             <svg className="w-10 h-10 mx-auto text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 2z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7.828a2 2 0 0 0-.586-1.414l-4.828-4.828A2 2 0 0 0 13.172 1H7zm5 0v5h5" />
                             </svg>
                           </div>
                           <h4 className="text-sm font-semibold text-amber-900 mb-2">{shelf.rows[0]?.name || 'Storage Area'}</h4>

@@ -13,7 +13,9 @@ import {
   FiChevronRight,
   FiActivity, // Add this for audit trail
   FiList, // Add this for logs
-  FiShoppingBag
+  FiShoppingBag,
+  FiSettings, // Add this for settings
+  FiMap // Add this for storage facility map
 } from 'react-icons/fi';
 
 const AdminSidebar = () => {
@@ -41,6 +43,11 @@ const AdminSidebar = () => {
           path: '/admin/purchase-orders',
           icon: <FiShoppingBag size={20} />,
           label: 'Purchase Orders',
+        },
+        {
+          path: '/admin/storage-map',
+          icon: <FiMap size={20} />,
+          label: 'Storage Facility Map',
         },
       ]
     },
@@ -79,6 +86,11 @@ const AdminSidebar = () => {
           path: '/admin/system-logs',
           icon: <FiList size={20} />,
           label: 'System Logs',
+        },
+        {
+          path: '/admin/settings',
+          icon: <FiSettings size={20} />,
+          label: 'Settings',
         },
       ]
     },
