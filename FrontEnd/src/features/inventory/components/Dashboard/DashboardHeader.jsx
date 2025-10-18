@@ -32,7 +32,10 @@ const DashboardHeader = () => {
   const [error, setError] = useState(null);
   const db = getFirestore(app);
   const notificationsRef = useRef(null);
-  const [readNotifications, setReadNotifications] = useState(new Set());
+  const [readNotifications, setReadNotifications] = useState(() => {
+    const stored = localStorage.getItem('readNotifications');
+    return stored ? new Set(JSON.parse(stored)) : new Set();
+  });
   const [hasNewNotification, setHasNewNotification] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -49,19 +52,20 @@ const DashboardHeader = () => {
       return;
     }
 
-    console.log('Fetching notifications for user role:', currentUser.role);
+    const userRole = currentUser.role;
+    console.log('Fetching notifications for user role:', userRole);
 
-    // Query notifications collection - filter by user role
+    // Query notifications collection - include release_mobile_view
     const notificationsQuery = query(
       collection(db, 'Notifications'),
       where('status', '==', 'active'),
-      where('type', 'in', ['restock_alert', 'sale_completed']),
+      where('type', 'in', ['restock_alert', 'sale_completed', 'release_mobile_view']),
       orderBy('createdAt', 'desc')
     );
 
     // Set up real-time listener with error handling
     const unsubscribe = onSnapshot(
-      notificationsQuery, 
+      notificationsQuery,
       (snapshot) => {
         const allNotifications = snapshot.docs.map(doc => {
           const data = doc.data();
@@ -72,19 +76,13 @@ const DashboardHeader = () => {
           };
         });
 
-        // TEMPORARILY DISABLE ROLE FILTERING FOR DEBUGGING
-        // const filteredNotifications = allNotifications.filter(notification => {
-        //   // If notification has targetRoles, check if user role is included
-        //   if (notification.targetRoles && Array.isArray(notification.targetRoles)) {
-        //     const hasAccess = notification.targetRoles.includes(userRole);
-        //     console.log(`🔍 Notification ${notification.notificationId} - Role check: ${userRole} in ${notification.targetRoles} = ${hasAccess}`);
-        //     return hasAccess;
-        //   }
-        //   // If no targetRoles specified, show to everyone
-        //   return true;
-        // });
-        
-        const filteredNotifications = allNotifications; // Show all notifications for debugging
+        // Filter notifications by user role
+        const filteredNotifications = allNotifications.filter(notification => {
+          if (notification.targetRoles && Array.isArray(notification.targetRoles)) {
+            return notification.targetRoles.includes(userRole);
+          }
+          return true;
+        });
 
         console.log(`Found ${allNotifications.length} total notifications, ${filteredNotifications.length} for role ${userRole}`);
 
@@ -119,17 +117,27 @@ const DashboardHeader = () => {
       newReadNotifications.add(notification.id);
     });
     setReadNotifications(newReadNotifications);
+    localStorage.setItem('readNotifications', JSON.stringify(Array.from(newReadNotifications)));
     setHasNewNotification(false);
   };
 
   // Add this function
   const handleNotificationClick = (notification) => {
+    setShowNotifications(false); // Close the dropdown
+    console.log('Notification clicked:', notification);
+    if (!currentUser) {
+      console.log('User not authenticated, showing alert.');
+      alert('You must be logged in to view this page.');
+      return;
+    }
     if (notification.type === 'restock_alert') {
-      setShowNotifications(false); // Close the dropdown
-      navigate('/im/restocking-request'); // Navigate to restocking page
-    } else if (notification.type === 'sale_completed') {
-      setShowNotifications(false); // Close the dropdown
-      navigate('/im/release-management'); // Navigate to release management page
+      console.log('Navigating to /im/restocking-request');
+      navigate('/im/restocking-request');
+    } else if (notification.type === 'sale_completed' || notification.type === 'release_mobile_view') {
+      console.log('Navigating to /im/inventory?tab=release');
+      navigate('/im/inventory?tab=release');
+    } else {
+      console.log('Notification type not handled:', notification.type);
     }
   };
 

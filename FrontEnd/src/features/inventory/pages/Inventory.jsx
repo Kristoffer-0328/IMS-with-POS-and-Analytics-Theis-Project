@@ -22,6 +22,14 @@ import ReleaseManagement from './ReleaseManagement';
 
 
 const Inventory = () => {
+  // Read tab from URL query string and set activeTab
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const tabParam = searchParams.get('tab');
+    if (tabParam && ['stock', 'restock', 'receiving', 'transfer', 'release'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, []);
   const [currentFilter, setCurrentFilter] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedStorageRoom, setSelectedStorageRoom] = useState('all');
@@ -307,17 +315,7 @@ const Inventory = () => {
               <FiPackage size={20} />
               <span>Stock Management</span>
             </button>
-            <button
-              onClick={() => setActiveTab('transfer')}
-              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors border-b-2 ${
-                activeTab === 'transfer'
-                  ? 'border-orange-500 text-orange-600 bg-orange-50'
-                  : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <FiRefreshCw size={20} />
-              <span>Stock Transfer</span>
-            </button>
+           
             <button
               onClick={() => setActiveTab('restock')}
               className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors border-b-2 ${

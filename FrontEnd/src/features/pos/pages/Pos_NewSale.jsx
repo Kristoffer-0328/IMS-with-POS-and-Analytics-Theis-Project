@@ -28,6 +28,7 @@ import UnitConversionModal from '../components/UnitConversionModal';
 import VariantSelectionModal from '../components/Modals/VariantSelectionModal';
 import QuickQuantityModal from '../components/QuickQuantityModal';
 import LocationSelectionModal from '../components/Modals/LocationSelectionModal';
+import ReceiptModal from '../components/Modals/ReceiptModal';
 
 // Import utilities
 import { printReceiptContent } from '../utils/ReceiptGenerator';
@@ -97,182 +98,84 @@ const checkRestockingThreshold = (productData, variantIndex) => {
 };
 
 // Helper function to generate restocking request
-const generateRestockingRequest = async (productData, variantIndex, locationInfo, currentUser) => {
-  try {
-    const variant = productData.variants?.[variantIndex];
-    if (!variant) return null;
-    
-    const restockCheck = checkRestockingThreshold(productData, variantIndex);
-    if (!restockCheck.needsRestock) return null;
-    
-    const requestId = `RSR-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    const restockingRequest = {
-      requestId,
-      productId: productData.id || 'unknown',
-      productName: productData.name || 'Unknown Product',
-      variantIndex,
-      variantDetails: {
-        size: variant.size || '',
-        unit: variant.unit || 'pcs',
-        unitPrice: variant.unitPrice || 0
-      },
-      currentQuantity: restockCheck.currentQuantity,
-      restockLevel: restockCheck.restockLevel,
-      maximumStockLevel: restockCheck.maximumStockLevel,
-      suggestedOrderQuantity: Math.max(50, restockCheck.maximumStockLevel - restockCheck.currentQuantity), // Suggest ordering to reach max level
-      priority: restockCheck.currentQuantity === 0 ? 'urgent' : 'normal',
-      location: {
-        storageLocation: locationInfo.storageLocation,
-        shelfName: locationInfo.shelfName,
-        rowName: locationInfo.rowName,
-        columnIndex: locationInfo.columnIndex,
-        fullPath: `${locationInfo.storageLocation}/${locationInfo.shelfName}/${locationInfo.rowName}/${locationInfo.columnIndex}`
-      },
-      triggeredBy: 'pos_sale',
-      triggeredByUser: currentUser?.uid || 'unknown',
-      triggeredByUserName: currentUser?.displayName || currentUser?.email || 'Unknown User',
-      status: 'pending',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    };
-    
-    // Save to restocking requests collection
-    await addDoc(collection(db, 'restockingRequests'), restockingRequest);
-
-    return restockingRequest;
-  } catch (error) {
-    console.error('Error generating restocking request:', error);
-    return null;
-  }
-};
-
-// Helper function to generate restocking notification
-const generateRestockingNotification = async (restockingRequest, currentUser) => {
-  try {
-    if (!restockingRequest) return null;
-    
-    const notificationId = `NOT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    const notification = {
-      notificationId,
-      type: 'restocking_request',
-      priority: restockingRequest.priority,
-      title: `${restockingRequest.priority === 'urgent' ? '🚨 URGENT' : '⚠️'} Restocking Required`,
-      message: `${restockingRequest.productName} is ${restockingRequest.currentQuantity === 0 ? 'out of stock' : 'running low'} (${restockingRequest.currentQuantity} remaining)`,
-      details: {
-        productName: restockingRequest.productName,
-        currentQuantity: restockingRequest.currentQuantity,
-        restockLevel: restockingRequest.restockLevel,
-        maximumStockLevel: restockingRequest.maximumStockLevel,
-        suggestedOrderQuantity: restockingRequest.suggestedOrderQuantity,
-        location: restockingRequest.location.fullPath,
-        variantDetails: restockingRequest.variantDetails
-      },
-      targetRoles: ['InventoryManager', 'Admin'], // Who should see this notification
-      triggeredBy: restockingRequest.triggeredByUser,
-      triggeredByName: restockingRequest.triggeredByUserName, 
-      relatedRequestId: restockingRequest.requestId,
-      isRead: false,
-      status: 'active',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    };
-    
-    // Save to notifications collection
-    await addDoc(collection(db, 'Notifications'), notification);
-
-    return notification;
-  } catch (error) {
-    console.error('Error generating restocking notification:', error);
-    return null;
-  }
-};
 
 // Helper function to generate sale notification
-const generateSaleNotification = async (transactionData, currentUser) => {
-  try {
-    if (!transactionData) return null;
-    
-    const notificationId = `SALE-NOT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    const notification = {
-      notificationId,
-      type: 'sale_completed',
-      priority: 'normal',
-      title: '�Sale Completed',
-      message: `Sale ${transactionData.transactionId} completed for ₱${transactionData.totals.total.toLocaleString()}`,
-      details: {
-        transactionId: transactionData.transactionId,
-        totalAmount: transactionData.totals.total,
-        itemCount: transactionData.items.length,
-        paymentMethod: transactionData.paymentMethod,
-        customerInfo: transactionData.customerInfo,
-        items: transactionData.items.map(item => ({
-          productName: item.productName,
-          variantName: item.variantName,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          totalPrice: item.totalPrice,
-          category: item.category
-        }))
-      },
-      targetRoles: ['InventoryManager', 'Admin'], // Who should see this notification
-      triggeredBy: currentUser?.uid || 'system',
-      triggeredByName: currentUser?.displayName || currentUser?.email || 'POS System',
-      relatedTransactionId: transactionData.transactionId,
-      isRead: false,
-      status: 'active',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    };
-    
-    // Save to notifications collection
-    await addDoc(collection(db, 'Notifications'), notification);
+  const generateSaleNotification = async (transactionData, currentUser) => {
+    try {
+      if (!transactionData) return null;
+      
+      const notificationId = `SALE-NOT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
+      const notification = {
+        notificationId,
+        type: 'sale_completed',
+        priority: 'normal',
+        title: '�Sale Completed',
+        message: `Sale ${transactionData.transactionId} completed for ₱${transactionData.total.toLocaleString()}`,
+        details: {
+          transactionId: transactionData.transactionId,
+          totalAmount: transactionData.total,
+          itemCount: transactionData.items.length,
+          paymentMethod: transactionData.paymentMethod,
+          customerInfo: transactionData.customerInfo,
+          items: transactionData.items.map(item => ({
+            productName: item.productName,
+            variantName: item.variantName,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            totalPrice: item.totalPrice,
+            category: item.category
+          }))
+        },
+        targetRoles: ['InventoryManager', 'Admin'], // Who should see this notification
+        triggeredBy: currentUser?.uid || 'system',
+        triggeredByName: currentUser?.displayName || currentUser?.email || 'POS System',
+        relatedTransactionId: transactionData.transactionId,
+        isRead: false,
+        status: 'active',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+      
+      // Save to notifications collection
+      await addDoc(collection(db, 'Notifications'), notification);
 
-    return notification;
-  } catch (error) {
-    console.error('Error generating sale notification:', error);
-    return null;
-  }
-};
-
-// Test function to manually create a notification (call from browser console)
-window.testNotification = async () => {
-  try {
-    const testNotification = {
-      notificationId: `TEST-${Date.now()}`,
-      type: 'sale_completed',
-      priority: 'normal',
-      title: '🧪 Test Notification',
-      message: 'This is a test notification to verify database write',
-      details: {
-        test: true,
-        timestamp: new Date().toISOString()
-      },
-      targetRoles: ['InventoryManager', 'admin'],
-      triggeredBy: 'test_system',
-      triggeredByName: 'Test System',
-      isRead: false,
-      status: 'active',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    };
-
-    const docRef = await addDoc(collection(db, 'Notifications'), testNotification);
-    console.log('✅ Test notification saved with ID:', docRef.id);
-    
-    return docRef.id;
-  } catch (error) {
-    console.error('❌ Test notification failed:', error);
-    return null;
-  }
-};
+      return notification;
+    } catch (error) {
+      console.error('Error generating sale notification:', error);
+      return null;
+    }
+  };
 
 export default function Pos_NewSale() {
-  // --- User ----
+  // --- User Authentication ---
   const { currentUser, loading: authLoading } = useAuth();
-  const [loadingUser, setLoadingUser] = useState(true);
+
+  // Redirect to login if not authenticated and auth state is loaded
+  useEffect(() => {
+    if (!authLoading && !currentUser) {
+      // User is not authenticated, redirect to login
+      window.location.href = '/auth/login';
+    }
+  }, [currentUser, authLoading]);
+
+  // Show loading screen while authentication is being determined
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="inline-block w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render anything if user is not authenticated (will redirect)
+  if (!currentUser) {
+    return null;
+  }
+
   // --- State Management ---
 
   const [currentDateTime, setCurrentDateTime] = useState(() => getFormattedDateTime());
@@ -329,6 +232,10 @@ export default function Pos_NewSale() {
   // Add new state for quick quantity modal
   const [quickQuantityModalOpen, setQuickQuantityModalOpen] = useState(false);
   const [selectedProductForQuantity, setSelectedProductForQuantity] = useState(null);
+
+  // Add state for receipt modal
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptTransaction, setReceiptTransaction] = useState(null);
 
   // Function to load quotation from Firebase
   const handleLoadQuotation = async () => {
@@ -467,24 +374,6 @@ export default function Pos_NewSale() {
 
   // Walk-in customers have default name
   // No need for transaction type logic as this is invoice-only page
-
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        if (currentUser) {
-          // Current user is already available from AuthContext
-          setLoadingUser(false);
-        } else {
-          console.error("No user found");
-          // Optionally redirect to login
-        }
-      } catch (error) {
-        console.error("Error fetching user:", error);
-      }
-    };
-
-    fetchUser();
-  }, [currentUser]);
 
   // Add clock update effect
   useEffect(() => {
@@ -1037,29 +926,33 @@ export default function Pos_NewSale() {
 };
 
   const handlePrintAndSave = useCallback(async () => {
-    if (addedProducts.length === 0 || isProcessing) {
-        alert("Cannot process: Cart is empty or transaction in progress");
+    validateStockBeforeTransaction().catch(error => {
+        alert(error.message);
         return;
-    }
-
+    });
     setIsProcessing(true);
 
     try {
-        
-
         const { formattedDate, formattedTime } = getFormattedDateTime();
         const receiptNumber = `GS-${Date.now()}`;
+
+        // Calculate change
+        const paidAmount = Number(amountPaid) || 0;
+        const changeAmount = paidAmount > 0 ? paidAmount - total : 0;
 
         const transactionData = {
           transactionId: receiptNumber,
           customerId: `CUST-${Date.now()}`,
           customerInfo: cleanFirebaseData(customerDetails),
+          customerName: customerDetails?.name || customerDisplayName || 'Walk-in Customer',
           items: addedProducts.map(item => cleanFirebaseData({
             productId: item.baseProductId || item.id,
             variantId: item.variantId || item.id,
             productName: item.baseName || item.name,
             variantName: item.name,
+            name: item.name, // For receipt modal
             quantity: item.qty,
+            price: item.price, // For receipt modal
             unitPrice: item.price,
             unit: item.unit || 'Piece',
             totalPrice: item.price * item.qty,
@@ -1070,11 +963,11 @@ export default function Pos_NewSale() {
             columnIndex: item.columnIndex,
             fullLocation: item.fullLocation
           })),
-          totals: {
-            subTotal: subTotal,
-            tax: tax,
-            total: total
-          },
+          subTotal: subTotal,
+          tax: tax,
+          total: total,
+          amountPaid: paidAmount,
+          change: changeAmount,
           paymentMethod,
           paymentReference: paymentReference || null,
           status: 'completed',
@@ -1083,7 +976,7 @@ export default function Pos_NewSale() {
           createdBy: currentUser?.uid || 'unknown',
           saleDate: formattedDate,
           saleTime: formattedTime,
-          cashier: currentUser?.displayName || currentUser?.email || 'Unknown Cashier'
+          cashierName: currentUser?.name  || currentUser?.email || "Cashier",
         };
 
         // Save transaction to Firestore
@@ -1093,7 +986,7 @@ export default function Pos_NewSale() {
 
         // Generate sale notification for inventory manager
         try {
-          await generateSaleNotification(transactionData, currentUser);
+          await generateSaleNotification(transactionData, currentUser); 
         } catch (notificationError) {
           console.error('Failed to generate sale notification:', notificationError);
           // Don't fail the transaction if notification fails
@@ -1110,20 +1003,12 @@ export default function Pos_NewSale() {
 
         // Generate and print receipt
         try {
-          printReceiptContent({
-            transactionId: receiptNumber,
-            customerInfo: customerDetails,
-            items: addedProducts,
-            totals: { subTotal, tax, total },
-            paymentMethod,
-            paymentReference: paymentReference || null,
-            date: formattedDate,
-            time: formattedTime,
-            cashier: currentUser?.displayName || currentUser?.email || 'Unknown Cashier'
-          });
+          // Show receipt modal for preview before printing
+          setReceiptTransaction(transactionData);
+          setShowReceiptModal(true);
         } catch (printError) {
-          console.error('Error printing receipt:', printError);
-          alert('Receipt printing failed, but transaction was completed successfully!');
+          console.error('Error preparing receipt:', printError);
+          alert('Receipt preparation failed, but transaction was completed successfully!');
         }
 
         // Clear cart and reset states
@@ -1484,6 +1369,17 @@ export default function Pos_NewSale() {
               setSelectedProductForModal(null);
               setSelectedVariantForLocation(null);
               setPendingQuantity(1);
+            }}
+          />
+        )}
+
+        {showReceiptModal && receiptTransaction && (
+          <ReceiptModal
+            transaction={receiptTransaction}
+            onClose={() => {
+              setShowReceiptModal(false);
+              setReceiptTransaction(null);
+              resetSaleState();
             }}
           />
         )}

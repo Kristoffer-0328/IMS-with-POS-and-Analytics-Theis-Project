@@ -174,15 +174,22 @@ export const printReceiptContent = (data) => {
     const receiptData = {
         receiptNumber: data.transactionId, // Map transactionId to receiptNumber
         transactionId: data.transactionId,
+        customerName: data.customerName,
+        customerDetails: data.customerDetails,
         customerInfo: data.customerInfo || {},
+        cashierName: data.cashierName,
         items: data.items || [],
-        totals: data.totals || { subTotal: 0, tax: 0, total: 0 },
+        subTotal: data.subTotal,
+        tax: data.tax,
+        total: data.total,
+        amountPaid: data.amountPaid,
+        change: data.change,
         paymentMethod: data.paymentMethod || 'Cash',
         paymentReference: data.paymentReference || null,
-        timestamp: new Date(), // Use current time for receipt
+        timestamp: data.createdAt || new Date(), // Use transaction timestamp or current time as fallback
         date: data.date,
         time: data.time,
-        cashier: data.cashier || 'Unknown Cashier'
+        isBulkOrder: data.isBulkOrder
     };
 
     const htmlContent = generateReceiptHtml(receiptData); // Generate the HTML first
