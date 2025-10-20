@@ -86,7 +86,7 @@ const AdminPurchaseOrders = () => {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto">
-      <DashboardHeader />
+ 
      
 
         {/* Tab Navigation */}
@@ -262,7 +262,7 @@ const AdminPurchaseOrders = () => {
             }}
           />
         )}
-     
+  
     </div>
   );
 };
