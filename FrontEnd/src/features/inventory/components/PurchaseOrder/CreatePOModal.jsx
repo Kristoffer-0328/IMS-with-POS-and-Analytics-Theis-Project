@@ -356,7 +356,7 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
                       <option value="">Select Product</option>
                       {selectedSupplier.products.map((product) => (
                         <option key={product.id} value={product.id}>
-                          {product.name} (Current: {product.restockRequest.currentQuantity}, Need: {product.restockRequest.requestedQuantity})
+                          {product.name} (Current: {product.restockRequest.currentQuantity}, Need: {product.restockRequest.suggestedOrderQuantity})
                         </option>
                       ))}
                     </select>
@@ -367,7 +367,7 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
                       type="number"
                       required
                       min="1"
-                      value={item.quantity}
+                      value={item.suggestedOrderQuantity}
                       onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
                       className="w-full border rounded-lg px-3 py-2"
                     />

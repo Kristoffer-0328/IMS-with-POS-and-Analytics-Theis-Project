@@ -144,8 +144,22 @@ const DashboardHeader = () => {
   // Function to get page title based on current path
   const getPageTitle = () => {
     switch (location.pathname) {
+      case '/admin':
+        return 'Admin Dashboard'; 
+      case '/admin/reports':
+        return 'Reports & Logs';
+      case '/admin/purchase-orders':
+        return 'Purchase Orders';
       case '/im':
         return 'Dashboard Overview';
+      case '/admin/storage-map':
+        return 'Storage Facility Map';
+      case '/admin/audit-trail':
+        return 'Audit Trail';
+      case '/admin/sytem-logs':
+        return 'System Logs';
+      case '/admin/transaction-history':
+        return 'Transaction History';
       case '/im/inventory':
         return 'Stock Management';
       case '/im/restocking-request':
@@ -178,12 +192,8 @@ const DashboardHeader = () => {
         </div>
 
           <div className="flex items-center gap-6">
-            {/* Date picker button */}
-            <button className="relative p-2.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors">
-              <FiCalendar size={20} />
-              <span className="hidden sm:inline-block ml-2 text-sm">Today</span>
-            </button>
-
+    
+           
             {/* Notification Button with Dropdown */}
             <div className="relative" ref={notificationsRef}>
               <button 

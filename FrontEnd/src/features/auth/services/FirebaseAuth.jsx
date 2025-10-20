@@ -84,10 +84,16 @@ export const AuthProvider = ({ children }) => {
 
     return () => unsubscribe();
   }, []);
-
+  function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
   const login = async (email, password) => {
     try {
-      setLoading(true); // Set loading to true on login request
+      setLoading(true); 
+      console.log('Simulating network delay...');
+      await sleep(4000);
+      console.log('Delay over, proceeding with login');
+      // Set loading to true on login request
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       const docRef = doc(db, 'User', user.uid);

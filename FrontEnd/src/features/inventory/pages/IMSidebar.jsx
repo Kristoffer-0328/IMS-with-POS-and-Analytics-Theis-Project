@@ -74,7 +74,7 @@ const IMSidebar = ({ collapsed, setCollapsed }) => {
              <img
                 src={GloryStarLogo}
                 alt="Glory Star Logo"
-                className="h-15 w-15 mx-auto mb-2"
+                className="w-30 h-25 object-contain center mx-auto"
                 />
             </h2>
           )}

@@ -18,6 +18,7 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
         unit: '',
         location: 'STR A1'
     });
+    const [quantity, setQuantity] = useState('');
     const [restockLevel, setRestockLevel] = useState('');
     const [storageLocation, setStorageLocation] = useState('STR A1');
     const [variantImage, setVariantImage] = useState(null);
@@ -546,8 +547,8 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                                 </label>
                                 <input
                                     type="number"
-                                    value={variantValue.quantity}
-                                    onChange={(e) => setVariantValue(prev => ({...prev, quantity: e.target.value}))}
+                                    value={quantity}
+                                    onChange={(e) => setQuantity(e.target.value)}
                                     placeholder="Enter quantity"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                                 />
@@ -624,11 +625,11 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                                     Storage Locations
                                     <span className="text-xs text-red-500 ml-1">* Select locations with quantity</span>
                                 </label>
-                                {variantValue.quantity && getTotalQuantity() < parseInt(variantValue.quantity) ? (
+                                {quantity && getTotalQuantity() < parseInt(quantity) ? (
                                     <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full font-medium">
-                                        {parseInt(variantValue.quantity) - getTotalQuantity()} remaining to allocate
+                                        {parseInt(quantity) - getTotalQuantity()} remaining to allocate
                                     </span>
-                                ) : variantValue.quantity && getTotalQuantity() === parseInt(variantValue.quantity) ? (
+                                ) : quantity && getTotalQuantity() === parseInt(quantity) ? (
                                     <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -814,7 +815,7 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                 onLocationSelect={handleStorageLocationSelect}
                 multiSelect={true}
                 selectedLocations={selectedStorageLocations}
-                totalQuantity={parseInt(variantValue.quantity) || 0}
+                totalQuantity={parseInt(quantity) || 0}
                 allocatedQuantity={getAllocatedQuantity()}
                 cellCapacity={100}
             />

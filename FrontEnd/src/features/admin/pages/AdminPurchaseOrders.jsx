@@ -4,7 +4,7 @@ import { usePurchaseOrderServices } from '../../../services/firebase/PurchaseOrd
 import { useAuth } from '../../auth/services/FirebaseAuth';
 import ViewPOModal from '../../inventory/components/PurchaseOrder/ViewPOModal';
 import POAnalytics from '../../inventory/components/PurchaseOrder/POAnalytics';
-
+import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
 const AdminPurchaseOrders = () => {
   const { currentUser } = useAuth();
   const poServices = usePurchaseOrderServices();
@@ -85,13 +85,9 @@ const AdminPurchaseOrders = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="flex flex-col w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">Purchase Orders</h1>
-          <p className="text-gray-600 mt-1">Review and approve purchase orders</p>
-        </div>
+    <div className="p-6 max-w-[1600px] mx-auto">
+      <DashboardHeader />
+     
 
         {/* Tab Navigation */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
@@ -266,7 +262,7 @@ const AdminPurchaseOrders = () => {
             }}
           />
         )}
-      </div>
+     
     </div>
   );
 };

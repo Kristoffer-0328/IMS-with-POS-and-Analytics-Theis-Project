@@ -17,7 +17,7 @@ import LocationSelectionModal from '../components/Modals/LocationSelectionModal'
 import CustomerInfoModal from '../components/quotation/CustomerInfoModal';
 import QuotationGenerator from '../components/quotation/QuotationGenerator';
 import QuotationUtils from '../utils/quotationUtils';
-
+import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
 const Pos_Quotation = () => {
   const { listenToProducts } = useServices();
   const { currentUser } = useAuth();
@@ -506,25 +506,9 @@ const Pos_Quotation = () => {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">Quotation</h1>
-            <p className="text-sm text-gray-600">Create a quotation for customer</p>
-          </div>
-          <div className="text-right">
-            <div className="text-sm text-gray-600">
-              {formattedDate} | {formattedTime.hours}:{formattedTime.minutes}:{formattedTime.seconds}
-            </div>
-            <div className="text-sm font-medium text-gray-800">
-              {currentUser?.displayName || currentUser?.email || 'Cashier'}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 flex overflow-hidden">
+      
+        <DashboardHeader />
+      <div className="flex overflow-hidden">
         {/* Left Side - Products */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="p-4 space-y-4">

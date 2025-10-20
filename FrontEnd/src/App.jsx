@@ -44,21 +44,31 @@ import Pos_NewSale from './features/pos/pages/Pos_NewSale';
 import Pos_Quotation from './features/pos/pages/Pos_Quotation';
 import Pos_Settings from './features/pos/pages/Pos_Settings';
 import Pos_Transaction_History from './features/pos/pages/Pos_TransactionHistory';
+import DashboardHeader from './features/inventory/components/Dashboard/DashboardHeader';
 // Layouts
-const AdminLayout = ({ children }) => (
-  <div className="flex min-h-screen w-full bg-gray-50">
-    <AdminSidebar />
-    <main id="content" className="flex-1 transition-all duration-300 ml-[250px]">
-      <div className="p-6">{children}</div>
-    </main>
-  </div>
-);
+const AdminLayout = ({ children }) => {
+  const [collapsed, setCollapsed] = useState(false);
+  return(
+    <div className="flex min-h-screen w-full bg-gray-50">
+      <AdminSidebar collapsed={collapsed} setCollapsed={setCollapsed} />
+      <main
+        id="content"
+        className={`flex-1 transition-all duration-300
+          ${collapsed ? 'ml-0 sm:ml-[70px]' : 'ml-0 sm:ml-[250px]'}
+        `}
+      >
+        <div className="p-6">
+          <DashboardHeader />
+          {children}
+        </div>
+      </main>
+    </div>
+    );
+  
+};
 
 const IMLayout = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
-
-  // Debug: Log when IMLayout renders
-  
 
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
@@ -70,6 +80,7 @@ const IMLayout = ({ children }) => {
         `}
       >
         <div className="p-6">
+          <DashboardHeader />
           {children}
         </div>
       </main>
@@ -82,14 +93,16 @@ const pos_CashierLayout = ({ children }) => {
   return (
     <div className="flex min-h-screen w-full bg-gray-50">
       <Pos_Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
-      
       <main
         id="content"
         className={`flex-1 transition-all duration-300
           ${collapsed ? 'ml-0 sm:ml-[70px]' : 'ml-0 sm:ml-[250px]'}
         `}
       >
-        <div className="p-6">{children}</div>
+        <div className="p-6">
+         
+          {children}
+          </div>
       </main>
     </div>
   );
@@ -99,7 +112,7 @@ const pos_CashierLayout = ({ children }) => {
 const ProtectedRoute = ({ allowedRole, layout: Layout, children }) => {
   const { currentUser, loading } = useAuth();
   
-  if (loading) return <LoadingScreen/>;
+  if (loading && !currentUser) return <LoadingScreen/>;
   
   // Check if user is logged in and has the correct role
   if (!currentUser || currentUser.role !== allowedRole) {

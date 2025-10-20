@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FiSearch, FiCalendar, FiDownload, FiAlertCircle, FiAlertTriangle, FiInfo } from 'react-icons/fi';
 import { getFirestore, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
-
+import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
 const db = getFirestore(app);
 
 const System_log = () => {
@@ -224,11 +224,7 @@ const System_log = () => {
 
     return (
         <div className="p-6 max-w-[1600px] mx-auto">
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold text-gray-800">System Logs</h1>
-                <p className="text-gray-600">Monitor system events, errors, and warnings</p>
-            </div>
-
+           
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
                 <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">

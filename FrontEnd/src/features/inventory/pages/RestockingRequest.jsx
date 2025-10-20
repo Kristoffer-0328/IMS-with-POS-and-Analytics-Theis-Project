@@ -52,10 +52,8 @@ const RestockingRequest = () => {
             id: doc.id,
             ...data,
             createdAt: createdAtDate,
-            // Properly extract supplier name from object fields
-            supplierName: (typeof data.supplierName === 'object' ? data.supplierName?.name : data.supplierName) ||
-                         (typeof data.supplier === 'object' ? data.supplier?.name : data.supplier) || 
-                         'Unknown Supplier'
+            // Use the supplierName field directly
+            supplierName: data.supplierName || 'Unknown Supplier'
           };
         });
         
@@ -127,7 +125,7 @@ const RestockingRequest = () => {
   };
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto p-6">
+    <div >
       {/* Background gradient design element */}
       <div className="relative mb-6">
         <div className="absolute top-10 bottom-5 inset-0 bg-gradient-to-r from-amber-100/60 to-amber-300/40 rounded-3xl transform -skew-y-3"></div>
@@ -196,22 +194,7 @@ const RestockingRequest = () => {
         </div>
       </div>
 
-      {/* Debug Section - Remove this after testing */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-          <h3 className="text-sm font-medium text-yellow-800 mb-2">Debug Info:</h3>
-          <p className="text-xs text-yellow-700">
-            Total requests in state: {requests.length}
-          </p>
-          <p className="text-xs text-yellow-700">
-            Request IDs: {requests.map(r => String(r.id || 'no-id')).join(', ')}
-          </p>
-          <p className="text-xs text-yellow-700">
-            Sample supplier data: {requests.length > 0 ? JSON.stringify(requests[0].supplier || 'no-supplier') : 'No requests'}
-          </p>
-        </div>
-      )}
-
+     
       {/* Stock Restocking Request Table */}
       <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100">
         <div className="flex justify-between items-center mb-6">
@@ -234,7 +217,7 @@ const RestockingRequest = () => {
                   Current Quantity
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Requested Quantity
+                  Suggested Order Qty
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Category
@@ -271,7 +254,7 @@ const RestockingRequest = () => {
                       {String(request.currentQuantity !== undefined ? request.currentQuantity : 'N/A')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {String(request.requestedQuantity || 'N/A')}
+                      {String(request.suggestedOrderQuantity !== undefined ? request.suggestedOrderQuantity : 'N/A')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {String(request.category || request.productId?.split('-')[0] || 'N/A')}
@@ -280,7 +263,11 @@ const RestockingRequest = () => {
                       {renderStatusBadge(request.status)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {request.createdAt ? new Date(request.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Not specified'}
+                                          {request.createdAt && request.createdAt.toDate
+                                            ? request.createdAt.toDate().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+                                            : request.createdAt
+                                              ? new Date(request.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+                                              : 'Not specified'}
                     </td>
                   </tr>
                 ))

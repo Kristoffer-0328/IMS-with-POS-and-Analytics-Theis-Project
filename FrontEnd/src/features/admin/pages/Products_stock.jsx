@@ -14,7 +14,7 @@ import {
 import { FiBox, FiTrendingDown, FiTrendingUp, FiDollarSign, FiPackage, FiAlertTriangle, FiShoppingCart, FiInfo } from 'react-icons/fi';
 import { getFirestore, collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
-
+import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
 const db = getFirestore(app);
 
 const Dashboard = () => {
@@ -283,12 +283,7 @@ const Dashboard = () => {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-800">Admin Dashboard</h1>
-        <p className="text-gray-600 text-sm mt-1">Overview of inventory, sales, and stock movements</p>
-      </div>
-
+     <DashboardHeader title="Products & Stock Dashboard" />
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         {/* Total Products */}

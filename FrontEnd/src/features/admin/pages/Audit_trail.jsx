@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FiSearch, FiCalendar, FiFilter, FiDownload, FiUser, FiPackage, FiShoppingCart, FiTruck } from 'react-icons/fi';
 import { getFirestore, collection, getDocs, query, orderBy, limit, where } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
-
+import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
 const db = getFirestore(app);
 
 const Audit_trail = () => {
@@ -213,10 +213,7 @@ const Audit_trail = () => {
 
     return (
         <div className="p-6 max-w-[1600px] mx-auto">
-            <div className="mb-6">
-                <h1 className="text-2xl font-bold text-gray-800">Audit Trail</h1>
-                <p className="text-gray-600">Track all system activities and user actions</p>
-            </div>
+        
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">

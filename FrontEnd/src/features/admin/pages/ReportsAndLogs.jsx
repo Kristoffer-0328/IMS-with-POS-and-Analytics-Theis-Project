@@ -5,7 +5,8 @@ import InventoryTurnoverReport from '../../inventory/components/Reports/Inventor
 import StockMovementReport from '../../inventory/components/Reports/StockMovementReport';
 import ShrinkageReport from '../../inventory/components/Reports/ShrinkageReport';
 import TestDataGenerator from '../../inventory/components/Reports/TestDataGenerator';
-
+import Audit_trail from './Audit_trail';
+import System_log from './System_log';
 const ReportsAndLogs = () => {
   const [activeTab, setActiveTab] = useState('inventory-turnover');
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
@@ -26,10 +27,16 @@ const ReportsAndLogs = () => {
       icon: <FiBarChart size={20} />,
     },
     {
-      id: 'shrinkage',
-      label: 'Shrinkage & Adjustments',
+      id: 'audit-trails',
+      label: 'Audit Trails',
+      icon: <FiFileText size={20} />,
+    },  
+    {
+      id: 'system-logs',
+      label: 'System Logs',
       icon: <FiFileText size={20} />,
     },
+
   ];
 
   // Inventory turnover data for demonstration
@@ -78,18 +85,19 @@ const ReportsAndLogs = () => {
         );
       case 'stock-movement':
         return <StockMovementReport onBack={() => {}} />;
-      case 'shrinkage':
-        return <ShrinkageReport onBack={() => {}} />;
+      case 'audit-trails':
+        return <Audit_trail onBack={() => {}} />;
+      case 'system-logs':
+        return <System_log onBack={() => {}} />;
       default:
         return null;
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <DashboardHeader />
-      
-      <div className="p-6">
+    <div className="p-6 max-w-[1600px] mx-auto">
+
+     
         {/* Tab Navigation */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
           <div className="flex border-b border-gray-200">
@@ -115,9 +123,7 @@ const ReportsAndLogs = () => {
           {renderTabContent()}
         </div>
 
-        {/* Test Data Generator */}
-        <TestDataGenerator />
-      </div>
+
     </div>
   );
 };

@@ -3,7 +3,7 @@ import { FiChevronDown, FiSearch, FiFilter, FiCalendar } from 'react-icons/fi';
 import { getFirestore ,collection, query, orderBy, getDocs, where } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
 import ReceiptModal from '../components/Modals/ReceiptModal';
-
+import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
 const db = getFirestore(app);
 
 // Helper function to format date and time
@@ -183,35 +183,15 @@ export default function Pos_Transaction_History() {
     setSelectedTransaction(transaction);
   }, []);
 
+  const handleCloseModal = useCallback(() => {
+
+    setSelectedTransaction(null);
+  }, []);
+
   return (
     <div className="flex flex-col w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-6 bg-gray-50 min-h-screen">
 
-      {/* Enhanced Gradient Banner */}
-      <div className="bg-gradient-to-r from-orange-100/80 to-amber-100/30 rounded-xl p-6 mb-8 shadow-sm border border-orange-100">
-        <div className="flex flex-col md:flex-row justify-between gap-6">
-          <div className="space-y-1">
-            <h2 className="text-2xl font-bold text-gray-800">Transaction History</h2>
-            <p className="text-gray-600">View and manage your sales transactions</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <button className="flex items-center px-4 py-2.5 bg-white border rounded-xl text-sm font-medium shadow-sm hover:bg-gray-50 transition-colors">
-                <FiFilter className="mr-2 text-orange-500" />
-                <span>{currentFilter === 'all' ? 'All Transactions' : currentFilter}</span>
-                <FiChevronDown className="ml-2 text-gray-400" />
-              </button>
-            </div>
-            <div className="relative">
-              <button className="flex items-center px-4 py-2.5 bg-white border rounded-xl text-sm font-medium shadow-sm hover:bg-gray-50 transition-colors">
-                <FiCalendar className="mr-2 text-orange-500" />
-                <span>{currentMonth}</span>
-                <FiChevronDown className="ml-2 text-gray-400" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
+      <DashboardHeader />
       {/* Transaction Summary Cards - using the enhanced TransactionSummary component */}
       <TransactionSummary transactions={transactions} />
 
@@ -271,9 +251,15 @@ export default function Pos_Transaction_History() {
                         {transaction.paymentMethod}
                       </td>
                       <td className="px-6 py-4">
-                        <span className="inline-block px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">
-                          Completed
-                        </span>
+                         <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                        transaction.releaseStatus === 'released'
+                          ? 'bg-green-100 text-green-800'
+                          : transaction.releaseStatus === 'pending_release'
+                          ? 'bg-orange-100 text-orange-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {transaction.releaseStatus === 'released' ? 'Released' : 'Pending'}
+                      </span>
                       </td>
                       <td className="px-6 py-4 text-sm">
                         <button 

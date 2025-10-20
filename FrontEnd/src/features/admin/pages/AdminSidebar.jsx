@@ -17,12 +17,12 @@ import {
   FiSettings, // Add this for settings
   FiMap // Add this for storage facility map
 } from 'react-icons/fi';
+import GloryStarLogo from '../../../assets/Glory_Star_Logo.png';
 
-const AdminSidebar = () => {
+const AdminSidebar = ({ collapsed, setCollapsed }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
-  const [collapsed, setCollapsed] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -37,7 +37,7 @@ const AdminSidebar = () => {
         {
           path: '/admin',
           icon: <FiBox size={20} />,
-          label: 'Products Stock',
+          label: 'Admin Dashboard',
         },
         {
           path: '/admin/purchase-orders',
@@ -73,31 +73,16 @@ const AdminSidebar = () => {
         },
       ]
     },
-    // System Section
-    {
-      section: 'System',
-      items: [
-        {
-          path: '/admin/audit-trail',
-          icon: <FiActivity size={20} />,
-          label: 'Audit Trail',
-        },
-        {
-          path: '/admin/system-logs',
-          icon: <FiList size={20} />,
-          label: 'System Logs',
-        },
-        {
-          path: '/admin/settings',
-          icon: <FiSettings size={20} />,
-          label: 'Settings',
-        },
-      ]
-    },
+  
     // Users Section
     {
       section: 'Users',
       items: [
+          {
+          path: '/admin/settings',
+          icon: <FiSettings size={20} />,
+          label: 'Settings',
+        },
         {
           path: '/admin/team',
           icon: <FiUsers size={20} />,
@@ -117,9 +102,11 @@ const AdminSidebar = () => {
                  ${collapsed ? 'w-[70px]' : 'w-[250px]'}`}>
       <div className="flex items-center justify-between p-5 border-b border-gray-100">
         {!collapsed && (
-          <h2 className="text-[#ff7b54] font-bold text-lg truncate">
-            Glory Star
-          </h2>
+          <img
+            src={GloryStarLogo}
+            alt="Logo"
+            className="w-30 h-25 object-contain center mx-auto"
+          />
         )}
         <button
           onClick={handleToggle}

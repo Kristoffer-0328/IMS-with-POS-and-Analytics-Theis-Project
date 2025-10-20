@@ -29,7 +29,7 @@ import VariantSelectionModal from '../components/Modals/VariantSelectionModal';
 import QuickQuantityModal from '../components/QuickQuantityModal';
 import LocationSelectionModal from '../components/Modals/LocationSelectionModal';
 import ReceiptModal from '../components/Modals/ReceiptModal';
-
+import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
 // Import utilities
 import { printReceiptContent } from '../utils/ReceiptGenerator';
 
@@ -1027,92 +1027,43 @@ export default function Pos_NewSale() {
   const shouldDisableInteractions = isProcessing;
 
   return (
-    <div className="flex flex-col w-full max-w-[1920px] mx-auto bg-white min-h-screen">
-      {/* Enhanced Header with Gradient */}
-      <div className="bg-orange-50 border-b border-gray-100 sticky top-0 z-30 h-[73px]">
-        <div className="max-w-[1920px] mx-auto px-4 sm:px-6 py-4">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-6">
-              <div className="space-y-1">
-            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-              Invoice
-              {isProcessing && (
-                    <div className="inline-block w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
-              )}
-              {restockingAlerts.length > 0 && (
-                <div className="flex items-center gap-1">
-                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                  <span className="text-sm text-red-600 font-medium">
-                    {restockingAlerts.filter(a => a.priority === 'urgent').length > 0 ? 'Stock Alert!' : 'Low Stock'}
-                  </span>
-                </div>
-              )}
-            </h2>
-                <div className="text-sm text-gray-500">
-                  Create a new invoice transaction
-                </div>
+    <div className="  flex h-screen bg-gray-50">
+      
+      {/* Left Side: Product Selection */}
+      <div className="flex-1 flex flex-col min-w-0 bg-white border-r border-gray-200">  
+        <DashboardHeader />
+        {/* Header with Search and Filters */}
+        <div className="flex-shrink-0 bg-white border-b border-gray-200 shadow-sm">
+          <div className="px-6 py-4">
+            <div className="flex gap-4">
+              {/* Search Bar */}
+              <div className="flex-1">
+                <SearchBar
+                  searchQuery={searchQuery}
+                  setSearchQuery={setSearchQuery}
+                  disabled={shouldDisableInteractions}
+                  placeholder="Search products by name, category, or brand..."
+                  className="bg-white shadow-sm border-gray-200"
+                />
               </div>
-              <div className="h-8 w-px bg-gray-200 hidden md:block" />
-              <div className="clock-display bg-white px-4 py-2 rounded-lg font-mono text-gray-600 hidden md:block shadow-sm border border-gray-100">
-              <span className="clock-time text-lg font-semibold">
-                {currentDateTime.formattedTime?.hours || '00'}
-                <span className="clock-separator animate-pulse">:</span>
-                {currentDateTime.formattedTime?.minutes || '00'}
-                <span className="clock-separator animate-pulse">:</span>
-                {currentDateTime.formattedTime?.seconds || '00'}
-              </span>
-                <span className="clock-divider mx-3 text-gray-500">|</span>
-                <span className="text-gray-700">{currentDateTime.formattedDate}</span>
-            </div>
-          </div>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center border-2 border-slate-200">
-                <span className="text-slate-600 font-bold">
-                {currentUser?.name?.[0]?.toUpperCase() || '?'}
-              </span>
-            </div>
-            <div className="text-sm">
-              <p className="font-semibold text-gray-800">{currentUser?.name || 'Loading...'}</p>
-                <p className="text-gray-700 text-xs">{currentUser?.role || 'User'}</p>
+              {/* Filters */}
+              <div className="flex-1">
+                <ProductFilters
+                  products={products}
+                  selectedCategory={selectedCategory}
+                  setSelectedCategory={setSelectedCategory}
+                  selectedBrand={selectedBrand}
+                  setSelectedBrand={setSelectedBrand}
+                  className="bg-white"
+                />
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex">
-        {/* Left Side: Product Selection - Scrollable */}
-        <div className="flex-1 flex flex-col min-w-0 border-r border-gray-100 mr-[480px]">
-          <div className="sticky top-[73px] bg-white z-20 border-b border-gray-100">
-            <div className="px-4 sm:px-6 py-4 bg-gray-50">
-              <div className="flex gap-4">
-                {/* Search Bar Column */}
-                <div className="flex-1">
-              <SearchBar
-                searchQuery={searchQuery}
-                setSearchQuery={setSearchQuery}
-                disabled={shouldDisableInteractions}
-                    placeholder="Search products by name, category, or brand..."
-                    className="bg-white shadow-sm border-gray-200"
-              />
-            </div>
-                {/* Filters Column */}
-                <div className="flex-1">
-                  <ProductFilters
-                    products={products}
-              selectedCategory={selectedCategory}
-                    setSelectedCategory={setSelectedCategory}
-                    selectedBrand={selectedBrand}
-                    setSelectedBrand={setSelectedBrand}
-                    className="bg-white"
-            />
-          </div>
-              </div>
-            </div>
-          </div>
-            
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        {/* Product Grid - Scrollable */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-6">
             <ProductGrid
               products={filteredProducts}
               onProductSelect={handleAddProduct}
@@ -1124,123 +1075,124 @@ export default function Pos_NewSale() {
             />
           </div>
         </div>
+      </div>
 
-        {/* Right Side: Fixed Panel */}
-        <div className="w-[480px] fixed right-0 top-0 h-screen bg-white flex flex-col border-l border-gray-100">
-          {/* Header Section - Fixed at top */}
-          <div className="flex-shrink-0 pt-[73px] border-b border-gray-200">
-            <div className="p-4 space-y-4">
-              {/* Quotation Lookup Section - Compact */}
-              <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                <h3 className="text-xs font-semibold text-gray-700 mb-2">Load from Quotation</h3>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={quotationNumber}
-                    onChange={(e) => setQuotationNumber(e.target.value.toUpperCase())}
-                    placeholder="GS-20251006-XXXX"
-                    className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    disabled={loadingQuotation || isProcessing}
-                    onKeyPress={(e) => e.key === 'Enter' && handleLoadQuotation()}
-                  />
-                  <button
-                    onClick={handleLoadQuotation}
-                    disabled={loadingQuotation || isProcessing || !quotationNumber.trim()}
-                    className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {loadingQuotation ? '...' : 'Load'}
-                  </button>
-                </div>
-                {addedProducts.some(p => p.fromQuotation) && (
-                  <div className="mt-2 text-xs text-blue-700">
-                    📄 <span className="font-semibold">{addedProducts[0].fromQuotation}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Customer Info - Compact */}
-              <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-medium text-gray-600">Customer:</span>
-                  <span className="text-xs text-gray-800 font-medium">{customerDisplayName || 'Walk-in Customer'}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-medium text-gray-600">Date:</span>
-                  <span className="text-xs text-gray-800">
-                    {new Date().toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'short',
-                      day: 'numeric'
-                    })}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Scrollable Product List - Takes remaining space */}
-          <div className="flex-1 overflow-y-auto bg-white">
-            <div className="p-4">
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-semibold text-gray-800">Added Products</h3>
-                <span className="text-xs text-gray-500">
-                  {addedProducts.length} {addedProducts.length === 1 ? 'item' : 'items'}
-                </span>
-              </div>
-              {addedProducts.length === 0 ? (
-                <div className="text-center py-12 text-gray-400">
-                  <svg className="w-16 h-16 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                  </svg>
-                  <p className="text-sm">No products added yet</p>
-                  <p className="text-xs mt-1">Select products from the left</p>
-                </div>
-              ) : (
-                <ProductList
-                  cartItems={addedProducts.map((item, index) => ({
-                      ...item,
-                      originalIndex: index,
-                      formattedPrice: formatCurrency(item.price),
-                      formattedTotal: formatCurrency(item.price * item.qty)
-                  }))}
-                  onRemoveItem={handleRemoveProduct}
-                  onUpdateQuantity={handleUpdateCartQuantity}
-                  isProcessing={isProcessing}
+      {/* Right Side: Cart and Checkout */}
+      <div className="w-[480px] flex flex-col bg-white shadow-lg">
+        {/* Header Section */}
+        <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50">
+          <div className="p-4 space-y-4">
+            {/* Quotation Lookup */}
+            <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Load from Quotation</h3>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={quotationNumber}
+                  onChange={(e) => setQuotationNumber(e.target.value.toUpperCase())}
+                  placeholder="GS-20251006-XXXX"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={loadingQuotation || isProcessing}
+                  onKeyPress={(e) => e.key === 'Enter' && handleLoadQuotation()}
                 />
+                <button
+                  onClick={handleLoadQuotation}
+                  disabled={loadingQuotation || isProcessing || !quotationNumber.trim()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                >
+                  {loadingQuotation ? '...' : 'Load'}
+                </button>
+              </div>
+              {addedProducts.some(p => p.fromQuotation) && (
+                <div className="mt-2 text-sm text-blue-700">
+                  📄 <span className="font-semibold">{addedProducts[0].fromQuotation}</span>
+                </div>
               )}
             </div>
-          </div>
 
-          {/* Order Summary - Fixed at bottom */}
-          <div className="flex-shrink-0 border-t border-gray-200 bg-white">
-            <OrderSummary
-              subTotal={subTotal}
-              tax={tax}
-              total={total}
-              itemCount={addedProducts.length}
-            />
+            {/* Customer Info */}
+            <div className="bg-white rounded-lg p-3 border border-gray-200">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-gray-600">Customer:</span>
+                <span className="text-sm text-gray-800 font-medium">{customerDisplayName || 'Walk-in Customer'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium text-gray-600">Date:</span>
+                <span className="text-sm text-gray-800">
+                  {new Date().toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                  })}
+                </span>
+              </div>
+            </div>
           </div>
+        </div>
 
-          {/* Payment Section - Fixed at bottom */}
-          <div className="flex-shrink-0 border-t border-gray-200 bg-white p-4">
-            <PaymentSection
-              paymentMethod={paymentMethod}
-              setPaymentMethod={setPaymentMethod}
-              amountPaid={amountPaid}
-              setAmountPaid={setAmountPaid}
-              paymentReference={paymentReference}
-              setPaymentReference={setPaymentReference}
-              total={total}
-              formattedTotal={formatCurrency(total)}
-              formattedChange={formatCurrency(Number(amountPaid) - total)}
-              onPrintAndSave={handlePrintAndSave}
-              onClearCart={resetSaleState}
-              isProcessing={isProcessing}
-              disabled={shouldDisableInteractions || addedProducts.length === 0}
-              hasProducts={addedProducts.length > 0}
-              checkoutButtonText="Complete Sale"
-            />
+        {/* Cart Items - Scrollable */}
+        <div className="flex-1 overflow-y-auto bg-white">
+          <div className="p-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">Cart Items</h3>
+              <span className="text-sm text-gray-500">
+                {addedProducts.length} {addedProducts.length === 1 ? 'item' : 'items'}
+              </span>
+            </div>
+
+            {addedProducts.length === 0 ? (
+              <div className="text-center py-16 text-gray-400">
+                <svg className="w-20 h-20 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                </svg>
+                <p className="text-base font-medium">Your cart is empty</p>
+                <p className="text-sm mt-1">Select products from the left to get started</p>
+              </div>
+            ) : (
+              <ProductList
+                cartItems={addedProducts.map((item, index) => ({
+                    ...item,
+                    originalIndex: index,
+                    formattedPrice: formatCurrency(item.price),
+                    formattedTotal: formatCurrency(item.price * item.qty)
+                }))}
+                onRemoveItem={handleRemoveProduct}
+                onUpdateQuantity={handleUpdateCartQuantity}
+                isProcessing={isProcessing}
+              />
+            )}
           </div>
+        </div>
+
+        {/* Order Summary */}
+        <div className="flex-shrink-0 border-t border-gray-200 bg-gray-50">
+          <OrderSummary
+            subTotal={subTotal}
+            tax={tax}
+            total={total}
+            itemCount={addedProducts.length}
+          />
+        </div>
+
+        {/* Payment Section */}
+        <div className="flex-shrink-0 border-t border-gray-200 bg-white p-4">
+          <PaymentSection
+            paymentMethod={paymentMethod}
+            setPaymentMethod={setPaymentMethod}
+            amountPaid={amountPaid}
+            setAmountPaid={setAmountPaid}
+            paymentReference={paymentReference}
+            setPaymentReference={setPaymentReference}
+            total={total}
+            formattedTotal={formatCurrency(total)}
+            formattedChange={formatCurrency(Number(amountPaid) - total)}
+            onPrintAndSave={handlePrintAndSave}
+            onClearCart={resetSaleState}
+            isProcessing={isProcessing}
+            disabled={shouldDisableInteractions || addedProducts.length === 0}
+            hasProducts={addedProducts.length > 0}
+            checkoutButtonText="Complete Sale"
+          />
         </div>
       </div>
 

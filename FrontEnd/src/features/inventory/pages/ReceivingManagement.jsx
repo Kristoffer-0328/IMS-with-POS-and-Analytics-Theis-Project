@@ -28,7 +28,7 @@ const ReceivingManagement = () => {
   const renderContent = () => {
     switch (activeTab) {
       case 'pending':
-        return <PendingReceipts />;
+        return ;
       case 'history':
         return (
           <div className="bg-white rounded-lg shadow-sm p-6">
@@ -44,25 +44,7 @@ const ReceivingManagement = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       
-
-      {/* Tabs */}
-      <div className="flex mb-6 border-b">
-        <TabButton
-          id="pending"
-          label="Pending Receipts"
-          icon={FiClock}
-          count={0}
-        />
-        <TabButton
-          id="history"
-          label="Receipt History"
-          icon={FiCheckCircle}
-          count={0}
-        />
-      </div>
-
-      {/* Content Area */}
-      {renderContent()}
+    <PendingReceipts />
     </div>
   );
 };
