@@ -14,7 +14,7 @@ import {
 import { FiBox, FiTrendingDown, FiTrendingUp, FiDollarSign, FiPackage, FiAlertTriangle, FiShoppingCart, FiInfo } from 'react-icons/fi';
 import { getFirestore, collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
-import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
+
 const db = getFirestore(app);
 
 const Dashboard = () => {

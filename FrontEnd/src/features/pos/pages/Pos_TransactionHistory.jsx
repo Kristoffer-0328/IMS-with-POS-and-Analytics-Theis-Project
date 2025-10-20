@@ -191,7 +191,7 @@ export default function Pos_Transaction_History() {
   return (
     <div className="flex flex-col w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-6 bg-gray-50 min-h-screen">
 
-      <DashboardHeader />
+    
       {/* Transaction Summary Cards - using the enhanced TransactionSummary component */}
       <TransactionSummary transactions={transactions} />
 
