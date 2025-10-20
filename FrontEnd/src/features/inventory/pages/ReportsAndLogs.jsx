@@ -80,8 +80,8 @@ const ReportsAndLogs = () => {
   // Render main reports dashboard
   const renderReportsDashboard = () => {
     return (
-      <div className="w-full">
-        <div className="bg-gradient-to-r from-orange-100/60 to-amber-100/30 rounded-xl p-8 mb-8">
+      <div className="">
+        <div className="">
           <h1 className="text-3xl font-bold text-gray-800 mb-1">
             Monthly Reports
           </h1>
