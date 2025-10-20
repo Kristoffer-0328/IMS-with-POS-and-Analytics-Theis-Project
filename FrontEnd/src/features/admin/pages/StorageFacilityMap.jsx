@@ -52,7 +52,7 @@ const StorageFacilityMap = () => {
   };
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
+    <div className="">
 
       <div className="max-w-7xl mx-auto py-8">
         <div className="mb-8">
