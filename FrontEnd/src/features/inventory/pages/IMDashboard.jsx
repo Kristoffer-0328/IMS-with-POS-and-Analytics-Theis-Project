@@ -181,8 +181,7 @@ const IMDashboard = () => {
   ];
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto p-4 sm:p-6 bg-gray-50">
-      <DashboardHeader />
+    <div className="">
 
       {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mb-5">

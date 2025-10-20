@@ -10,17 +10,22 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { login } = useAuth();
-
+  function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+  }
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
     try {
+      console.log('Before sleep');
+      await sleep(5000);
+      console.log('After sleep');
       const result = await login(email, password);
-      
       if (result.success) {
         // Navigate based on user role
+     
         if (result.user.role === "Admin") {
           navigate('/admin');
         } else if (result.user.role === 'InventoryManager') {

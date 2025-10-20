@@ -297,10 +297,7 @@ const Inventory = () => {
   }, [filteredData]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <DashboardHeader />
-      
-      <div className="flex flex-col w-full max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
+    <div>     
         {/* Tab Navigation */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
           <div className="flex border-b border-gray-200">
@@ -315,7 +312,7 @@ const Inventory = () => {
               <FiPackage size={20} />
               <span>Stock Management</span>
             </button>
-           
+              
             <button
               onClick={() => setActiveTab('restock')}
               className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors border-b-2 ${
@@ -352,7 +349,7 @@ const Inventory = () => {
           </div>
         </div>
 
-      {/* Tab Content */}
+    {/* Tab Content */}
       {activeTab === 'stock' && (
         <>
           {/* Enhanced Overview Card */}
@@ -574,7 +571,7 @@ const Inventory = () => {
         title={activeModal ? chartInfo[activeModal].title : ''}
         content={activeModal ? chartInfo[activeModal].content : ''}
       />
-      </div>
+      
     </div>
   );
 };

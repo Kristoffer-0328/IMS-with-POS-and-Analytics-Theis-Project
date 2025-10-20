@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import StorageFacilityInteractiveMap from '../../inventory/components/Inventory/StorageFacilityInteractiveMap';
 import { initializeStorageUnitsFromConfig } from '../../../services/firebase/StorageServices';
-
+import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
 const StorageFacilityMap = () => {
   const [initializing, setInitializing] = useState(false);
   const [initMessage, setInitMessage] = useState('');
@@ -52,15 +52,14 @@ const StorageFacilityMap = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="p-6 max-w-[1600px] mx-auto">
+
       <div className="max-w-7xl mx-auto py-8">
         <div className="mb-8">
+          
           <div className="flex justify-between items-start">
+            
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Storage Facility Map</h1>
-              <p className="mt-2 text-gray-600">
-                Interactive map of all storage units with real-time capacity information
-              </p>
               {isEditMode && (
                 <div className="mt-2 text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
                   <strong>Edit Mode:</strong> You can modify storage units, add new ones, or delete existing ones.

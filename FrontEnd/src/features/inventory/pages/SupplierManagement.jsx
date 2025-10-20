@@ -196,11 +196,9 @@ const SupplierManagement = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <DashboardHeader />
-      
-      {/* Content */}
-      <div className="p-6">
+    <div >
+
+     
         {/* Tab Navigation */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
           <div className="flex border-b border-gray-200">
@@ -305,7 +303,7 @@ const SupplierManagement = () => {
             suppliers={suppliers}
           />
         )}
-      </div>
+   
     </div>
   );
 };

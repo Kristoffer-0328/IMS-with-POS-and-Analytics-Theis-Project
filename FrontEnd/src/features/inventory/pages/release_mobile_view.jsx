@@ -43,9 +43,14 @@ const checkRestockingThreshold = (productData, variantIndex) => {
     maximumStockLevel = productData.maximumStockLevel || productData.restockLevel * 2 || 100;
   }
   
+  const needsRestock = currentQty <= restockLevel;
+  const isLowStock = currentQty <= (restockLevel * 1.5);
+  
+  console.log(`🔍 Restock check - Product: ${productData.name || 'Unknown'}, Qty: ${currentQty}, Restock Level: ${restockLevel}, Needs Restock: ${needsRestock}`);
+  
   return {
-    needsRestock: currentQty <= restockLevel,
-    isLowStock: currentQty <= (restockLevel * 1.5), // Alert when 50% above restock level
+    needsRestock,
+    isLowStock,
     currentQuantity: currentQty,
     restockLevel,
     maximumStockLevel
@@ -221,73 +226,7 @@ const ReleaseMobileView = () => {
         : [...prev, productId]
     );
   };
-  const generateRestockingRequest = async (productData, variantIndex, locationInfo, currentUser) => {
-    try {
-      let variant = null;
-      let isVariantRequest = true;
-      
-      // Check if this is a variant request or non-variant request
-      if (variantIndex >= 0 && productData.variants?.[variantIndex]) {
-        variant = productData.variants[variantIndex];
-        isVariantRequest = true;
-      } else {
-        // Non-variant product
-        isVariantRequest = false;
-      }
-      
-      const restockCheck = checkRestockingThreshold(productData, variantIndex);
-      if (!restockCheck.needsRestock) return null;
-      
-      const requestId = `RSR-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      
-      const restockingRequest = {
-        requestId,
-        productId: productData.id || 'unknown',
-        productName: productData.name || 'Unknown Product',
-        variantIndex: isVariantRequest ? variantIndex : -1,
-        variantDetails: isVariantRequest ? {
-          size: variant.size || '',
-          unit: variant.unit || 'pcs',
-          unitPrice: variant.unitPrice || 0
-        } : {
-          size: 'N/A',
-          unit: productData.unit || 'pcs',
-          unitPrice: productData.unitPrice || 0
-        },
-        currentQuantity: restockCheck.currentQuantity,
-        restockLevel: restockCheck.restockLevel,
-        maximumStockLevel: restockCheck.maximumStockLevel,
-        suggestedOrderQuantity: Math.max(50, restockCheck.maximumStockLevel - restockCheck.currentQuantity), // Suggest ordering to reach max level
-        priority: restockCheck.currentQuantity === 0 ? 'urgent' : 'normal',
-        location: {
-          storageLocation: locationInfo.storageLocation,
-          shelfName: locationInfo.shelfName,
-          rowName: locationInfo.rowName,
-          columnIndex: locationInfo.columnIndex,
-          fullPath: `${locationInfo.storageLocation}/${locationInfo.shelfName}/${locationInfo.rowName}/${locationInfo.columnIndex}`
-        },
-        triggeredBy: 'pos_sale',
-        triggeredByUser: currentUser?.uid || 'unknown',
-        triggeredByUserName: currentUser?.displayName || currentUser?.email || 'Unknown User',
-        status: 'pending',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      };
-      
-      // Save to restocking requests collection
-      await addDoc(collection(db, 'RestockingRequests'), restockingRequest);
-
-      // Generate notification for restocking request
-      await generateRestockingNotification(restockingRequest, currentUser);
-
-      return restockingRequest;
-    } catch (error) {
-      console.error('Error generating restocking request:', error);
-      return null;
-    }
-  };
-  // Helper function to generate restocking notification
-const generateRestockingNotification = async (restockingRequest, currentUser) => {
+  const generateRestockingNotification = async (restockingRequest, currentUser) => {
   try {
     if (!restockingRequest) return null;
     
@@ -327,6 +266,88 @@ const generateRestockingNotification = async (restockingRequest, currentUser) =>
     return null;
   }
 };
+  const generateRestockingRequest = async (productData, variantIndex, locationInfo, currentUser) => {
+    try {
+      console.log(`🚨 GENERATING RESTOCK REQUEST - Product: ${productData.name}, Variant Index: ${variantIndex}`);
+      
+      let variant = null;
+      let isVariantRequest = true;
+      
+      // Check if this is a variant request or non-variant request
+      if (variantIndex >= 0 && productData.variants?.[variantIndex]) {
+        variant = productData.variants[variantIndex];
+        isVariantRequest = true;
+        console.log(`📦 Variant product - Size: ${variant.size}, Quantity: ${variant.quantity}`);
+      } else {
+        // Non-variant product
+        isVariantRequest = false;
+        console.log(`📦 Non-variant product - Quantity: ${productData.quantity}`);
+      }
+      
+      const restockCheck = checkRestockingThreshold(productData, variantIndex);
+      console.log(`🔍 Restock check result:`, restockCheck);
+      
+      if (!restockCheck.needsRestock) {
+        console.log(`❌ No restock needed - Current qty (${restockCheck.currentQuantity}) > Restock level (${restockCheck.restockLevel})`);
+        return null;
+      }
+      
+      console.log(`✅ Creating restock request...`);
+      
+      const requestId = `RSR-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
+     const restockingRequest = {
+        requestId,
+        productId: productData.id || 'unknown',
+        productName: productData.name || 'Unknown Product',
+        category: productData.category || 'Uncategorized',
+        supplierId: productData.supplier?.code || '',
+        supplierName: productData.supplier?.name || 'Unknown Supplier',
+        variantIndex: isVariantRequest ? variantIndex : -1,
+        variantDetails: isVariantRequest ? {
+          size: variant.size || '',
+          unit: variant.unit || 'pcs',
+          unitPrice: variant.unitPrice || 0
+        } : {
+          size: 'N/A',
+          unit: productData.unit || 'pcs',
+          unitPrice: productData.unitPrice || 0
+        },
+        currentQuantity: restockCheck.currentQuantity,
+        restockLevel: restockCheck.restockLevel,
+        maximumStockLevel: restockCheck.maximumStockLevel,
+        suggestedOrderQuantity: Math.max(50, restockCheck.maximumStockLevel - restockCheck.currentQuantity), // Suggest ordering to reach max level
+        priority: restockCheck.currentQuantity === 0 ? 'urgent' : 'normal',
+        location: {
+          storageLocation: locationInfo.storageLocation,
+          shelfName: locationInfo.shelfName,
+          rowName: locationInfo.rowName,
+          columnIndex: locationInfo.columnIndex,
+          fullPath: `${locationInfo.storageLocation}/${locationInfo.shelfName}/${locationInfo.rowName}/${locationInfo.columnIndex}`
+        },
+        triggeredBy: 'pos_sale',
+        triggeredByUser: currentUser?.uid || 'unknown',
+        triggeredByUserName: currentUser?.displayName || currentUser?.email || 'Unknown User',
+        status: 'pending',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+      console.log('📝 Restocking Request Data:', restockingRequest);
+      
+      // Save to restocking requests collection
+      await addDoc(collection(db, 'RestockingRequests'), restockingRequest);
+
+      // Generate notification for restocking request
+      await generateRestockingNotification(restockingRequest, currentUser);
+
+      return restockingRequest;
+    } catch (error) {
+      console.error('Error generating restocking request:', error);
+      return null;
+    }
+  };
+  // Helper function to generate restocking notification
+
   const validateCurrentProduct = () => {
     const selectedProductsForVerification = products.filter(p => selectedProducts.includes(p.id));
     const product = selectedProductsForVerification[currentProductIndex];
@@ -751,8 +772,9 @@ const generateRestockingNotification = async (restockingRequest, currentUser) =>
               if (newQty <= restockLevel) {
                 console.log(`Low stock detected for variant (${newQty} <= ${restockLevel}), generating restock request...`);
                 
-                // Generate restock request using the centralized function
-                await generateRestockingRequest(productData, location.variantIndex, location.location, currentUser);
+                // Generate restock request using the centralized function with updated product data
+                const updatedProductData = { ...productData, variants };
+                await generateRestockingRequest(updatedProductData, location.variantIndex, location.location, currentUser);
               }
             } else {
               // Product has no variants - update base product quantity
@@ -774,8 +796,9 @@ const generateRestockingNotification = async (restockingRequest, currentUser) =>
               if (newQty <= restockLevel) {
                 console.log(`⚠️ Low stock detected (${newQty} <= ${restockLevel}), generating restock request...`);
                 
-                // Generate restock request using the centralized function for non-variant products
-                await generateRestockingRequest(productData, -1, location.location, currentUser);
+                // Generate restock request using the centralized function with updated product data
+                const updatedProductData = { ...productData, quantity: newQty };
+                await generateRestockingRequest(updatedProductData, -1, location.location, currentUser);
               }
             }
           });
@@ -1092,7 +1115,7 @@ const generateRestockingNotification = async (restockingRequest, currentUser) =>
                 </div>
                 <div className="flex items-center">
                   <FiCheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                  Restock requests generated (if needed)
+                  Restock requests generated
                 </div>
               </div>
             </div>
