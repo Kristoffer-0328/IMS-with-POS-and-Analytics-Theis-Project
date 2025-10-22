@@ -4,6 +4,7 @@ import { getDoc, doc ,getFirestore} from 'firebase/firestore';
 import { usePurchaseOrderServices } from '../../../../services/firebase/PurchaseOrderServices';
 import { useDocumentServices } from '../../../../services/firebase/DocumentServices';
 import { useAuth } from '../../../auth/services/FirebaseAuth';
+import { generatePurchaseOrderNotification } from '../../../../services/firebase/NotificationServices';
 import app from '../../../../FirebaseConfig';
 
 const db = getFirestore(app);
@@ -87,7 +88,10 @@ const ViewPOModal = ({ poId, onClose }) => {
 
   // Handle approval/rejection
   const handleApprovalAction = async (action) => {
-    setProcessingAction(true);
+    console.log('🔄 handleApprovalAction called with action:', action);
+    console.log('👤 Current user:', currentUser);
+    console.log('📄 PO data:', poData);
+    setProcessingAction(true);  
     try {
       setError(null);
 
@@ -128,6 +132,22 @@ const ViewPOModal = ({ poId, onClose }) => {
             });
           }
         }
+
+        // Generate notification for approval/rejection
+        try {
+          console.log('🔔 About to generate notification for PO approval/rejection');
+          console.log('Generating PO', action, 'notification for:', poData.poNumber);
+          if (poData) {
+            await generatePurchaseOrderNotification(poData, currentUser, action, approvalNotes);
+            console.log('PO', action, 'notification generated successfully');
+          } else {
+            console.error('No PO data available for notification');
+          }
+        } catch (notificationError) {
+          console.error('Failed to generate PO', action, 'notification:', notificationError);
+          // Don't fail the approval process if notification fails
+        }
+
         onClose();
       } else {
         throw new Error(result.error || 'Failed to process approval');
@@ -191,52 +211,22 @@ const ViewPOModal = ({ poId, onClose }) => {
       setError(null);
       const result = await poServices.submitPOForApproval(poId);
       if (result.success) {
+        // Generate notification immediately after successful submission
+        try {
+          console.log('Generating PO submission notification for:', poData.poNumber);
+          if (poData) {
+            await generatePurchaseOrderNotification(poData, currentUser, 'submitted');
+            console.log('PO submission notification generated successfully');
+          } else {
+            console.error('No PO data available for notification');
+          }
+        } catch (notificationError) {
+          console.error('Failed to generate PO submission notification:', notificationError);
+          // Don't fail the approval process if notification fails
+        }
+
         // Reset loading state immediately after successful submission
         setProcessingAction(false);
-        
-        // Generate and save PDF in the background (non-blocking)
-        try {
-          const doc = await documentServices.generatePOPDF({
-            ...poData,
-            status: 'pending_approval',
-            preparedBy: {
-              id: currentUser.uid,
-              name: currentUser.name,
-              role: currentUser.role,
-              signature: '/src/assets/IMSignature.png'
-            }
-          });
-          
-          const pdfBlob = doc.output('blob');
-          const uploadResult = await documentServices.uploadDocument(
-            pdfBlob,
-            `purchase_orders/${poId}/po_${poData.poNumber}.pdf`
-          );
-
-          if (uploadResult.success) {
-            await documentServices.saveDocumentMetadata({
-              referenceId: poId,
-              type: 'purchase_order',
-              name: `PO ${poData.poNumber}`,
-              url: uploadResult.url,
-              fileType: 'pdf',
-              createdBy: {
-                id: currentUser.uid,
-                name: currentUser.name,
-                role: currentUser.role
-              }
-            });
-          }
-        } catch (pdfError) {
-          console.error('Error generating/saving PDF:', pdfError);
-          // Don't show error to user as the main operation succeeded
-        }
-
-        // Refresh PO data to show new status
-        const updatedPO = await poServices.getPurchaseOrder(poId);
-        if (updatedPO.success) {
-          setPoData(updatedPO.data);
-        }
       } else {
         throw new Error(result.error || 'Failed to submit PO for approval');
       }
@@ -317,8 +307,7 @@ const ViewPOModal = ({ poId, onClose }) => {
 
   const canApprove = currentUser.role === 'Admin' && poData.status === 'pending_approval';
   const showSubmitButton = currentUser.role === 'InventoryManager' && poData.status === 'draft';
-  const showDownloadButton = poData.status === 'approved' || poData.status === 'received';
-  const isReceived = poData.status === 'received';
+  const showDownloadButton = poData.status === 'approved';
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -361,7 +350,6 @@ const ViewPOModal = ({ poId, onClose }) => {
               poData.status === 'draft' ? 'bg-gray-100 text-gray-800' :
               poData.status === 'pending_approval' ? 'bg-amber-100 text-amber-800' :
               poData.status === 'approved' ? 'bg-green-100 text-green-800' :
-              poData.status === 'received' ? 'bg-blue-100 text-blue-800' :
               poData.status === 'rejected' ? 'bg-red-100 text-red-800' :
               'bg-gray-100 text-gray-800'
             }`}>
@@ -415,11 +403,6 @@ const ViewPOModal = ({ poId, onClose }) => {
                         Received
                       </th>
                     )}
-                    {isReceived && (
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                        Received Qty
-                      </th>
-                    )}
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
@@ -447,11 +430,6 @@ const ViewPOModal = ({ poId, onClose }) => {
                             onChange={(e) => handleReceivedQuantityChange(((currentPage - 1) * ITEMS_PER_PAGE) + index, e.target.value)}
                             className="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           />
-                        </td>
-                      )}
-                      {isReceived && (
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
-                          {poData.receivedProducts?.find(rp => rp.productId === item.productId)?.receivedQuantity || 0}
                         </td>
                       )}
                     </tr>

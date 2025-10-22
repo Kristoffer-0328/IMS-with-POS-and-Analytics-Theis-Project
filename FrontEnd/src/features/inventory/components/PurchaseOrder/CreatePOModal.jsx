@@ -4,6 +4,7 @@ import { usePurchaseOrderServices } from '../../../../services/firebase/Purchase
 import { useServices } from '../../../../services/firebase/ProductServices';
 import { useSupplierServices } from '../../../../services/firebase/SupplierServices';
 import { useAuth } from '../../../auth/services/FirebaseAuth';
+import { generatePurchaseOrderNotification } from '../../../../services/firebase/NotificationServices';
 import { getFirestore, collection, query, where, getDocs } from 'firebase/firestore';
 import app from '../../../../FirebaseConfig';
 
@@ -248,6 +249,21 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
 
       if (!result.success) {
         throw new Error(result.error);
+      }
+
+      // Generate notification for PO creation
+      try {
+        // Use the PO data that was just created, but add the generated fields
+        const notificationData = {
+          ...poData,
+          id: result.id,
+          poNumber: result.poNumber,
+          status: 'draft'
+        };
+        await generatePurchaseOrderNotification(notificationData, currentUser, 'created');
+      } catch (notificationError) {
+        console.error('Failed to generate PO creation notification:', notificationError);
+        // Don't fail the PO creation if notification fails
       }
 
       onSuccess();

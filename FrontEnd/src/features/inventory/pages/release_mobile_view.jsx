@@ -1064,6 +1064,55 @@ const updateInventoryQuantities = async (releasedProducts, currentUser) => {
   }
 };
 
+// Helper function to generate release notification
+const generateReleaseNotification = async (releaseData, currentUser) => {
+  try {
+    if (!releaseData) return null;
+    
+    const notificationId = `REL-NOT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const notification = {
+      notificationId,
+      type: 'release_completed',
+      priority: 'normal',
+      title: '📦 Release Completed',
+      message: `Release ${releaseData.transactionId} completed - ${releaseData.releasedProducts?.length || 0} items released`,
+      details: {
+        transactionId: releaseData.transactionId,
+        releaseId: releaseData.releaseId,
+        totalItems: releaseData.releasedProducts?.length || 0,
+        totalValue: releaseData.totalValue || 0,
+        customerName: releaseData.customerInfo?.name || 'Walk-in Customer',
+        releasedBy: releaseData.releasedByName || 'Unknown',
+        items: releaseData.releasedProducts?.map(item => ({
+          productName: item.productName,
+          variantName: item.variantName,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalValue,
+          category: item.category
+        })) || []
+      },
+      targetRoles: ['InventoryManager', 'Admin'], // Who should see this notification
+      triggeredBy: currentUser?.uid || 'system',
+      triggeredByName: currentUser?.displayName || currentUser?.email || 'Mobile Release System',
+      relatedTransactionId: releaseData.transactionId,
+      isRead: false,
+      status: 'active',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+    
+    // Save to notifications collection
+    await addDoc(collection(db, 'Notifications'), notification);
+
+    return notification;
+  } catch (error) {
+    console.error('Error generating release notification:', error);
+    return null;
+  }
+};
+
 const ReleaseMobileView = () => {
   const { currentUser } = useAuth();
   const [releaseId, setReleaseId] = useState(null);
@@ -1533,6 +1582,21 @@ const ReleaseMobileView = () => {
 
       await Promise.all(stockMovementPromises);
 
+      // Generate notification for successful release
+      await generateReleaseNotification({
+        ...releaseData, 
+        releaseId,
+        releasedByName: releaseDetails.releasedBy,
+        totalValue: releaseData.totals?.total || 0,
+        releasedProducts: products.filter(p => p.status === 'released').map(p => ({
+          productName: p.name,
+          variantName: p.variantName,
+          quantity: p.releasedQty,
+          unitPrice: p.unitPrice,
+          totalValue: Number(p.releasedQty) * Number(p.unitPrice),
+          category: p.category
+        }))
+      }, currentUser);
 
       setIsCompleted(true);
       setIsSubmitting(false);

@@ -55,11 +55,11 @@ const DashboardHeader = () => {
     const userRole = currentUser.role;
     console.log('Fetching notifications for user role:', userRole);
 
-    // Query notifications collection - include release_mobile_view
+    // Query notifications collection - include all notification types
     const notificationsQuery = query(
       collection(db, 'Notifications'),
       where('status', '==', 'active'),
-      where('type', 'in', ['restock_alert', 'sale_completed', 'release_mobile_view']),
+      where('type', 'in', ['restock_alert', 'sale_completed', 'release_mobile_view', 'receiving_completed', 'release_completed', 'po_pending_approval', 'po_approved', 'po_rejected', 'draft_po_created']),
       orderBy('createdAt', 'desc')
     );
 
@@ -133,9 +133,15 @@ const DashboardHeader = () => {
     if (notification.type === 'restock_alert') {
       console.log('Navigating to /im/restocking-request');
       navigate('/im/restocking-request');
-    } else if (notification.type === 'sale_completed' || notification.type === 'release_mobile_view') {
+    } else if (notification.type === 'sale_completed' || notification.type === 'release_mobile_view' || notification.type === 'release_completed') {
       console.log('Navigating to /im/inventory?tab=release');
       navigate('/im/inventory?tab=release');
+    } else if (notification.type === 'receiving_completed') {
+      console.log('Navigating to /im/receiving');
+      navigate('/im/receiving');
+    } else if (notification.type === 'po_pending_approval' || notification.type === 'po_approved' || notification.type === 'po_rejected' || notification.type === 'draft_po_created') {
+      console.log('Navigating to /admin/purchase-orders');
+      navigate('/admin/purchase-orders');
     } else {
       console.log('Notification type not handled:', notification.type);
     }
@@ -240,9 +246,28 @@ const DashboardHeader = () => {
                             <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                               notification.type === 'sale_completed'
                                 ? 'bg-blue-100 text-blue-800'
+                                : notification.type === 'receiving_completed'
+                                ? 'bg-green-100 text-green-800'
+                                : notification.type === 'release_completed' || notification.type === 'release_mobile_view'
+                                ? 'bg-purple-100 text-purple-800'
+                                : notification.type === 'po_pending_approval'
+                                ? 'bg-amber-100 text-amber-800'
+                                : notification.type === 'po_approved'
+                                ? 'bg-green-100 text-green-800'
+                                : notification.type === 'po_rejected'
+                                ? 'bg-red-100 text-red-800'
+                                : notification.type === 'draft_po_created'
+                                ? 'bg-gray-100 text-gray-800'
                                 : 'bg-orange-100 text-orange-800'
                             }`}>
-                              {notification.type === 'sale_completed' ? 'Sale' : 'Restock Alert'}
+                              {notification.type === 'sale_completed' ? 'Sale' : 
+                               notification.type === 'receiving_completed' ? 'Receiving' :
+                               notification.type === 'release_completed' || notification.type === 'release_mobile_view' ? 'Release' :
+                               notification.type === 'po_pending_approval' ? 'PO Pending' :
+                               notification.type === 'po_approved' ? 'PO Approved' :
+                               notification.type === 'po_rejected' ? 'PO Rejected' :
+                               notification.type === 'draft_po_created' ? 'PO Draft' :
+                               'Restock Alert'}
                             </span>
                           </div>
                         </div>

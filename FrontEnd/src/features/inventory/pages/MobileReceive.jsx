@@ -19,6 +19,55 @@ import storage from '../../../services/firebase/StorageConfig';
 import { useAuth } from '../../auth/services/FirebaseAuth';
 import { AnalyticsService } from '../../../services/firebase/AnalyticsService';
 
+// Helper function to generate receiving notification
+const generateReceivingNotification = async (receivingData, currentUser) => {
+  try {
+    if (!receivingData) return null;
+    
+    const notificationId = `REC-NOT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const notification = {
+      notificationId,
+      type: 'receiving_completed',
+      priority: 'normal',
+      title: '📦 Receiving Completed',
+      message: `PO ${receivingData.poId} receiving completed - ${receivingData.items?.length || 0} items processed`,
+      details: {
+        poId: receivingData.poId,
+        transactionId: receivingData.transactionId,
+        totalItems: receivingData.items?.length || 0,
+        totalReceivedValue: receivingData.summary?.totalReceivedValue || 0,
+        supplierName: receivingData.deliveryDetails?.supplierName || 'Unknown Supplier',
+        receivedBy: receivingData.deliveryDetails?.receivedBy || 'Unknown',
+        items: receivingData.items?.map(item => ({
+          productName: item.productName,
+          variantName: item.variantName,
+          quantity: item.receivedQuantity,
+          unitPrice: item.unitPrice,
+          totalPrice: item.receivedQuantity * item.unitPrice,
+          category: item.category
+        })) || []
+      },
+      targetRoles: ['InventoryManager', 'Admin'], // Who should see this notification
+      triggeredBy: currentUser?.uid || 'system',
+      triggeredByName: currentUser?.displayName || currentUser?.email || 'Mobile Receiving System',
+      relatedTransactionId: receivingData.transactionId,
+      isRead: false,
+      status: 'active',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+    
+    // Save to notifications collection
+    await addDoc(collection(db, 'Notifications'), notification);
+
+    return notification;
+  } catch (error) {
+    console.error('Error generating receiving notification:', error);
+    return null;
+  }
+};
+
 const db = getFirestore(app);
 
 // Constants
@@ -102,6 +151,8 @@ const MobileReceive = () => {
                 status: 'pending',
                 notes: '',
                 productId: item.productId,
+                variantId: item.productId && item.productId.includes('_VAR_') ? item.productId : null, // Check if productId is a variant ID
+                variantName: item.variantName || null,
                 unitPrice: item.unitPrice || 0,
                 total: item.total || 0,
                 category: item.category || 'General'
@@ -500,13 +551,44 @@ const MobileReceive = () => {
   };
 
   // Function to find product in inventory using NEW NESTED STRUCTURE
-  const findProductInInventory = async (productId, productName) => {
+  const findProductInInventory = async (productId, productName, variantId = null) => {
     try {
-      console.log(`🔍 Searching for product: ${productName} (ID: ${productId})`);
+      console.log(`🔍 Searching for product: ${productName} (ID: ${productId}, Variant ID: ${variantId})`);
       
       // Get all storage units (top-level documents in Products collection)
       const productsCollection = collection(db, 'Products');
       const storageSnapshot = await getDocs(productsCollection);
+      
+      // If we have a variantId, try to find the variant directly first
+      if (variantId) {
+        for (const storageDoc of storageSnapshot.docs) {
+          const storageLocation = storageDoc.id;
+          
+          // Access the products subcollection for this storage unit
+          const productsRef = collection(db, 'Products', storageLocation, 'products');
+          
+          // Try to find by exact variant ID
+          const variantRef = doc(db, 'Products', storageLocation, 'products', variantId);
+          const variantDoc = await getDoc(variantRef);
+          
+          if (variantDoc.exists()) {
+            const variantData = variantDoc.data();
+            console.log(`✅ Found variant in ${storageLocation}:`, variantData);
+            
+            return {
+              ref: variantRef,
+              data: variantData,
+              location: {
+                storageLocation,
+                shelfName: variantData.shelfName,
+                rowName: variantData.rowName,
+                columnIndex: variantData.columnIndex
+              }
+            };
+          }
+        }
+        console.log(`⚠️ Variant ID ${variantId} not found, falling back to base product search`);
+      }
       
       // Search through each storage unit's products subcollection
       for (const storageDoc of storageSnapshot.docs) {
@@ -536,28 +618,69 @@ const MobileReceive = () => {
         }
         
         // If not found by ID, try querying by name in this storage unit
-        const nameQuery = query(productsRef, where('name', '==', productName));
-        const nameSnapshot = await getDocs(nameQuery);
+        // First prioritize variants over base products
+        const variantNameQuery = query(productsRef, where('name', '==', productName), where('isVariant', '==', true));
+        const variantNameSnapshot = await getDocs(variantNameQuery);
         
-        if (!nameSnapshot.empty) {
-          const firstDoc = nameSnapshot.docs[0];
-          const productData = firstDoc.data();
-          console.log(`✅ Found product by name in ${storageLocation}:`, productData);
+        if (!variantNameSnapshot.empty) {
+          const firstVariantDoc = variantNameSnapshot.docs[0];
+          const variantData = firstVariantDoc.data();
+          console.log(`✅ Found variant by name in ${storageLocation}:`, variantData);
           
           return {
-            ref: firstDoc.ref,
-            data: productData,
+            ref: firstVariantDoc.ref,
+            data: variantData,
             location: {
               storageLocation,
-              shelfName: productData.shelfName,
-              rowName: productData.rowName,
-              columnIndex: productData.columnIndex
+              shelfName: variantData.shelfName,
+              rowName: variantData.rowName,
+              columnIndex: variantData.columnIndex
+            }
+          };
+        }
+        
+        // If no variants found, try base products
+        const baseNameQuery = query(productsRef, where('name', '==', productName), where('isVariant', '==', false));
+        const baseNameSnapshot = await getDocs(baseNameQuery);
+        
+        // If we found both variants and base products, prefer variants (they're more specific)
+        if (!variantNameSnapshot.empty && !baseNameSnapshot.empty) {
+          console.log(`✅ Found both variants and base products for "${productName}". Prioritizing variant.`);
+          const firstVariantDoc = variantNameSnapshot.docs[0];
+          const variantData = firstVariantDoc.data();
+          console.log(`✅ Selected variant by name in ${storageLocation}:`, variantData);
+          
+          return {
+            ref: firstVariantDoc.ref,
+            data: variantData,
+            location: {
+              storageLocation,
+              shelfName: variantData.shelfName,
+              rowName: variantData.rowName,
+              columnIndex: variantData.columnIndex
+            }
+          };
+        }
+        
+        if (!baseNameSnapshot.empty) {
+          const firstBaseDoc = baseNameSnapshot.docs[0];
+          const baseData = firstBaseDoc.data();
+          console.log(`✅ Found base product by name in ${storageLocation}:`, baseData);
+          
+          return {
+            ref: firstBaseDoc.ref,
+            data: baseData,
+            location: {
+              storageLocation,
+              shelfName: baseData.shelfName,
+              rowName: baseData.rowName,
+              columnIndex: baseData.columnIndex
             }
           };
         }
       }
 
-      console.log(`❌ Product not found: ${productName} (ID: ${productId})`);
+      console.log(`❌ Product not found: ${productName} (ID: ${productId}, Variant ID: ${variantId})`);
       return null;
       
     } catch (error) {
@@ -579,43 +702,112 @@ const MobileReceive = () => {
         }
 
         console.log(`\n🔄 Processing ${product.name} (${product.receivedQuantity} units)`);
-        
+
         // Find the product in inventory
-        const productInfo = await findProductInInventory(product.productId, product.name);
-        
+        const productInfo = await findProductInInventory(product.productId, product.name, product.variantId);
+
         if (!productInfo) {
-          throw new Error(`Product "${product.name}" (ID: ${product.productId}) not found in inventory. Cannot update stock levels.`);
+          throw new Error(`Product "${product.name}" (ID: ${product.productId}, Variant ID: ${product.variantId || 'N/A'}) not found in inventory. Cannot update stock levels.`);
         }
-        
+
         console.log(`📍 Found at: Products/${productInfo.location.storageLocation}/products/${product.productId}`);
-        
+
         // Update the product using a transaction
         await runTransaction(db, async (transaction) => {
           // Re-fetch the latest product data in the transaction
           const currentProductDoc = await transaction.get(productInfo.ref);
-          
+
           if (!currentProductDoc.exists()) {
             throw new Error(`Product "${product.name}" was deleted during update process.`);
           }
-          
+
           const productData = currentProductDoc.data();
-          
-          // Calculate new quantity (flat structure - products have direct quantity field)
-          const currentQty = parseInt(productData.quantity) || 0;
-          const deliveredQty = parseInt(product.receivedQuantity);
-          const newQty = currentQty + deliveredQty;
-          
-          console.log(`📊 Quantity update: ${currentQty} + ${deliveredQty} = ${newQty}`);
-          
-          // Update the product document (no variants array in flat structure)
-          transaction.update(productInfo.ref, {
-            quantity: newQty,
-            lastReceived: serverTimestamp(),
-            totalReceived: (productData.totalReceived || 0) + deliveredQty,
-            lastUpdated: serverTimestamp()
-          });
-          
-          console.log(`✅ Updated ${product.name} quantity to ${newQty}`);
+
+          // Check if this is a variant document (separate document) or base product with nested variants
+          const isVariantDocument = productData.isVariant === true;
+
+          if (isVariantDocument) {
+            // VARIANT DOCUMENT: Update the variant document directly
+            console.log(`📦 Updating variant document at ${productInfo.location.storageLocation}`);
+
+            const currentQty = Number(productData.quantity) || 0;
+            const receivedQty = Number(product.receivedQuantity);
+            const newQty = currentQty + receivedQty;
+
+            console.log(`➡️ Updating variant quantity: ${currentQty} + ${receivedQty} = ${newQty}`);
+
+            // Update variant document quantity
+            transaction.update(productInfo.ref, {
+              quantity: newQty,
+              lastReceived: serverTimestamp(),
+              totalReceived: (productData.totalReceived || 0) + receivedQty,
+              lastUpdated: serverTimestamp()
+            });
+
+            console.log(`✅ Updated variant ${productData.variantName || productData.size || product.name} quantity to ${newQty}`);
+          } else {
+            // BASE PRODUCT: Check if this product has nested variants (legacy structure)
+            const hasVariants = productData.variants && Array.isArray(productData.variants) && productData.variants.length > 0;
+
+            if (hasVariants && product.variantId) {
+              // LEGACY: Product has nested variants - update the specific variant's quantity
+              console.log(`📦 Updating nested variant at ${productInfo.location.storageLocation}`);
+
+              const variants = [...productData.variants];
+              const variantIndex = variants.findIndex(v =>
+                v.variantId === product.variantId ||
+                (v.size && product.variantName && v.size === product.variantName) ||
+                (v.name && product.variantName && v.name === product.variantName)
+              );
+
+              if (variantIndex === -1) {
+                throw new Error(`Variant ${product.variantName || product.variantId} not found in product ${product.name}`);
+              }
+
+              const variant = variants[variantIndex];
+              const currentQty = Number(variant.quantity) || 0;
+              const receivedQty = Number(product.receivedQuantity);
+              const newQty = currentQty + receivedQty;
+
+              console.log(`📊 Variant ${variant.size || variant.name} - Current: ${currentQty}, Adding: ${receivedQty}, New: ${newQty}`);
+
+              // Update the variant quantity
+              variants[variantIndex] = {
+                ...variant,
+                quantity: newQty,
+                lastReceived: serverTimestamp(),
+                totalReceived: (variant.totalReceived || 0) + receivedQty,
+                lastUpdated: serverTimestamp()
+              };
+
+              // Update the product document with modified variants
+              transaction.update(productInfo.ref, {
+                variants: variants,
+                lastUpdated: serverTimestamp()
+              });
+
+              console.log(`✅ Updated nested variant ${variant.size || variant.name} quantity to ${newQty}`);
+            } else {
+              // BASE PRODUCT: Non-variant product - update base product quantity
+              console.log(`📦 Updating base product (non-variant) at ${productInfo.location.storageLocation}`);
+
+              const currentQty = Number(productData.quantity) || 0;
+              const receivedQty = Number(product.receivedQuantity);
+              const newQty = currentQty + receivedQty;
+
+              console.log(`➡️ Updating quantity: ${currentQty} + ${receivedQty} = ${newQty}`);
+
+              // Update product quantity
+              transaction.update(productInfo.ref, {
+                quantity: newQty,
+                lastReceived: serverTimestamp(),
+                totalReceived: (productData.totalReceived || 0) + receivedQty,
+                lastUpdated: serverTimestamp()
+              });
+
+              console.log(`✅ Updated base product ${product.name} quantity to ${newQty}`);
+            }
+          }
         });
       }
 
@@ -637,7 +829,7 @@ const MobileReceive = () => {
         .filter(p => p.status === 'received' && (p.acceptedQty > 0 || p.rejectedQty > 0))
         .map(product => ({
           productId: product.productId,
-          productName: product.name,
+          productName: product.name || 'Unknown Product',
           category: product.category || 'General',
           expectedQuantity: product.expectedQty,
           quantity: parseInt(product.acceptedQty) || 0,  // <-- Changed to 'quantity' for AnalyticsService
@@ -647,6 +839,8 @@ const MobileReceive = () => {
           rejectionReason: product.rejectionReason || '',
           notes: product.notes || '',
           photo: product.photoPreview || null,
+          variantId: product.variantId || null,
+          variantName: product.variantName || null,
           receivedBy: {
             id: currentUser?.uid || 'mobile_user',
             name: currentUser?.name || deliveryData.receivedBy || 'Mobile User'
@@ -659,6 +853,25 @@ const MobileReceive = () => {
       
       // Update Purchase Order status and received quantities
       setProcessingStep('Updating Purchase Order...');
+      
+      // Validate and parse delivery date/time
+      let deliveryDateTime;
+      try {
+        if (deliveryData.deliveryDateTime && deliveryData.deliveryDateTime.includes('T')) {
+          deliveryDateTime = new Date(deliveryData.deliveryDateTime);
+          // Check if the date is valid
+          if (isNaN(deliveryDateTime.getTime())) {
+            throw new Error('Invalid date format');
+          }
+        } else {
+          // Use current timestamp if date is invalid
+          deliveryDateTime = new Date();
+        }
+      } catch (error) {
+        console.warn('Invalid delivery date/time, using current timestamp:', deliveryData.deliveryDateTime);
+        deliveryDateTime = new Date();
+      }
+      
       if (poId) {
         const poRef = doc(db, 'purchase_orders', poId);
         
@@ -670,24 +883,6 @@ const MobileReceive = () => {
           totalQuantityReceived: receivedItems.reduce((sum, p) => sum + (p.receivedQuantity || 0), 0),
           itemsWithDiscrepancies: deliveryData.products.filter(p => (parseInt(p.acceptedQty) || 0) !== p.expectedQty).length
         };
-        
-        // Validate and parse delivery date/time
-        let deliveryDateTime;
-        try {
-          if (deliveryData.deliveryDateTime && deliveryData.deliveryDateTime.includes('T')) {
-            deliveryDateTime = new Date(deliveryData.deliveryDateTime);
-            // Check if the date is valid
-            if (isNaN(deliveryDateTime.getTime())) {
-              throw new Error('Invalid date format');
-            }
-          } else {
-            // Use current timestamp if date is invalid
-            deliveryDateTime = new Date();
-          }
-        } catch (error) {
-          console.warn('Invalid delivery date/time, using current timestamp:', deliveryData.deliveryDateTime);
-          deliveryDateTime = new Date();
-        }
         
         await updateDoc(poRef, {
           status: 'received',
@@ -740,6 +935,14 @@ const MobileReceive = () => {
       };
       
       await addDoc(collection(db, 'receivingTransactions'), receivingTransactionData);
+
+      // Generate receiving notification for inventory manager and admin
+      try {
+        await generateReceivingNotification(receivingTransactionData, currentUser);
+      } catch (notificationError) {
+        console.error('Failed to generate receiving notification:', notificationError);
+        // Don't fail the transaction if notification fails
+      }
 
       // Update analytics
       setProcessingStep('Updating analytics...');
@@ -826,6 +1029,9 @@ const MobileReceive = () => {
         totalProducts: deliveryData.products.length,
         timestamp: new Date().toISOString()
       });
+      
+      // Generate notification for successful receiving
+      await generateReceivingNotification(receivingTransactionData, currentUser);
       
       setIsCompleted(true);
       
