@@ -17,6 +17,17 @@ import { QRCodeSVG } from 'qrcode.react';
 
 const db = getFirestore(app);
 
+// Cancellation reasons
+const CANCEL_REASONS = [
+  'Payment didn\'t proceed',
+  'Customer changed mind',
+  'Items not available',
+  'Technical issue',
+  'Order error',
+  'Customer request',
+  'Other'
+];
+
 const ReleaseManagement = () => {
   const { currentUser } = useAuth();
   const [releases, setReleases] = useState([]);
@@ -25,6 +36,9 @@ const ReleaseManagement = () => {
   const [statusFilter, setStatusFilter] = useState('all'); // all, pending, released, cancelled
   const [selectedRelease, setSelectedRelease] = useState(null);
   const [showQRModal, setShowQRModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [customCancelReason, setCustomCancelReason] = useState('');
 
   // Listen to POS transactions that need to be released
   useEffect(() => {
@@ -90,6 +104,14 @@ const ReleaseManagement = () => {
     setShowQRModal(true);
   };
 
+  // Handle showing cancel modal
+  const handleShowCancel = (release) => {
+    setSelectedRelease(release);
+    setCancelReason('');
+    setCustomCancelReason('');
+    setShowCancelModal(true);
+  };
+
   // Handle marking as released (called after QR scan)
   const handleMarkAsReleased = async (releaseId) => {
     try {
@@ -110,11 +132,47 @@ const ReleaseManagement = () => {
     }
   };
 
+  // Handle cancelling release
+  const handleCancelRelease = async () => {
+    if (!cancelReason.trim()) {
+      alert('Please select a cancellation reason.');
+      return;
+    }
+
+    const finalReason = cancelReason === 'Other' ? customCancelReason.trim() : cancelReason;
+
+    if (cancelReason === 'Other' && !finalReason) {
+      alert('Please provide a custom cancellation reason.');
+      return;
+    }
+
+    try {
+      const releaseRef = doc(db, 'posTransactions', selectedRelease.id);
+      await updateDoc(releaseRef, {
+        releaseStatus: 'cancelled',
+        cancelledAt: serverTimestamp(),
+        cancelledBy: currentUser?.uid || 'unknown',
+        cancelledByName: currentUser?.displayName || currentUser?.email || 'Unknown User',
+        cancelReason: finalReason
+      });
+      
+      alert('Release cancelled successfully!');
+      setShowCancelModal(false);
+      setSelectedRelease(null);
+      setCancelReason('');
+      setCustomCancelReason('');
+    } catch (error) {
+      console.error('Error cancelling release:', error);
+      alert('Failed to cancel release. Please try again.');
+    }
+  };
+
   // Calculate statistics
   const stats = {
     total: releases.length,
     pending: releases.filter(r => r.releaseStatus === 'pending_release').length,
     released: releases.filter(r => r.releaseStatus === 'released').length,
+    cancelled: releases.filter(r => r.releaseStatus === 'cancelled').length,
     totalItems: releases.reduce((sum, r) => sum + (r.items?.length || 0), 0)
   };
 
@@ -127,7 +185,7 @@ const ReleaseManagement = () => {
       </div>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <div className="bg-white rounded-lg p-4 border border-gray-200">
           <div className="flex items-center justify-between">
             <div>
@@ -160,6 +218,18 @@ const ReleaseManagement = () => {
             </div>
             <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
               <FiCheckCircle className="text-green-600" size={24} />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg p-4 border border-gray-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Cancelled</p>
+              <p className="text-2xl font-bold text-red-600">{stats.cancelled}</p>
+            </div>
+            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+              <FiXCircle className="text-red-600" size={24} />
             </div>
           </div>
         </div>
@@ -204,6 +274,7 @@ const ReleaseManagement = () => {
               <option value="all">All Status</option>
               <option value="pending_release">Pending Release</option>
               <option value="released">Released</option>
+              <option value="cancelled">Cancelled</option>
             </select>
           </div>
         </div>
@@ -291,21 +362,36 @@ const ReleaseManagement = () => {
                       <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
                         release.releaseStatus === 'released'
                           ? 'bg-green-100 text-green-800'
-                          : release.releaseStatus === 'pending_release'
-                          ? 'bg-orange-100 text-orange-800'
-                          : 'bg-gray-100 text-gray-800'
+                          : release.releaseStatus === 'cancelled'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-orange-100 text-orange-800'
                       }`}>
-                        {release.releaseStatus === 'released' ? 'Released' : 'Pending'}
+                        {release.releaseStatus === 'released' ? 'Released' : 
+                         release.releaseStatus === 'cancelled' ? 'Cancelled' : 'Pending'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       {release.releaseStatus === 'pending_release' ? (
-                        <button
-                          onClick={() => handleShowQR(release)}
-                          className="text-orange-600 hover:text-orange-900 font-medium"
-                        >
-                          Generate QR
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleShowQR(release)}
+                            className="text-orange-600 hover:text-orange-900 font-medium"
+                          >
+                            Generate QR
+                          </button>
+                          <span className="text-gray-300">|</span>
+                          <button
+                            onClick={() => handleShowCancel(release)}
+                            className="text-red-600 hover:text-red-900 font-medium"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : release.releaseStatus === 'cancelled' ? (
+                        <div className="text-xs text-gray-500">
+                          <div>Cancelled by: {release.cancelledByName}</div>
+                          <div>Reason: {release.cancelReason}</div>
+                        </div>
                       ) : (
                         <div className="text-xs text-gray-500">
                           Released by: {release.releasedByName}
@@ -348,7 +434,7 @@ const ReleaseManagement = () => {
                   </div>
                   <div>
                     <span className="font-medium text-gray-700">Cashier:</span>
-                    <p className="text-gray-900">{selectedRelease.cashier}</p>
+                    <p className="text-gray-900">{selectedRelease.cashierName}</p>
                   </div>
                   <div>
                     <span className="font-medium text-gray-700">Total Items:</span>
@@ -394,24 +480,11 @@ const ReleaseManagement = () => {
                     level="H"
                   />
                 </div>
-                <div className="mt-4 bg-gray-50 rounded-md p-3 max-w-md">
-                  <p className="text-xs text-gray-600 break-all select-all">
-                    {`${window.location.protocol}//${window.location.host}/release_mobile?releaseId=${encodeURIComponent(selectedRelease.id)}`}
-                  </p>
-                </div>
+                
                 <p className="text-xs text-gray-500 mt-4 text-center max-w-md">
                   Scan this QR code with your mobile device to open the release processing screen where you can verify items and update inventory.
                 </p>
-                <div className="mt-3">
-                  <a 
-                    href={`${window.location.protocol}//${window.location.host}/release_mobile?releaseId=${encodeURIComponent(selectedRelease.id)}`}
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-blue-500 hover:text-blue-700 text-sm underline"
-                  >
-                    🔗 Test this link directly
-                  </a>
-                </div>
+                
               </div>
 
               {/* Action Buttons */}
@@ -427,6 +500,97 @@ const ReleaseManagement = () => {
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                 >
                   Mark as Released
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Modal */}
+      {showCancelModal && selectedRelease && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold text-gray-900">Cancel Release</h3>
+                <button
+                  onClick={() => setShowCancelModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <FiXCircle size={24} />
+                </button>
+              </div>
+
+              {/* Transaction Info */}
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                <div className="text-sm">
+                  <div className="mb-2">
+                    <span className="font-medium text-gray-700">Transaction ID:</span>
+                    <p className="text-gray-900">{selectedRelease.transactionId}</p>
+                  </div>
+                  <div className="mb-2">
+                    <span className="font-medium text-gray-700">Customer:</span>
+                    <p className="text-gray-900">{selectedRelease.customerInfo?.name || 'Walk-in'}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Total:</span>
+                    <p className="text-gray-900">₱{selectedRelease.totals?.total?.toLocaleString() || selectedRelease.total?.toLocaleString() || '0.00'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cancellation Reason */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason for Cancellation <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 mb-3"
+                >
+                  <option value="">Select a reason...</option>
+                  {CANCEL_REASONS.map((reason) => (
+                    <option key={reason} value={reason}>
+                      {reason}
+                    </option>
+                  ))}
+                </select>
+
+                {cancelReason === 'Other' && (
+                  <textarea
+                    value={customCancelReason}
+                    onChange={(e) => setCustomCancelReason(e.target.value)}
+                    placeholder="Please provide details..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    rows="3"
+                  />
+                )}
+              </div>
+
+              {/* Warning */}
+              <div className="mb-6 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-700">
+                  ⚠️ <strong>Warning:</strong> Cancelling this release will mark the transaction as cancelled. 
+                  The items will remain in inventory and the customer will need to be refunded if payment was processed.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowCancelModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                >
+                  Keep Release
+                </button>
+                <button
+                  onClick={handleCancelRelease}
+                  disabled={!cancelReason.trim() || (cancelReason === 'Other' && !customCancelReason.trim())}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  Cancel Release
                 </button>
               </div>
             </div>

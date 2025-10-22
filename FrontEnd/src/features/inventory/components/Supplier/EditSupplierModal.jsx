@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FiX, FiTrash2 } from 'react-icons/fi';
 import { useSupplierServices } from '../../../../services/firebase/SupplierServices';
 
-const EditSupplierModal = ({ supplier, onClose }) => {
+const   EditSupplierModal = ({ supplier, onClose }) => {
   const supplierServices = useSupplierServices();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -12,7 +12,8 @@ const EditSupplierModal = ({ supplier, onClose }) => {
     contactPerson: '',
     phone: '',
     email: '',
-    status: 'active'
+    status: 'active',
+    restockThreshold: ''
   });
   
   // Determine if we're creating a new supplier or editing an existing one
@@ -23,18 +24,24 @@ const EditSupplierModal = ({ supplier, onClose }) => {
     if (supplier) {
       setFormData({
         name: supplier.name || '',
-        primaryCode: supplier.primaryCode || supplier.code || '',
+        primaryCode: generatePrimaryCode(supplier.name) || supplier.primaryCode || '',
         address: supplier.address || '',
         contactPerson: supplier.contactPerson || '',
         phone: supplier.phone || '',
         email: supplier.email || '',
         status: supplier.status || 'active',
-        supplierCodes: supplier.supplierCodes || []
+        supplierCodes: supplier.supplierCodes || [],
+        restockThreshold: supplier.restockThreshold || ''
       });
     }
   }, [supplier]);
 
-  const [primaryCodeError, setPrimaryCodeError] = useState('');
+  const generatePrimaryCode = (name) => {
+    if (!name) return '';
+    const cleanName = name.toUpperCase().replace(/\s+/g, '').replace(/[^A-Z0-9]/g, '');
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    return `${cleanName}-${date}`;
+  };
   
   // Function to check if all required fields are filled
   const isFormValid = () => {
@@ -52,28 +59,16 @@ const EditSupplierModal = ({ supplier, onClose }) => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     
-    // Clear error when primary code field is modified
-    if (name === 'primaryCode') {
-      setPrimaryCodeError('');
-      // Validate format in real-time
-      if (value && !validatePrimaryCode(value)) {
-        setPrimaryCodeError('Primary code should only contain letters, numbers, and hyphens');
-      }
+    let updatedData = { ...formData, [name]: value };
+
+    // Generate primary code when name changes
+    if (name === 'name') {
+      updatedData.primaryCode = generatePrimaryCode(value);
     }
 
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setFormData(updatedData);
   };
 
-
-  const validatePrimaryCode = (code) => {
-    if (!code) return false;
-    // Primary code should be alphanumeric and may include hyphens
-    const codeRegex = /^[A-Za-z0-9-]+$/;
-    return codeRegex.test(code.toString());
-  };
 
   const handleDelete = async () => {
     if (!supplier || !supplier.id) return;
@@ -99,12 +94,6 @@ const EditSupplierModal = ({ supplier, onClose }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Validate primary code format
-    if (!validatePrimaryCode(formData.primaryCode)) {
-      alert('Primary code should only contain letters, numbers, and hyphens');
-      return;
-    }
 
     setLoading(true);
 
@@ -120,7 +109,8 @@ const EditSupplierModal = ({ supplier, onClose }) => {
           contactPerson: formData.contactPerson,
           phone: formData.phone,
           email: formData.email,
-          status: formData.status
+          status: formData.status,
+          restockThreshold: parseInt(formData.restockThreshold) || 0
         });
       } else {
         // Update existing supplier
@@ -131,7 +121,8 @@ const EditSupplierModal = ({ supplier, onClose }) => {
           contactPerson: formData.contactPerson,
           phone: formData.phone,
           email: formData.email,
-          status: formData.status
+          status: formData.status,
+          restockThreshold: parseInt(formData.restockThreshold) || 0
         });
       }
 
@@ -189,18 +180,12 @@ const EditSupplierModal = ({ supplier, onClose }) => {
                   type="text"
                   name="primaryCode"
                   value={formData.primaryCode}
-                  onChange={handleChange}
-                  required
-                  className={`w-full border rounded-lg px-3 py-2 ${
-                    primaryCodeError ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="Enter primary supplier code"
+                  disabled
+                  className="w-full border rounded-lg px-3 py-2 bg-gray-100 text-gray-700"
+                  placeholder="Auto-generated based on supplier name and date"
                 />
-                {primaryCodeError && (
-                  <p className="mt-1 text-sm text-red-500">{primaryCodeError}</p>
-                )}
                 <p className="mt-1 text-xs text-gray-500">
-                  This code will be used to link products to this supplier
+                  This code is auto-generated and used to link products to this supplier
                 </p>
               </div>
             </div>
@@ -278,6 +263,24 @@ const EditSupplierModal = ({ supplier, onClose }) => {
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Restock Threshold
+              </label>
+              <input
+                type="number"
+                name="restockThreshold"
+                value={formData.restockThreshold}
+                onChange={handleChange}
+                min="0"
+                className="w-full border rounded-lg px-3 py-2"
+                placeholder="Enter minimum products for restock"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Minimum number of products that need restocking before creating a purchase order
+              </p>
             </div>
 
           </div>

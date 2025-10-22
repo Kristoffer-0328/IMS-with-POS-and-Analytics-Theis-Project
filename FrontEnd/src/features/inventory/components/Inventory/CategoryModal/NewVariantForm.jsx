@@ -40,6 +40,9 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
     const [selectedUnit, setSelectedUnit] = useState(selectedCategory?.name || null); // Auto-set from selectedCategory
     const [quantityPerLocation, setQuantityPerLocation] = useState({}); // Track quantity per location
 
+    // Loading state for variant creation
+    const [isCreatingVariant, setIsCreatingVariant] = useState(false);
+
     const { listenToProducts, linkProductToSupplier } = useServices();
     const db = getFirestore(app);
     
@@ -48,17 +51,21 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
     const handleStorageLocationSelect = (shelfName, rowName, columnIndex, quantity) => {
         // If quantity is -1, this is a removal request
         if (quantity === -1) {
-            const locationKey = `${selectedUnit}-${shelfName}-${rowName}-${columnIndex}`;
+            const unitData = getStorageUnitData(selectedUnit);
+            const unitName = unitData?.title?.split(' - ')[0] || selectedUnit;
+            const locationKey = `${unitName}-${shelfName}-${rowName}-${columnIndex}`;
             handleRemoveLocation(locationKey);
             return;
         }
         
-        const locationKey = `${selectedUnit}-${shelfName}-${rowName}-${columnIndex}`;
+        const unitData = getStorageUnitData(selectedUnit);
+        const unitName = unitData?.title?.split(' - ')[0] || selectedUnit;
+        const locationKey = `${unitName}-${shelfName}-${rowName}-${columnIndex}`;
         const locationString = `${selectedUnit} - ${shelfName} - ${rowName} - Column ${columnIndex + 1}`;
         
         const newLocation = {
             id: locationKey,
-            unit: selectedUnit,
+            unit: unitName,
             shelf: shelfName,
             row: rowName,
             column: columnIndex,
@@ -233,6 +240,8 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
             return;
         }
 
+        setIsCreatingVariant(true);
+
         try {
             const db = getFirestore(app);
 
@@ -295,7 +304,7 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                         code: currentSupplier.primaryCode || currentSupplier.code,
                         primaryCode: currentSupplier.primaryCode || currentSupplier.code,
                         id: currentSupplier.id,
-                        price: Number(supplierPrice) || Number(variantValue.unitPrice) || 0
+                        price: Number(supplierPrice) || Number(variantValue.supplierPrice) || 0
                     } : selectedProduct.supplier || {
                         name: 'Unknown',
                         primaryCode: '',
@@ -338,7 +347,7 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                 if (currentSupplier) {
                     try {
                         await linkProductToSupplier(variantId, currentSupplier.id, {
-                            supplierPrice: Number(supplierPrice) || Number(variantValue.unitPrice) || 0,
+                            supplierPrice: Number(supplierPrice) || Number(variantValue.supplierPrice) || 0,
                             supplierSKU: variantId,
                             isVariant: true,
                             parentProductId: selectedProduct.id,
@@ -359,6 +368,8 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
         } catch (error) {
             console.error('Error adding variant:', error);
             alert(`Failed to add variant: ${error.message}`);
+        } finally {
+            setIsCreatingVariant(false);
         }
     };
 
@@ -792,15 +803,28 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                     <div className="sticky bottom-0 bg-white pt-6 pb-2 -mx-1 px-6 border-t border-gray-200 shadow-lg">
                         <button
                             onClick={handleAddVariant}
-                            className="w-full py-4 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl 
-                                     hover:from-purple-600 hover:to-purple-700 transition-all shadow-md hover:shadow-xl
+                            disabled={isCreatingVariant}
+                            className={`w-full py-4 rounded-xl transition-all shadow-md hover:shadow-xl
                                      flex items-center justify-center gap-3 font-semibold text-lg
-                                     transform hover:scale-[1.02] active:scale-[0.98]"
+                                     transform hover:scale-[1.02] active:scale-[0.98]
+                                     ${isCreatingVariant 
+                                         ? 'bg-gray-400 cursor-not-allowed' 
+                                         : 'bg-gradient-to-r from-purple-500 to-purple-600 text-white hover:from-purple-600 hover:to-purple-700'
+                                     }`}
                         >
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                            </svg>
-                            Add Variant to Product
+                            {isCreatingVariant ? (
+                                <>
+                                    <div className="w-6 h-6 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+                                    <span>Creating Variant...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                    </svg>
+                                    <span>Add Variant to Product</span>
+                                </>
+                            )}
                         </button>
                     </div>
                 </div>

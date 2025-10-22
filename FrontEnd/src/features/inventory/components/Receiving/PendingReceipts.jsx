@@ -6,46 +6,50 @@ import { useAuth } from '../../../auth/services/FirebaseAuth';
 import ViewPOModal from '../PurchaseOrder/ViewPOModal';
 import ProcessReceiptModal from './ProcessReceiptModal';
 import RejectReceiptModal from './RejectReceiptModal';
+import ViewReceivingTransactionModal from './ViewReceivingTransactionModal';
 import { QRCodeSVG } from 'qrcode.react';
 
 const PendingReceipts = () => {
-  const [pendingPOs, setPendingPOs] = useState([]);
+  const [allPOs, setAllPOs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedPO, setSelectedPO] = useState(null);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showProcessModal, setShowProcessModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
+  const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [qrUrl, setQrUrl] = useState('');
   
   const poServices = usePurchaseOrderServices();
   const { currentUser } = useAuth();
 
   useEffect(() => {
-    const fetchPendingPOs = async () => {
+    const fetchAllPOs = async () => {
       try {
-        // Get POs that are approved but not yet fully received
+        // Get all approved POs (both pending and completed receiving)
         const unsubscribe = poServices.listenToPurchaseOrders((pos) => {
-          const pending = pos.filter(po => 
-            po.status === 'approved' && (!po.receivingStatus || po.receivingStatus !== 'completed')
-          );
-          setPendingPOs(pending);
+          const approved = pos.filter(po => po.status === 'approved' || po.status === 'received');
+          setAllPOs(approved);
           setLoading(false);
         });
 
         return () => unsubscribe();
       } catch (error) {
-        console.error('Error fetching pending POs:', error);
+        console.error('Error fetching POs:', error);
         setLoading(false);
       }
     };
 
-    fetchPendingPOs();
+    fetchAllPOs();
   }, []);
 
   const handleViewDetails = (po) => {
     setSelectedPO(po);
-    setShowViewModal(true);
+    if (po.status === 'received') {
+      setShowTransactionModal(true);
+    } else {
+      setShowViewModal(true);
+    }
   };
 
   const handleProcessReceipt = async (po, receivedItems) => {
@@ -97,14 +101,18 @@ const PendingReceipts = () => {
   const renderStatus = (status) => {
     const statusConfig = {
       pending: { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+      receiving_in_progress: { bg: 'bg-orange-100', text: 'text-orange-800' },
       partial: { bg: 'bg-blue-100', text: 'text-blue-800' },
       completed: { bg: 'bg-green-100', text: 'text-green-800' },
+      received: { bg: 'bg-green-100', text: 'text-green-800' },
     };
 
     const config = statusConfig[status] || statusConfig.pending;
     return (
       <span className={`px-3 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
-        {status.toUpperCase()}
+        {status === 'received' ? 'RECEIVED' :
+         status === 'receiving_in_progress' ? 'RECEIVING' :
+         status.toUpperCase()}
       </span>
     );
   };
@@ -130,6 +138,10 @@ const PendingReceipts = () => {
   return (
     <>
       <div className="bg-white rounded-lg shadow-sm">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h2 className="text-xl font-semibold text-gray-900">All Receipts</h2>
+          <p className="text-sm text-gray-500 mt-1">Manage pending receipts and view completed transactions</p>
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -147,7 +159,7 @@ const PendingReceipts = () => {
                   Total Items
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Receiving Status
+                  Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -155,14 +167,14 @@ const PendingReceipts = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {pendingPOs.length === 0 ? (
+              {allPOs.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
-                    No pending receipts found
+                    No receipts found
                   </td>
                 </tr>
               ) : (
-                pendingPOs.map((po) => (
+                allPOs.map((po) => (
                   <tr key={po.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {po.poNumber}
@@ -177,17 +189,27 @@ const PendingReceipts = () => {
                       {po.items?.length || 0}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {renderStatus(po.receivingStatus || 'pending')}
+                      {renderStatus(po.status === 'received' ? 'received' : (po.receivingStatus || 'pending'))}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => openQRForPO(po)}
-                          className="px-3 py-1.5 rounded-md bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-200"
-                          title="Receive via QR"
-                        >
-                          Receive via QR
-                        </button>
+                        {po.status === 'received' ? (
+                          <button
+                            onClick={() => handleViewDetails(po)}
+                            className="px-3 py-1.5 rounded-md bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-200"
+                            title="View Receipt Details"
+                          >
+                            View Details
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => openQRForPO(po)}
+                            className="px-3 py-1.5 rounded-md bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-200"
+                            title="Receive via QR"
+                          >
+                            Receive via QR
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -264,8 +286,18 @@ const PendingReceipts = () => {
           }}
         />
       )}
+
+      {showTransactionModal && selectedPO && (
+        <ViewReceivingTransactionModal
+          poId={selectedPO.id}
+          onClose={() => {
+            setShowTransactionModal(false);
+            setSelectedPO(null);
+          }}
+        />
+      )}
     </>
   );
 };
 
-export default PendingReceipts; 
+export default PendingReceipts;

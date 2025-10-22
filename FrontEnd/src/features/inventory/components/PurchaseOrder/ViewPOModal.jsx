@@ -191,37 +191,45 @@ const ViewPOModal = ({ poId, onClose }) => {
       setError(null);
       const result = await poServices.submitPOForApproval(poId);
       if (result.success) {
-        // Generate and save PDF with signature
-        const doc = await documentServices.generatePOPDF({
-          ...poData,
-          status: 'pending_approval',
-          preparedBy: {
-            id: currentUser.uid,
-            name: currentUser.name,
-            role: currentUser.role,
-            signature: '/src/assets/IMSignature.png'
-          }
-        });
+        // Reset loading state immediately after successful submission
+        setProcessingAction(false);
         
-        const pdfBlob = doc.output('blob');
-        const uploadResult = await documentServices.uploadDocument(
-          pdfBlob,
-          `purchase_orders/${poId}/po_${poData.poNumber}.pdf`
-        );
-
-        if (uploadResult.success) {
-          await documentServices.saveDocumentMetadata({
-            referenceId: poId,
-            type: 'purchase_order',
-            name: `PO ${poData.poNumber}`,
-            url: uploadResult.url,
-            fileType: 'pdf',
-            createdBy: {
+        // Generate and save PDF in the background (non-blocking)
+        try {
+          const doc = await documentServices.generatePOPDF({
+            ...poData,
+            status: 'pending_approval',
+            preparedBy: {
               id: currentUser.uid,
               name: currentUser.name,
-              role: currentUser.role
+              role: currentUser.role,
+              signature: '/src/assets/IMSignature.png'
             }
           });
+          
+          const pdfBlob = doc.output('blob');
+          const uploadResult = await documentServices.uploadDocument(
+            pdfBlob,
+            `purchase_orders/${poId}/po_${poData.poNumber}.pdf`
+          );
+
+          if (uploadResult.success) {
+            await documentServices.saveDocumentMetadata({
+              referenceId: poId,
+              type: 'purchase_order',
+              name: `PO ${poData.poNumber}`,
+              url: uploadResult.url,
+              fileType: 'pdf',
+              createdBy: {
+                id: currentUser.uid,
+                name: currentUser.name,
+                role: currentUser.role
+              }
+            });
+          }
+        } catch (pdfError) {
+          console.error('Error generating/saving PDF:', pdfError);
+          // Don't show error to user as the main operation succeeded
         }
 
         // Refresh PO data to show new status
@@ -309,117 +317,124 @@ const ViewPOModal = ({ poId, onClose }) => {
 
   const canApprove = currentUser.role === 'Admin' && poData.status === 'pending_approval';
   const showSubmitButton = currentUser.role === 'InventoryManager' && poData.status === 'draft';
-  const showDownloadButton = poData.status === 'approved';
+  const showDownloadButton = poData.status === 'approved' || poData.status === 'received';
+  const isReceived = poData.status === 'received';
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden">
-        <div className="flex justify-between items-center p-6 border-b">
+      <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl">
+        <div className="flex justify-between items-center p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
           <div className="flex items-center gap-4">
-            <h2 className="text-xl font-semibold">
+            <h2 className="text-2xl font-bold text-gray-900">
               Purchase Order: {poData.poNumber}
             </h2>
             {showDownloadButton && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 ml-4">
                 {documents.length > 0 && (
                   <a
                     href={documents[0].url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors font-medium text-sm border border-blue-200"
                   >
                     <FiDownload /> View PDF
                   </a>
                 )}
                 <button
                   onClick={handleDownloadPDF}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                  className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors font-medium text-sm border border-green-200"
                 >
                   <FiDownload /> Download PDF
                 </button>
               </div>
             )}
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 hover:bg-gray-100 p-2 rounded-lg transition-colors">
             <FiX size={24} />
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-129px)]">
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-129px)] space-y-6">
           {/* Status Badge */}
-          <div className="mb-6">
-            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+          <div className="mb-4">
+            <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold gap-2 ${
               poData.status === 'draft' ? 'bg-gray-100 text-gray-800' :
-              poData.status === 'pending_approval' ? 'bg-yellow-100 text-yellow-800' :
+              poData.status === 'pending_approval' ? 'bg-amber-100 text-amber-800' :
               poData.status === 'approved' ? 'bg-green-100 text-green-800' :
+              poData.status === 'received' ? 'bg-blue-100 text-blue-800' :
               poData.status === 'rejected' ? 'bg-red-100 text-red-800' :
               'bg-gray-100 text-gray-800'
             }`}>
+              <span className="w-2 h-2 rounded-full bg-current"></span>
               {poData.status.replace('_', ' ').charAt(0).toUpperCase() + poData.status.slice(1).replace('_', ' ')}
             </span>
           </div>
 
           {/* PO Details */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div>
-              <p className="text-sm text-gray-600">Supplier</p>
-              <p className="font-medium">{poData.supplierName}</p>
+          <div className="grid grid-cols-2 gap-6 bg-gray-50 p-6 rounded-xl border border-gray-200">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Supplier</p>
+              <p className="text-lg font-semibold text-gray-900">{poData.supplierName}</p>
             </div>
-            <div>
-              <p className="text-sm text-gray-600">Status</p>
-              <p className="font-medium capitalize">{poData.status.replace('_', ' ')}</p>
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Status</p>
+              <p className="text-lg font-semibold text-gray-900 capitalize">{poData.status.replace('_', ' ')}</p>
             </div>
-            <div>
-              <p className="text-sm text-gray-600">Delivery Date</p>
-              <p className="font-medium">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Delivery Date</p>
+              <p className="text-lg font-semibold text-gray-900">
                 {new Date(poData.deliveryDate).toLocaleDateString()}
               </p>
             </div>
-            <div>
-              <p className="text-sm text-gray-600">Payment Terms</p>
-              <p className="font-medium">{poData.paymentTerms}</p>
-            </div>
+           
           </div>
 
           {/* Items Table */}
-          <div className="mb-6">
-            <h3 className="text-lg font-medium mb-4">Order Items</h3>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Order Items</h3>
+            </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+                <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
                       Product
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
                       Quantity
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
                       Unit Price
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
                       Total
                     </th>
                     {poData.status === 'approved' && (
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
                         Received
+                      </th>
+                    )}
+                    {isReceived && (
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                        Received Qty
                       </th>
                     )}
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-gray-100">
                   {paginatedItems.map((item, index) => (
-                    <tr key={item.productId}>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                    <tr key={item.productId} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {item.productName}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         {item.quantity}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         ₱{item.unitPrice.toLocaleString()}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
                         ₱{item.total.toLocaleString()}
                       </td>
                       {poData.status === 'approved' && (
@@ -430,19 +445,24 @@ const ViewPOModal = ({ poId, onClose }) => {
                             max={item.quantity}
                             value={receivedItems[((currentPage - 1) * ITEMS_PER_PAGE) + index]?.receivedQuantity || 0}
                             onChange={(e) => handleReceivedQuantityChange(((currentPage - 1) * ITEMS_PER_PAGE) + index, e.target.value)}
-                            className="w-24 border rounded-lg px-3 py-2"
+                            className="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           />
+                        </td>
+                      )}
+                      {isReceived && (
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
+                          {poData.receivedProducts?.find(rp => rp.productId === item.productId)?.receivedQuantity || 0}
                         </td>
                       )}
                     </tr>
                   ))}
                 </tbody>
-                <tfoot>
+                <tfoot className="bg-gray-50 border-t-2 border-gray-200">
                   <tr>
-                    <td colSpan="3" className="px-6 py-4 text-right font-medium">
+                    <td colSpan="3" className="px-6 py-4 text-right text-sm font-semibold text-gray-900">
                       Total Amount:
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap font-medium">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-600">
                       ₱{poData.totalAmount.toLocaleString()}
                     </td>
                     {poData.status === 'approved' && <td></td>}
@@ -452,30 +472,30 @@ const ViewPOModal = ({ poId, onClose }) => {
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200 sm:px-6">
+                <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-t border-gray-200 sm:px-6">
                   <div className="flex items-center">
                     <p className="text-sm text-gray-700">
-                      Showing <span className="font-medium">{((currentPage - 1) * ITEMS_PER_PAGE) + 1}</span>
+                      Showing <span className="font-semibold">{((currentPage - 1) * ITEMS_PER_PAGE) + 1}</span>
                       {' '}-{' '}
-                      <span className="font-medium">
+                      <span className="font-semibold">
                         {Math.min(currentPage * ITEMS_PER_PAGE, poData.items.length)}
                       </span>
                       {' '}of{' '}
-                      <span className="font-medium">{poData.items.length}</span> items
+                      <span className="font-semibold">{poData.items.length}</span> items
                     </p>
                   </div>
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
                       disabled={currentPage === 1}
-                      className="relative inline-flex items-center px-2 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                      className="relative inline-flex items-center px-2 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
                     >
                       <FiChevronLeft size={16} />
                     </button>
                     <button
                       onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}
                       disabled={currentPage === totalPages}
-                      className="relative inline-flex items-center px-2 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                      className="relative inline-flex items-center px-2 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
                     >
                       <FiChevronRight size={16} />
                     </button>
@@ -485,21 +505,31 @@ const ViewPOModal = ({ poId, onClose }) => {
             </div>
           </div>
 
+          {/* Payment Terms Section */}
+          <div className="bg-blue-50 rounded-xl border border-blue-200 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Payment Terms</h3>
+            <div className="bg-white rounded-lg border border-blue-200 p-4">
+              <p className="text-gray-700 text-sm leading-relaxed">
+                {poData.paymentTerms || 'No payment terms specified'}
+              </p>
+            </div>
+          </div>
+
           {/* Documents Section */}
           {documents.length > 0 && (
-            <div className="mb-6">
-              <h3 className="text-lg font-medium mb-4">Documents</h3>
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Documents</h3>
               <div className="space-y-2">
                 {documents.map(doc => (
-                  <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <span>{doc.name}</span>
+                  <div key={doc.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors group">
+                    <span className="text-sm font-medium text-gray-900">{doc.name}</span>
                     <a
                       href={doc.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800"
+                      className="text-blue-600 hover:text-blue-800 group-hover:scale-110 transition-transform"
                     >
-                      <FiDownload />
+                      <FiDownload size={18} />
                     </a>
                   </div>
                 ))}
@@ -508,49 +538,39 @@ const ViewPOModal = ({ poId, onClose }) => {
           )}
 
           {/* Signature Section */}
-          <div className="grid grid-cols-2 gap-4 mt-8">
-            <div className="text-center">
-              <div className="h-24 border-b border-gray-300 mb-2 flex items-center justify-center">
+          <div className="grid grid-cols-2 gap-6">
+            <div className="bg-gray-50 p-6 rounded-xl border border-gray-200 text-center">
+              <div className="h-24 border-b-2 border-gray-300 mb-4 flex items-center justify-center">
                 {(poData.status === 'pending_approval' || poData.status === 'approved') && (
                   <img 
                     src="/src/assets/IMSignature.png" 
                     alt="Inventory Manager Signature" 
-                    className="object-contain"
-                    style={{ 
-                      width: '500px',
-                      height: '300px',
-                      objectFit: 'contain'
-                    }}
+                    className="object-contain max-h-24 max-w-full"
                   />
                 )}
               </div>
-              <p className="font-medium">Inventory Manager</p>
-              <p className="text-sm text-gray-600">Prepared by</p>
+              <p className="font-semibold text-gray-900">Inventory Manager</p>
+              <p className="text-sm text-gray-600 mt-1">Prepared by</p>
               {(poData.status === 'pending_approval' || poData.status === 'approved') && poData.submittedAt && (
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 mt-2">
                   Signed on {new Date(poData.submittedAt.toDate()).toLocaleDateString()}
                 </p>
               )}
             </div>
-            <div className="text-center">
-              <div className="h-24 border-b border-gray-300 mb-2 flex items-center justify-center">
+            <div className="bg-green-50 p-6 rounded-xl border border-green-200 text-center">
+              <div className="h-24 border-b-2 border-green-300 mb-4 flex items-center justify-center">
                 {poData.status === 'approved' && (
                   <img 
                     src="/src/assets/AdminSignature.png" 
                     alt="Admin Signature" 
-                    className="object-contain"
-                    style={{ 
-                      width: '500px',
-                      height: '300px',
-                      objectFit: 'contain'
-                    }}
+                    className="object-contain max-h-24 max-w-full"
                   />
                 )}
               </div>
-              <p className="font-medium">Admin</p>
-              <p className="text-sm text-gray-600">Approved by</p>
+              <p className="font-semibold text-gray-900">Admin</p>
+              <p className="text-sm text-gray-600 mt-1">Approved by</p>
               {poData.status === 'approved' && poData.approvedAt && (
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 mt-2">
                   Signed on {new Date(poData.approvedAt.toDate()).toLocaleDateString()}
                 </p>
               )}
@@ -559,30 +579,30 @@ const ViewPOModal = ({ poId, onClose }) => {
 
           {/* Admin Approval Section */}
           {canApprove && (
-            <div className="mb-6">
-              <h3 className="text-lg font-medium mb-4">Approval</h3>
+            <div className="bg-amber-50 rounded-xl border border-amber-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Approval</h3>
               <div className="space-y-4">
                 <textarea
                   value={approvalNotes}
                   onChange={(e) => setApprovalNotes(e.target.value)}
                   placeholder="Add approval notes..."
                   rows={3}
-                  className="w-full border rounded-lg px-3 py-2"
+                  className="w-full border border-amber-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none"
                 />
-                <div className="flex justify-end gap-4">
+                <div className="flex justify-end gap-3">
                   <button
                     onClick={() => handleApprovalAction('rejected')}
                     disabled={processingAction}
-                    className="flex items-center gap-2 px-4 py-2 text-red-600 hover:text-red-800 disabled:opacity-50"
+                    className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition-colors font-medium disabled:opacity-50"
                   >
-                    <FiXCircle /> Reject
+                    <FiXCircle size={18} /> Reject
                   </button>
                   <button
                     onClick={() => handleApprovalAction('approved')}
                     disabled={processingAction}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50"
                   >
-                    <FiCheck /> Approve
+                    <FiCheck size={18} /> Approve
                   </button>
                 </div>
               </div>
@@ -595,7 +615,7 @@ const ViewPOModal = ({ poId, onClose }) => {
               <button
                 onClick={handleSubmitForApproval}
                 disabled={processingAction}
-                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 font-medium transition-colors"
               >
                 {processingAction ? (
                   <>
@@ -612,7 +632,7 @@ const ViewPOModal = ({ poId, onClose }) => {
           {/* Error Message */}
           {error && (
             <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-800">{error}</p>
+              <p className="text-sm text-red-800 font-medium">{error}</p>
             </div>
           )}
         </div>
@@ -621,4 +641,4 @@ const ViewPOModal = ({ poId, onClose }) => {
   );
 };
 
-export default ViewPOModal; 
+export default ViewPOModal;

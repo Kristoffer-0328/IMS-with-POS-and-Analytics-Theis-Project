@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { getFirestore, collection, getDocs } from 'firebase/firestore';
 import app from '../../../../FirebaseConfig';
 import ShelfViewModal from './ShelfViewModal';
@@ -16,21 +16,28 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
   const db = getFirestore(app);
 
   // Transform storage units into a lookup object for modal display
-  const shelfLayouts = storageUnits.reduce((acc, unit) => {
-    // Map unit-01 to unit1, unit-02 to unit2, etc. (remove hyphen and leading zero)
-    const unitNumber = unit.id.split('-')[1]; // Gets "01", "02", etc.
-    const unitKey = 'unit' + parseInt(unitNumber); // Converts to "unit1", "unit2", etc.
-    acc[unitKey] = {
-      title: `Unit ${unitNumber} - ${unit.name}`,
-      type: unit.type,
-      shelves: unit.shelves,
-      info: {
-        capacity: unit.capacity,
-        description: `${unit.name} storage area`
-      }
-    };
-    return acc;
-  }, {});
+  const shelfLayouts = useMemo(() => {
+    return storageUnits.reduce((acc, unit) => {
+      // Map unit-01 to unit1, unit-02 to unit2, etc. (remove hyphen and leading zero)
+      const unitNumber = unit.id.split('-')[1]; // Gets "01", "02", etc.
+      const unitKey = 'unit' + parseInt(unitNumber); // Converts to "unit1", "unit2", etc.
+      
+      // Extract name from title (e.g., "Unit 01 - Steel & Heavy Materials" -> "Steel & Heavy Materials")
+      // If no title, use type as fallback
+      const unitName = unit.title ? unit.title.split(' - ')[1] : (unit.name || unit.type || 'Unknown Unit');
+      
+      acc[unitKey] = {
+        title: `Unit ${unitNumber} - ${unitName}`,
+        type: unit.type,
+        shelves: unit.shelves,
+        info: {
+          capacity: unit.capacity,
+          description: `${unitName} storage area`
+        }
+      };
+      return acc;
+    }, {});
+  }, [storageUnits]);
 
   // Fetch storage units from database
   const fetchStorageUnits = async () => {
@@ -54,6 +61,8 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
   // Fetch capacities when storage units are loaded
   useEffect(() => {
     if (storageUnits.length > 0) {
+      console.log('Storage units loaded:', storageUnits);
+      console.log('Shelf layouts created:', shelfLayouts);
       fetchUnitCapacities();
     }
   }, [storageUnits]);
@@ -152,8 +161,19 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
 
   // Open shelf view modal
   const openShelfView = (unitId) => {
-    setSelectedUnit(shelfLayouts[unitId]);
-    setIsModalOpen(true);
+    console.log('Opening shelf view for:', unitId);
+    console.log('Available shelfLayouts:', Object.keys(shelfLayouts));
+    console.log('Selected unit data:', shelfLayouts[unitId]);
+    console.log('Storage units data:', storageUnits);
+    
+    if (shelfLayouts[unitId]) {
+      console.log('Setting selectedUnit to:', shelfLayouts[unitId]);
+      setSelectedUnit(shelfLayouts[unitId]);
+      setIsModalOpen(true);
+    } else {
+      console.error('Unit not found in shelfLayouts:', unitId);
+      alert('Storage unit data not available. Please try again.');
+    }
   };
 
   const closeShelfView = () => {
@@ -320,7 +340,7 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-red-500 bg-red-50 row-start-3 col-start-1"
             onClick={() => !editMode && openShelfView('unit1')}
-            title={`Unit 01 - ${getCapacityInfo('Unit 01')}`}
+            title={`Unit 01 - Steel & Heavy Materials`}
           >
             {editMode && (
               <div className="absolute top-1 right-1 flex gap-1 z-20">
@@ -355,7 +375,7 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-red-500 bg-red-50 row-start-3 col-start-2"
             onClick={() => !editMode && openShelfView('unit2')}
-            title={`Unit 02 - ${getCapacityInfo('Unit 02')}`}
+            title={`Unit 02 - Lumber & Wood`}
           >
             {editMode && (
               <div className="absolute top-1 right-1 flex gap-1 z-20">
@@ -390,7 +410,7 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-red-500 bg-red-50 row-start-3 col-start-3"
             onClick={() => !editMode && openShelfView('unit3')}
-            title={`Unit 03 - ${getCapacityInfo('Unit 03')}`}
+            title={`Unit 03 - Cement & Aggregates`}
           >
             {editMode && (
               <div className="absolute top-1 right-1 flex gap-1 z-20">
@@ -425,7 +445,7 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-red-500 bg-red-50 row-start-3 col-start-4"
             onClick={() => !editMode && openShelfView('unit4')}
-            title={`Unit 04 - ${getCapacityInfo('Unit 04')}`}
+            title={`Unit 04 - Electrical & Plumbing`}
           >
             {editMode && (
               <div className="absolute top-1 right-1 flex gap-1 z-20">
@@ -460,7 +480,7 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-orange-500 bg-orange-50 row-start-3 col-start-5"
             onClick={() => !editMode && openShelfView('unit5')}
-            title={`Unit 05 - ${getCapacityInfo('Unit 05')}`}
+            title={`Unit 05 - Paint & Coatings`}
           >
             {editMode && (
               <div className="absolute top-1 right-1 flex gap-1 z-20">
@@ -496,7 +516,7 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-orange-500 bg-orange-50 row-start-1 col-start-6"
             onClick={() => !editMode && openShelfView('unit6')}
-            title={`Unit 06 - ${getCapacityInfo('Unit 06')}`}
+            title={`Unit 06 - Insulation & Foam`}
           >
             {editMode && (
               <div className="absolute top-1 right-1 flex gap-1 z-20">
@@ -531,7 +551,7 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-orange-500 bg-orange-50 row-start-2 col-start-6"
             onClick={() => !editMode && openShelfView('unit7')}
-            title={`Unit 07 - ${getCapacityInfo('Unit 07')}`}
+            title={`Unit 07 - Miscellaneous`}
           >
             {editMode && (
               <div className="absolute top-1 right-1 flex gap-1 z-20">
@@ -566,7 +586,7 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-green-500 bg-green-50 row-start-1 col-start-7"
             onClick={() => !editMode && openShelfView('unit8')}
-            title={`Unit 08 - ${getCapacityInfo('Unit 08')}`}
+            title={`Unit 08 - Roofing Materials`}
           >
             {editMode && (
               <div className="absolute top-1 right-1 flex gap-1 z-20">
@@ -601,7 +621,7 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-green-500 bg-green-50 row-start-2 col-start-7"
             onClick={() => !editMode && openShelfView('unit9')}
-            title={`Unit 09 - ${getCapacityInfo('Unit 09')}`}
+            title={`Unit 09 - Hardware & Fasteners`}
           >
             {editMode && (
               <div className="absolute top-1 right-1 flex gap-1 z-20">

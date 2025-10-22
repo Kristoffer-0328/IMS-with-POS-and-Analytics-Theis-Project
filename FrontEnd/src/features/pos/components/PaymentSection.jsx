@@ -41,13 +41,12 @@ const PaymentSection = ({
   
   // For digital payments (GCash, Online Banking), require reference number
   const needsReference = (paymentMethod === 'GCash' || paymentMethod === 'Online Banking');
-  const hasValidReference = !needsReference || (paymentReference && paymentReference.trim().length > 0);
+  const hasValidReference = true; // No longer requiring reference
   
   // Since this is always an invoice (walk-in) page, always require payment validation
   const canComplete = hasProducts && !isProcessing && Number(amountPaid) >= total && hasValidReference;
   
   const insufficientAmount = Number(amountPaid) < total;
-  const missingReference = needsReference && !paymentReference.trim();
 
   return (
     <div className="space-y-4">
@@ -115,29 +114,6 @@ const PaymentSection = ({
         </div>
       </div>
 
-      {/* Reference Number for Digital Payments */}
-      {needsReference && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-gray-700">
-            Reference Number <span className="text-red-500">*</span>
-          </h3>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">#</span>
-            <input
-              type="text"
-              value={paymentReference}
-              onChange={handleReferenceChange}
-              disabled={isProcessing}
-              placeholder="Enter transaction reference"
-              className="w-full pl-8 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-            />
-          </div>
-          <p className="text-xs text-gray-500">
-            Enter the {paymentMethod} transaction reference number
-          </p>
-        </div>
-      )}
-
       <div className="flex justify-between text-sm text-gray-600">
         <span>Total Amount:</span>
         <span className="font-medium">{formattedTotal}</span>
@@ -173,8 +149,6 @@ const PaymentSection = ({
           'No Products Added'
         ) : insufficientAmount ? (
           'Insufficient Amount'
-        ) : missingReference ? (
-          'Enter Reference Number'
         ) : (
           checkoutButtonText
         )}

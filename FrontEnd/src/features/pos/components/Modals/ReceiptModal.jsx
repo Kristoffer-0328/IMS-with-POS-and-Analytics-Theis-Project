@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { FiX, FiPrinter } from 'react-icons/fi';
-import { printReceiptContent } from '../../utils/ReceiptGenerator';
+import { printInvoiceContent } from '../../utils/ReceiptGenerator';
 
 const ReceiptModal = ({ transaction, onClose }) => {
   if (!transaction) return null;
@@ -71,7 +71,7 @@ const ReceiptModal = ({ transaction, onClose }) => {
   const { dateString, timeString } = formatDateTime(transaction.createdAt);
 
   const handlePrintReceipt = () => {
-    printReceiptContent(transaction);
+    printInvoiceContent(transaction);
   };
 
   return (

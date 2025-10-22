@@ -26,8 +26,16 @@ const ShelfViewModal = ({
 
   const isLocationSelected = (shelfName, rowName, columnIndex) => {
     if (!multiSelect) return false;
-    const locationKey = `${selectedUnit?.title?.split(' - ')[0]}-${shelfName}-${rowName}-${columnIndex}`;
-    return selectedLocations.some(loc => loc.id === locationKey);
+    const unitName = selectedUnit?.title?.split(' - ')[0] || selectedUnit?.name || 'Unknown';
+    const locationKey = `${unitName}-${shelfName}-${rowName}-${columnIndex}`;
+    const isSelected = selectedLocations.some(loc => loc.id === locationKey);
+    
+    // Debug logging
+    if (isSelected) {
+      console.log('✅ Location selected:', locationKey);
+    }
+    
+    return isSelected;
   };
   
   // Calculate remaining quantity to allocate
@@ -39,18 +47,25 @@ const ShelfViewModal = ({
   const handleCellClick = (shelfName, rowName, columnIndex, cellCapacity) => {
     if (viewOnly || !multiSelect) return;
     
-    const locationKey = `${selectedUnit?.title?.split(' - ')[0]}-${shelfName}-${rowName}-${columnIndex}`;
+    const unitName = selectedUnit?.title?.split(' - ')[0] || selectedUnit?.name || 'Unknown';
+    const locationKey = `${unitName}-${shelfName}-${rowName}-${columnIndex}`;
     const existingAllocation = selectedLocations.find(loc => loc.id === locationKey);
+    
+    console.log('🖱️ Cell clicked:', { shelfName, rowName, columnIndex, locationKey, existingAllocation: !!existingAllocation });
     
     if (existingAllocation) {
       // Remove allocation
+      console.log('❌ Removing allocation for:', locationKey);
       onLocationSelect(shelfName, rowName, columnIndex, -1);
     } else {
       // Add allocation
       const remainingQty = getRemainingQuantity();
       if (remainingQty > 0) {
         const allocateQty = Math.min(remainingQty, cellCapacity);
+        console.log('➕ Adding allocation:', { locationKey, allocateQty, remainingQty, cellCapacity });
         onLocationSelect(shelfName, rowName, columnIndex, allocateQty);
+      } else {
+        console.log('⚠️ No remaining quantity to allocate');
       }
     }
   };
@@ -288,8 +303,10 @@ const ShelfViewModal = ({
         </button>
         
         <div className="text-center mb-8 pb-5 border-b-2 border-gray-100">
-          <h2 className="text-slate-800 text-3xl mb-2">{selectedUnit.title}</h2>
-          <p className="text-gray-600">{selectedUnit.type}</p>
+          <h2 className="text-slate-800 text-3xl mb-2">
+            {selectedUnit?.title || `${selectedUnit?.type || 'Unknown Unit'}`}
+          </h2>
+          <p className="text-gray-600">{selectedUnit?.type || 'Storage Unit'}</p>
           {loading ? (
             <p className="text-blue-600 text-sm mt-2">Loading products...</p>
           ) : (
@@ -530,14 +547,13 @@ const ShelfViewModal = ({
                             
                             if (isZoneSelected) {
                               return (
-                                <div className="bg-blue-100 border-2 border-blue-500 rounded-lg p-4 text-center relative">
-                                  <button
-                                    onClick={() => handleCellClick(shelf.name, shelf.rows[0]?.name || 'Stack', 0, shelf.capacity)}
-                                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-lg font-bold hover:bg-red-600 transition-colors shadow-lg"
-                                    title="Click to remove this allocation"
-                                  >
+                                <div className="bg-blue-100 border-2 border-blue-500 rounded-lg p-4 text-center relative shadow-lg">
+                                  <div className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold hover:bg-red-600 transition-colors shadow-lg animate-pulse">
                                     ×
-                                  </button>
+                                  </div>
+                                  <div className="absolute -top-2 -left-2 bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold shadow-lg">
+                                    ✓
+                                  </div>
                                   <div className="flex flex-col items-center gap-1">
                                     <span className="text-xs font-medium text-blue-600 uppercase">Allocated</span>
                                     <span className="text-3xl font-bold text-blue-700">{zoneAllocation?.quantity || 0}</span>
@@ -676,8 +692,11 @@ const ShelfViewModal = ({
                                 >
                                   {isSelected ? (
                                     <>
-                                      <div className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold hover:bg-red-600 transition-colors">
+                                      <div className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold hover:bg-red-600 transition-colors shadow-lg animate-pulse">
                                         ×
+                                      </div>
+                                      <div className="absolute -top-2 -left-2 bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold shadow-lg">
+                                        ✓
                                       </div>
                                       <span className="text-blue-700 text-sm font-bold">
                                         {selectedLocations.find(loc => loc.id === `${selectedUnit?.title?.split(' - ')[0]}-${shelf.name}-${rowName}-${slotIndex}`)?.quantity || 0}
