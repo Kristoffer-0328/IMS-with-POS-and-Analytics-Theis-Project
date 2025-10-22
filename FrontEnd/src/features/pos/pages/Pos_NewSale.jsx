@@ -30,8 +30,6 @@ import QuickQuantityModal from '../components/QuickQuantityModal';
 import LocationSelectionModal from '../components/Modals/LocationSelectionModal';
 import ReceiptModal from '../components/Modals/ReceiptModal';
 import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
-// Import utilities
-import { printReceiptContent } from '../utils/ReceiptGenerator';
 
 const db = getFirestore(app);
 
@@ -456,13 +454,17 @@ export default function Pos_NewSale() {
         return;
       }
   
-      // Create a unique key based on product identity (not storage location)
-      const uniqueKey = `${product.name}_${product.brand || 'generic'}_${product.specifications || ''}_${product.category || ''}`;
+      // Group by parentProductId if it exists (for variants), otherwise by product id (for base products)
+      // This ensures variants are grouped with their parent product
+      const groupKey = product.parentProductId || product.id;
+      
+      // Create a unique key based on the group key
+      const uniqueKey = groupKey;
   
       if (!grouped[uniqueKey]) {
         grouped[uniqueKey] = {
-          id: product.id,
-          name: product.name,
+          id: groupKey, // Use the group key as the id
+          name: product.name, // Name should be the same for all products in the group
           category: product.category,
           brand: product.brand || 'Generic',
           quantity: 0,
@@ -1069,9 +1071,6 @@ export default function Pos_NewSale() {
               onProductSelect={handleAddProduct}
               loading={loadingProducts}
               disabled={shouldDisableInteractions}
-              getCartQuantity={getCartItemQuantity}
-              isLowStock={isLowStock}
-              isOutOfStock={isOutOfStock}
             />
           </div>
         </div>

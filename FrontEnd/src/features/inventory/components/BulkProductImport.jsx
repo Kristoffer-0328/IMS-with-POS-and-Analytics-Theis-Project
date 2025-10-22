@@ -284,7 +284,7 @@ const BulkProductImport = ({ isOpen, onClose, suppliers = [] }) => {
       [
         'Sample Product 1',
         'Generic Brand',
-        'Electronics',
+        'Steal & Heavy Materials',
         '50',
         '299.99',
         'pcs',
@@ -299,7 +299,7 @@ const BulkProductImport = ({ isOpen, onClose, suppliers = [] }) => {
       [
         'Sample Product 2',
         'Premium Brand',
-        'Tools',
+        'Steal & Heavy Materials',
         '25',
         '149.50',
         'pcs',
@@ -309,7 +309,7 @@ const BulkProductImport = ({ isOpen, onClose, suppliers = [] }) => {
         '100',
         selectedSupplier?.name || 'Sample Supplier',
         selectedSupplier?.primaryCode || 'SUP001',
-        'Unit 01 - (but this part is Shelf Name) - Row 2 - Column 3'
+        'Unit 01 - (Shelf Name) - Row 2 - Column 3'
       ]
     ];
 
@@ -338,9 +338,9 @@ const BulkProductImport = ({ isOpen, onClose, suppliers = [] }) => {
 
   return (
     <div className="fixed inset-0 z-50 backdrop-blur-md bg-white/30 flex justify-center items-center p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-green-100 rounded-lg">
               <FiUpload className="w-6 h-6 text-green-600" />
@@ -360,8 +360,8 @@ const BulkProductImport = ({ isOpen, onClose, suppliers = [] }) => {
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+        {/* Content - Scrollable */}
+        <div className="flex-1 overflow-y-auto p-6">
           {/* Template Download */}
           <div className="mb-6">
             <button
@@ -527,8 +527,8 @@ const BulkProductImport = ({ isOpen, onClose, suppliers = [] }) => {
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200">
+        {/* Footer - Always visible */}
+        <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 flex-shrink-0">
           <button
             onClick={onClose}
             className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"

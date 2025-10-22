@@ -52,10 +52,10 @@ export default function LocationSelectionModal({
 
   // Calculate total allocated quantity - use allocatedQuantity, not quantity!
   const totalAllocated = selectedLocations.reduce((sum, loc) => sum + (loc.allocatedQuantity || 0), 0);
-  const remainingQty = qty - totalAllocated;
+  const remainingQty = Number(qty) - totalAllocated;
 
   const handleLocationSelect = (locationVariant) => {
-    if (locationVariant.quantity < qty) {
+    if (locationVariant.quantity < Number(qty)) {
       alert(`Insufficient stock at this location. Only ${locationVariant.quantity} available.`);
       return;
     }
@@ -135,17 +135,38 @@ export default function LocationSelectionModal({
       console.log('⚠️ Location already selected (should not reach here - handled above)');
       setSelectedLocations(prev => prev.filter((_, idx) => idx !== existingIndex));
     } else {
-      // Add new selection with auto-calculated quantity
+      // Calculate remaining quantity needed
+      const currentAllocated = selectedLocations.reduce((sum, loc) => sum + (loc.allocatedQuantity || 0), 0);
+      const remainingNeeded = Number(qty) - currentAllocated;
+      
+      // Only allocate what's actually needed, not more than available in this cell
+      const actualAllocation = Math.min(remainingNeeded, locationVariant.quantity, quantityToAllocate);
+      
+      console.log('📊 Allocation Calculation:', {
+        currentAllocated,
+        remainingNeeded,
+        cellAvailable: locationVariant.quantity,
+        requested: quantityToAllocate,
+        actualAllocation
+      });
+
+      // Don't allocate if nothing is needed
+      if (actualAllocation <= 0) {
+        console.log('🚫 No allocation needed - remaining quantity satisfied');
+        return;
+      }
+
+      // Add new selection with calculated quantity
       const newSelection = {
         id: locationKey,
         ...locationVariant,
-        allocatedQuantity: quantityToAllocate,
+        allocatedQuantity: actualAllocation,
         fullPath: `${locationVariant.storageLocation} - ${shelfName} - ${rowName} - Column ${columnIndex}`
       };
       
       console.log('➕ Adding new selection:', {
         locationKey,
-        allocatedQuantity: quantityToAllocate,
+        allocatedQuantity: actualAllocation,
         fullPath: newSelection.fullPath
       });
       
@@ -156,9 +177,9 @@ export default function LocationSelectionModal({
         console.log('📊 Updated Allocation Status:', {
           totalLocations: updated.length,
           totalAllocated: newTotal,
-          remaining: qty - newTotal,
+          remaining: Number(qty) - newTotal,
           targetQuantity: qty,
-          allocationComplete: newTotal === qty
+          allocationComplete: newTotal === Number(qty)
         });
         
         return updated;
@@ -174,8 +195,9 @@ export default function LocationSelectionModal({
       return;
     }
 
-    if (totalAllocated !== qty) {
-      alert(`Total allocated (${totalAllocated}) must equal quantity needed (${qty}).`);
+    const qtyNum = Number(qty);
+    if (totalAllocated !== qtyNum) {
+      alert(`Total allocated (${totalAllocated}) must equal quantity needed (${qtyNum}).`);
       return;
     }
 
@@ -222,13 +244,13 @@ export default function LocationSelectionModal({
           <div className="flex-1 overflow-y-auto p-4">
             <div className="space-y-4">
               {/* Quick Select - Single Location (if one has enough stock) */}
-              {variantLocations.some(loc => loc.quantity >= qty) && (
+              {variantLocations.some(loc => loc.quantity >= Number(qty)) && (
                 <div className="space-y-2">
                   <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                     <span className="w-6 h-6 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-xs">1</span>
                     Quick Select - Single Location
                   </h4>
-                  {variantLocations.filter(loc => loc.quantity >= qty).map((locationVariant, index) => (
+                  {variantLocations.filter(loc => loc.quantity >= Number(qty)).map((locationVariant, index) => (
                     <button
                       key={`single-${locationVariant.variantId}-${index}`}
                       onClick={() => handleLocationSelect(locationVariant)}
@@ -350,7 +372,7 @@ export default function LocationSelectionModal({
                       {selectedLocations.length} location{selectedLocations.length > 1 ? 's' : ''} selected
                     </p>
                     <p className="text-xs text-gray-600">
-                      Allocated: <span className={totalAllocated === qty ? 'text-green-600 font-bold' : 'text-orange-600 font-bold'}>
+                      Allocated: <span className={totalAllocated === Number(qty) ? 'text-green-600 font-bold' : 'text-orange-600 font-bold'}>
                         {totalAllocated}/{qty}
                       </span> {selectedVariant.unit}
                     </p>
@@ -364,9 +386,9 @@ export default function LocationSelectionModal({
                     </button>
                     <button
                       onClick={handleConfirmMultiAllocation}
-                      disabled={totalAllocated !== qty}
+                      disabled={totalAllocated !== Number(qty)}
                       className={`px-6 py-2 text-sm rounded-lg font-medium transition-all ${
-                        totalAllocated === qty
+                        totalAllocated === Number(qty)
                           ? 'bg-orange-500 text-white hover:bg-orange-600'
                           : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                       }`}

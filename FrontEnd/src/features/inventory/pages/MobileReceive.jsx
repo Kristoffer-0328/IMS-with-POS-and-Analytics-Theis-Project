@@ -50,6 +50,7 @@ const MobileReceive = () => {
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPhotoUploading, setIsPhotoUploading] = useState(false);
   const [processingStep, setProcessingStep] = useState('');
   const [poId, setPoId] = useState(null);
   const [poData, setPoData] = useState(null);
@@ -211,30 +212,111 @@ const MobileReceive = () => {
 
   const handlePhotoUpload = (selectedIndex, event) => {
     const file = event.target.files[0];
-    if (file) {
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        alert('Please select an image file');
+    if (!file) return;
+
+    // Show loading state
+    setIsPhotoUploading(true);
+
+    try {
+      // More comprehensive iPhone image format support
+      const allowedTypes = [
+        'image/jpeg',
+        'image/jpg',
+        'image/png',
+        'image/gif',
+        'image/webp',
+        'image/heic',  // iPhone HEIC format
+        'image/heif',  // iPhone HEIF format
+        'image/heics', // iPhone HEIC sequence
+        'image/heifs', // iPhone HEIF sequence
+        ''  // Some mobile browsers don't provide MIME type
+      ];
+
+      // Check file extension for iPhone formats
+      const fileName = file.name.toLowerCase();
+      const hasValidExtension = /\.(jpg|jpeg|png|gif|webp|heic|heif|heics|heifs)$/i.test(fileName);
+
+      // Check MIME type
+      const mimeType = file.type.toLowerCase();
+      const hasValidMimeType = mimeType.startsWith('image/') ||
+                              allowedTypes.includes(mimeType) ||
+                              mimeType === '' || // Some browsers don't provide MIME type
+                              mimeType.includes('heic') ||
+                              mimeType.includes('heif');
+
+      const isValidType = hasValidExtension || hasValidMimeType;
+
+      if (!isValidType) {
+        alert(`❌ Invalid image format. Please select a photo from your camera or gallery.\n\nSupported formats: JPG, PNG, GIF, WebP, HEIC, HEIF\n\nFile selected: ${file.name} (${file.type || 'unknown type'})`);
+        setIsPhotoUploading(false);
         return;
       }
-      
-      // Validate file size (max 10MB)
-      if (file.size > 10 * 1024 * 1024) {
-        alert('File size must be less than 10MB');
+
+      // Validate file size (increased for iPhone photos)
+      const maxSize = 15 * 1024 * 1024; // 15MB for iPhone photos
+      if (file.size > maxSize) {
+        alert(`📸 Photo too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Please choose a smaller photo or compress it. Maximum size: 15MB`);
+        setIsPhotoUploading(false);
         return;
       }
-      
+
+      // Check if it's actually an image file
+      if (!file.type.startsWith('image/') && !hasValidExtension) {
+        alert('❌ Please select an image file. The selected file is not recognized as an image.');
+        setIsPhotoUploading(false);
+        return;
+      }
+
+      console.log(`📸 Processing image: ${file.name} (${file.type}, ${(file.size / 1024).toFixed(1)}KB)`);
+
       const reader = new FileReader();
+
+      reader.onloadstart = () => {
+        console.log('📖 Starting to read image file...');
+      };
+
       reader.onloadend = () => {
-        handleProductChange(selectedIndex, 'photo', file);
-        handleProductChange(selectedIndex, 'photoPreview', reader.result);
+        try {
+          console.log('✅ Image file read successfully');
+          handleProductChange(selectedIndex, 'photo', file);
+          handleProductChange(selectedIndex, 'photoPreview', reader.result);
+          alert('✅ Photo uploaded successfully!');
+        } catch (error) {
+          console.error('❌ Error processing image:', error);
+          alert('❌ Error processing the photo. Please try a different image or try again.');
+        } finally {
+          setIsPhotoUploading(false);
+        }
       };
-      reader.onerror = () => {
-        alert('Error reading file. Please try again.');
+
+      reader.onerror = (error) => {
+        console.error('❌ FileReader error:', error);
+        alert(`❌ Error reading the photo file. This might be due to file corruption or unsupported format.\n\nError: ${error.target?.error?.message || 'Unknown error'}\n\nTry taking a new photo or selecting a different image.`);
+        setIsPhotoUploading(false);
       };
-      reader.readAsDataURL(file);
+
+      reader.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = (event.loaded / event.total) * 100;
+          console.log(`📖 Reading progress: ${percentComplete.toFixed(1)}%`);
+        }
+      };
+
+      // Try different reading methods for better iPhone compatibility
+      try {
+        reader.readAsDataURL(file);
+      } catch (readError) {
+        console.error('❌ Error starting file read:', readError);
+        alert('❌ Unable to read the photo file. Please try a different image.');
+        setIsPhotoUploading(false);
+      }
+
+    } catch (error) {
+      console.error('❌ Unexpected error in photo upload:', error);
+      alert(`❌ Unexpected error while uploading photo: ${error.message}\n\nPlease try again or contact support if the problem persists.`);
+      setIsPhotoUploading(false);
     }
-    
+
     // Reset the input value to allow selecting the same file again if needed
     event.target.value = '';
   };
@@ -491,12 +573,12 @@ const MobileReceive = () => {
 
       for (const product of receivedProducts) {
         // Skip if no quantity delivered
-        if (!product.acceptedQty || product.acceptedQty <= 0) {
+        if (!product.receivedQuantity || product.receivedQuantity <= 0) {
           console.log(`⏭️ Skipping ${product.name} - no quantity delivered`);
           continue;
         }
 
-        console.log(`\n🔄 Processing ${product.name} (${product.acceptedQty} units)`);
+        console.log(`\n🔄 Processing ${product.name} (${product.receivedQuantity} units)`);
         
         // Find the product in inventory
         const productInfo = await findProductInInventory(product.productId, product.name);
@@ -520,7 +602,7 @@ const MobileReceive = () => {
           
           // Calculate new quantity (flat structure - products have direct quantity field)
           const currentQty = parseInt(productData.quantity) || 0;
-          const deliveredQty = parseInt(product.acceptedQty);
+          const deliveredQty = parseInt(product.receivedQuantity);
           const newQty = currentQty + deliveredQty;
           
           console.log(`📊 Quantity update: ${currentQty} + ${deliveredQty} = ${newQty}`);
@@ -558,7 +640,8 @@ const MobileReceive = () => {
           productName: product.name,
           category: product.category || 'General',
           expectedQuantity: product.expectedQty,
-          receivedQuantity: parseInt(product.acceptedQty) || 0,
+          quantity: parseInt(product.acceptedQty) || 0,  // <-- Changed to 'quantity' for AnalyticsService
+          receivedQuantity: parseInt(product.acceptedQty) || 0,  // <-- Keep for other uses
           rejectedQuantity: parseInt(product.rejectedQty) || 0,
           unitPrice: product.unitPrice || 0,
           rejectionReason: product.rejectionReason || '',
@@ -588,6 +671,24 @@ const MobileReceive = () => {
           itemsWithDiscrepancies: deliveryData.products.filter(p => (parseInt(p.acceptedQty) || 0) !== p.expectedQty).length
         };
         
+        // Validate and parse delivery date/time
+        let deliveryDateTime;
+        try {
+          if (deliveryData.deliveryDateTime && deliveryData.deliveryDateTime.includes('T')) {
+            deliveryDateTime = new Date(deliveryData.deliveryDateTime);
+            // Check if the date is valid
+            if (isNaN(deliveryDateTime.getTime())) {
+              throw new Error('Invalid date format');
+            }
+          } else {
+            // Use current timestamp if date is invalid
+            deliveryDateTime = new Date();
+          }
+        } catch (error) {
+          console.warn('Invalid delivery date/time, using current timestamp:', deliveryData.deliveryDateTime);
+          deliveryDateTime = new Date();
+        }
+        
         await updateDoc(poRef, {
           status: 'received',
           receivedAt: serverTimestamp(),
@@ -595,13 +696,13 @@ const MobileReceive = () => {
           orderSummary: orderSummary,
           receivedProducts: receivedItems,
           deliveryDetails: {
-            drNumber: deliveryData.drNumber,
-            invoiceNumber: deliveryData.invoiceNumber,
-            deliveryDateTime: new Date(deliveryData.deliveryDateTime),
-            driverName: deliveryData.driverName,
-            truckNumber: deliveryData.truckNumber,
-            receivedBy: deliveryData.receivedBy,
-            projectSite: deliveryData.projectSite
+            drNumber: deliveryData.drNumber || '',
+            invoiceNumber: deliveryData.invoiceNumber || '',
+            deliveryDateTime: deliveryDateTime,
+            driverName: deliveryData.driverName || '',
+            truckNumber: deliveryData.truckNumber || '',
+            receivedBy: deliveryData.receivedBy || '',
+            projectSite: deliveryData.projectSite || ''
           },
           updatedAt: serverTimestamp()
         });
@@ -609,18 +710,22 @@ const MobileReceive = () => {
 
       // Save receiving transaction record
       setProcessingStep('Logging transaction...');
+      
+      // Use the validated delivery date/time
+      const transactionDateTime = deliveryDateTime || new Date();
+      
       const receivingTransactionData = {
         transactionId: `REC-${Date.now()}`,
         type: 'receiving',
         poId: poId,
         deliveryDetails: {
-          drNumber: deliveryData.drNumber,
-          invoiceNumber: deliveryData.invoiceNumber,
-          deliveryDateTime: new Date(deliveryData.deliveryDateTime),
-          driverName: deliveryData.driverName,
-          truckNumber: deliveryData.truckNumber,
-          receivedBy: deliveryData.receivedBy,
-          projectSite: deliveryData.projectSite
+          drNumber: deliveryData.drNumber || '',
+          invoiceNumber: deliveryData.invoiceNumber || '',
+          deliveryDateTime: transactionDateTime,
+          driverName: deliveryData.driverName || '',
+          truckNumber: deliveryData.truckNumber || '',
+          receivedBy: deliveryData.receivedBy || '',
+          projectSite: deliveryData.projectSite || ''
         },
         items: receivedItems,
         summary: {
@@ -638,11 +743,27 @@ const MobileReceive = () => {
 
       // Update analytics
       setProcessingStep('Updating analytics...');
-      await AnalyticsService.updateInventorySnapshotAfterReceiving(receivedItems);
+      
+      // Ensure receivedItems have valid data for analytics
+      const cleanReceivedItems = receivedItems.map(item => ({
+        productId: item.productId || `unknown-${Date.now()}`,
+        productName: item.productName || 'Unknown Product',
+        category: item.category || 'General',
+        quantity: parseInt(item.quantity) || 0,
+        unitPrice: parseFloat(item.unitPrice) || 0,
+        receivedQuantity: parseInt(item.receivedQuantity) || 0,
+        expectedQuantity: parseInt(item.expectedQuantity) || 0,
+        rejectedQuantity: parseInt(item.rejectedQuantity) || 0,
+        rejectionReason: item.rejectionReason || '',
+        notes: item.notes || '',
+        receivedBy: item.receivedBy || { id: 'mobile_user', name: 'Mobile User' }
+      }));
+      
+      await AnalyticsService.updateInventorySnapshotAfterReceiving(cleanReceivedItems);
 
       // Create stock movement entries for each accepted product
       setProcessingStep('Recording stock movements...');
-      const receivingTimestamp = new Date(deliveryData.deliveryDateTime);
+      const receivingTimestamp = transactionDateTime;
       const stockMovementPromises = receivedItems.map(async (product) => {
         const movementRef = collection(db, 'stock_movements');
         return addDoc(movementRef, {
@@ -650,15 +771,15 @@ const MobileReceive = () => {
           movementType: 'IN',
           reason: 'Supplier Delivery',
           // Product Information
-          productId: product.productId,
-          productName: product.productName,
+          productId: product.productId || `unknown-${Date.now()}`,
+          productName: product.productName || 'Unknown Product',
           variantId: product.variantId || null,
           variantName: product.variantName || null,
           // Quantity & Value
-          quantity: product.receivedQuantity,
-          orderedQty: product.expectedQuantity,
+          quantity: product.receivedQuantity || 0,
+          orderedQty: product.expectedQuantity || 0,
           unitPrice: product.unitPrice || 0,
-          totalValue: (product.receivedQuantity * (product.unitPrice || 0)),
+          totalValue: ((product.receivedQuantity || 0) * (product.unitPrice || 0)),
           // Location Information (will be filled when inventory is updated)
           storageLocation: null,
           shelf: null,
@@ -668,13 +789,13 @@ const MobileReceive = () => {
           referenceType: 'receiving_record',
           referenceId: poId,
           poId: poId,
-          drNumber: deliveryData.drNumber,
+          drNumber: deliveryData.drNumber || null,
           invoiceNumber: deliveryData.invoiceNumber || null,
           // Supplier Information
           supplier: poData?.supplierName || 'Unknown Supplier',
           supplierContact: poData?.supplierContact || '',
           // Delivery Information
-          driverName: deliveryData.driverName,
+          driverName: deliveryData.driverName || '',
           deliveryDate: receivingTimestamp,
           // Condition & Status
           condition: product.rejectedQuantity > 0 ? 'partial' : 'complete',
@@ -864,9 +985,9 @@ const MobileReceive = () => {
             <button
               onClick={() => {
                 // Go back to main receiving page
-                window.history.back();
+                window.location.href = '/im/receiving';
               }}
-              className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+              className="w-full bg-blue-500 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-600 transition-colors"
             >
               Back to Receiving
             </button>
@@ -1100,16 +1221,24 @@ const MobileReceive = () => {
               </label>
               
               <div 
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => !isPhotoUploading && fileInputRef.current?.click()}
                 className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
-                  errors.photo 
+                  isPhotoUploading
+                    ? 'border-blue-300 bg-blue-50 cursor-wait'
+                    : errors.photo 
                     ? 'border-red-300 bg-red-50 hover:border-red-400' 
                     : currentProduct.photoPreview
                     ? 'border-green-300 bg-green-50'
                     : 'border-gray-300 bg-gray-50 hover:border-orange-400'
                 }`}
               >
-                {currentProduct.photoPreview ? (
+                {isPhotoUploading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-3"></div>
+                    <p className="font-medium text-blue-700">Processing photo...</p>
+                    <p className="text-sm text-blue-600 mt-1">Please wait</p>
+                  </>
+                ) : currentProduct.photoPreview ? (
                   <div className="relative">
                     <img 
                       src={currentProduct.photoPreview} 
@@ -1133,7 +1262,7 @@ const MobileReceive = () => {
                     <p className={`font-medium ${errors.photo ? 'text-red-700' : 'text-gray-900'}`}>
                       {errors.photo ? '⚠ Photo Required' : 'Tap to Take/Upload Photo'}
                     </p>
-                    <p className="text-sm text-gray-500 mt-1">Camera or Gallery</p>
+                    <p className="text-sm text-gray-500 mt-1">Camera or Gallery • Supports iPhone HEIC/HEIF</p>
                   </>
                 )}
               </div>
@@ -1141,7 +1270,7 @@ const MobileReceive = () => {
                 key={`photo-input-${currentProduct?.id || currentProductIndex}`}
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,.heic,.heif,.heics,.heifs"
                 capture="environment"
                 onChange={(e) => handlePhotoUpload(currentProductIndex, e)}
                 className="hidden"

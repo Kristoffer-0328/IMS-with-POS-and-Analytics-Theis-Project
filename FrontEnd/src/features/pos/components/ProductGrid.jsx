@@ -4,9 +4,6 @@ import { FiPlus, FiPackage } from 'react-icons/fi';
 const ProductCard = ({ 
   product, 
   onProductSelect, 
-  onUnitConversion, 
-  onQuickQuantity, 
-  getCartQuantity, 
   disabled 
 }) => {
   const firstVariant = product.variants[0];
@@ -41,13 +38,11 @@ const ProductCard = ({
           </div>
         )}
       </div>
-      
       <div className="p-4">
         <div className="mb-2">
           <h3 className="font-medium text-gray-900 line-clamp-1">{product.name}</h3>
           <p className="text-sm text-gray-500 line-clamp-1">{product.category}</p>
         </div>
-        
         <div className="flex items-center justify-between">
           <div>
             <div className="text-orange-600">
@@ -62,7 +57,6 @@ const ProductCard = ({
               Stock: {totalStock}
             </p>
           </div>
-          
           <button
             onClick={() => onProductSelect && onProductSelect(product)}
             disabled={disabled || totalStock === 0}
@@ -83,9 +77,6 @@ const ProductCard = ({
 const ProductGrid = ({ 
   products, 
   onProductSelect, 
-  onUnitConversion, 
-  onQuickQuantity, 
-  getCartQuantity, 
   loading, 
   disabled 
 }) => {
@@ -99,7 +90,7 @@ const ProductGrid = ({
               <div className="h-4 bg-gray-200 rounded w-3/4" />
               <div className="h-4 bg-gray-200 rounded w-1/2" />
             </div>
-      </div>
+          </div>
         ))}
       </div>
     );
@@ -124,9 +115,6 @@ const ProductGrid = ({
           key={product.id}
           product={product}
           onProductSelect={onProductSelect}
-          onUnitConversion={onUnitConversion}
-          onQuickQuantity={onQuickQuantity}
-          getCartQuantity={getCartQuantity}
           disabled={disabled}
         />
       ))}

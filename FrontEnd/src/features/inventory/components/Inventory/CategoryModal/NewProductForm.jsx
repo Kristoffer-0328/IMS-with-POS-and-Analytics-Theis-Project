@@ -46,6 +46,9 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
     const [selectedStorageLocations, setSelectedStorageLocations] = useState([]); // Changed to array for multiple selections
     const [selectedUnit, setSelectedUnit] = useState(selectedCategory?.name || null); // Auto-set from selectedCategory
     const [quantityPerLocation, setQuantityPerLocation] = useState({}); // Track quantity per location
+
+    // Loading state for product creation
+    const [isCreatingProduct, setIsCreatingProduct] = useState(false);
     
     // Handle storage location selection - now supports multiple locations with quantity
     const handleStorageLocationSelect = (shelfName, rowName, columnIndex, quantity) => {
@@ -276,6 +279,8 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
             return;
         }
 
+        setIsCreatingProduct(true);
+
         // Fetch storage unit's category from Firebase
         const db = getFirestore(app);
         const firstLocation = selectedStorageLocations[0];
@@ -307,7 +312,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                     name: productName.trim(),
                     quantity: locationQty,
                     unitPrice: Number(unitPrice) || 0,
-                    supplierPrice: Number(supplierPrice) || Number(unitPrice) || 0, // Add supplierPrice to product data
+                    supplierPrice: Number(supplierPrice) || 0, // Add supplierPrice to product data
                     category: unitCategory,
                     storageLocation: location.unit,
                     shelfName: location.shelf,
@@ -375,7 +380,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                 if (currentSupplier) {
                     try {
                         const linkResult = await linkProductToSupplier(productId, currentSupplier.id, {
-                            supplierPrice: Number(supplierPrice) || Number(unitPrice) || 0,
+                            supplierPrice: Number(supplierPrice) || 0,
                             supplierSKU: productId,
                             lastUpdated: new Date().toISOString()
                         });
@@ -393,6 +398,8 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
         } catch (error) {
             console.error('Error adding product:', error);
             alert(`Failed to add product: ${error.message}`);
+        } finally {
+            setIsCreatingProduct(false);
         }
     };
 
@@ -978,15 +985,28 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                 <div className="sticky bottom-0 bg-white pt-6 pb-2 -mx-1 px-6 border-t border-gray-200 shadow-lg">
                     <button
                         onClick={handleAddProduct}
-                        className="w-full py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl 
-                                 hover:from-blue-600 hover:to-blue-700 transition-all shadow-md hover:shadow-xl
+                        disabled={isCreatingProduct}
+                        className={`w-full py-4 rounded-xl transition-all shadow-md hover:shadow-xl
                                  flex items-center justify-center gap-3 font-semibold text-lg
-                                 transform hover:scale-[1.02] active:scale-[0.98]"
+                                 transform hover:scale-[1.02] active:scale-[0.98]
+                                 ${isCreatingProduct 
+                                     ? 'bg-gray-400 cursor-not-allowed' 
+                                     : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700'
+                                 }`}
                     >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                        </svg>
-                        Add Product to Inventory
+                        {isCreatingProduct ? (
+                            <>
+                                <div className="w-6 h-6 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+                                <span>Creating Product...</span>
+                            </>
+                        ) : (
+                            <>
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                </svg>
+                                <span>Add Product to Inventory</span>
+                            </>
+                        )}
                     </button>
                 </div>
             </div>

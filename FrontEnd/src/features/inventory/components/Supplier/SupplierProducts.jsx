@@ -296,7 +296,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+      <div className="bg-white rounded-lg w-full max-w-7xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
         {/* Fixed Header */}
         <div className="flex justify-between items-center p-6 border-b bg-white flex-shrink-0">
           <h2 className="text-xl font-semibold">
@@ -355,29 +355,30 @@ const SupplierProducts = ({ supplier, onClose }) => {
               </div>
 
               <div className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                      <th className="px-4 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/5">
-                      Product Name
-                    </th>
-                      <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/3">
-                      Product Details
-                    </th>
-                      <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
-                      Category
-                    </th>
-                      <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
-                      Supplier Price
-                    </th>
-                      <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/8">
-                      Unit Price
-                    </th>
-                      <th className="px-4 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
+                <div className="overflow-x-auto min-w-full">
+                  <table className="min-w-full divide-y divide-gray-200 table-fixed">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '200px'}}>
+                          Product Name
+                        </th>
+                        <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '250px'}}>
+                          Product Details
+                        </th>
+                        <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '120px'}}>
+                          Category
+                        </th>
+                        <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '120px'}}>
+                          Supplier Price
+                        </th>
+                        <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '120px'}}>
+                          Unit Price
+                        </th>
+                        <th className="px-4 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '160px'}}>
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {supplierProducts.map((product) => (
                       <React.Fragment key={product.id}>
@@ -710,6 +711,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
                   ))}
                 </tbody>
               </table>
+                </div>
               </div>
             </div>
           )}
