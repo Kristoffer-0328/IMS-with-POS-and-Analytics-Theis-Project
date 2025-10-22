@@ -4,6 +4,7 @@ import { usePurchaseOrderServices } from '../../../services/firebase/PurchaseOrd
 import { useAuth } from '../../auth/services/FirebaseAuth';
 import ViewPOModal from '../../inventory/components/PurchaseOrder/ViewPOModal';
 import POAnalytics from '../../inventory/components/PurchaseOrder/POAnalytics';
+import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
 
 const AdminPurchaseOrders = () => {
   const { currentUser } = useAuth();
@@ -86,7 +87,7 @@ const AdminPurchaseOrders = () => {
 
   return (
     <div className="">
- 
+      <DashboardHeader />
      
 
         {/* Tab Navigation */}
