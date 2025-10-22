@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { FiFilter, FiRefreshCw, FiBarChart2, FiList } from 'react-icons/fi';
+import { FiFilter, FiRefreshCw } from 'react-icons/fi';
 import { usePurchaseOrderServices } from '../../../services/firebase/PurchaseOrderServices';
 import { useAuth } from '../../auth/services/FirebaseAuth';
 import ViewPOModal from '../../inventory/components/PurchaseOrder/ViewPOModal';
-import POAnalytics from '../../inventory/components/PurchaseOrder/POAnalytics';
 import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
 
 const AdminPurchaseOrders = () => {
@@ -11,7 +10,6 @@ const AdminPurchaseOrders = () => {
   const poServices = usePurchaseOrderServices();
   
   // State
-  const [activeTab, setActiveTab] = useState('orders'); // 'orders' or 'analytics'
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -87,41 +85,10 @@ const AdminPurchaseOrders = () => {
 
   return (
     <div className="">
-      <DashboardHeader />
+   
      
 
-        {/* Tab Navigation */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
-          <div className="flex border-b border-gray-200">
-            <button
-              onClick={() => setActiveTab('orders')}
-              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors border-b-2 ${
-                activeTab === 'orders'
-                  ? 'border-blue-500 text-blue-600 bg-blue-50'
-                  : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <FiList size={20} />
-              <span>Purchase Orders</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('analytics')}
-              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors border-b-2 ${
-                activeTab === 'analytics'
-                  ? 'border-blue-500 text-blue-600 bg-blue-50'
-                  : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <FiBarChart2 size={20} />
-              <span>Analytics</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Tab Content */}
-        {activeTab === 'orders' ? (
-          <>
-            {/* Filters */}
+        {/* Filters */}
             <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <FiFilter className="text-gray-600" size={20} />
@@ -246,12 +213,6 @@ const AdminPurchaseOrders = () => {
                 </table>
               </div>
             </div>
-          </>
-        ) : (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            <POAnalytics />
-          </div>
-        )}
 
         {/* View PO Modal */}
         {showViewModal && selectedPO && (

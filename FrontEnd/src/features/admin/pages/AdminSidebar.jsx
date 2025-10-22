@@ -51,17 +51,6 @@ const AdminSidebar = ({ collapsed, setCollapsed }) => {
         },
       ]
     },
-    // Sales Section
-    {
-      section: 'Sales',
-      items: [
-        {
-          path: '/admin/transaction-history',
-          icon: <FiShoppingCart size={20} />,
-          label: 'Transaction History',
-        },
-      ]
-    },
     // Reports Section
     {
       section: 'Reports',

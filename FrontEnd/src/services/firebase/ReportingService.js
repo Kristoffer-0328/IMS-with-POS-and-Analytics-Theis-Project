@@ -96,10 +96,10 @@ export const ReportingService = {
         }
       } else {
         // Daily data for specific month
-        const daysInMonth = moment(`${year}-${month}-01`).daysInMonth();
+        const daysInMonth = moment().year(year).month(month - 1).date(1).daysInMonth();
         
         for (let d = 1; d <= daysInMonth; d++) {
-          const date = moment(`${year}-${month}-${d}`).format('YYYYMMDD');
+          const date = moment().year(year).month(month - 1).date(d).format('YYYYMMDD');
           const snapshot = snapshots.find(s => s.date === date);
           const sale = sales.find(s => s.date === date);
 
@@ -115,7 +115,7 @@ export const ReportingService = {
 
         // For month view, we'll just have one entry
         monthlyData.push({
-          month: moment(`${year}-${month}-01`).format('MMMM'),
+          month: moment().year(year).month(month - 1).date(1).format('MMMM'),
           sales: totalSales,
           avgInventory: totalInventoryValue / (inventoryCount || 1),
           turnoverRate: totalInventoryValue === 0 ? 0 : (totalSales / totalInventoryValue)

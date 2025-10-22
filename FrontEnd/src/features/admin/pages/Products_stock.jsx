@@ -124,15 +124,27 @@ const Dashboard = () => {
   const fetchTransactions = async () => {
     try {
       const transactionsRef = collection(db, 'posTransactions');
-      const q = query(transactionsRef, orderBy('createdAt', 'desc'), limit(30));
+      const q = query(transactionsRef, orderBy('createdAt', 'desc'), limit(100));
       const snapshot = await getDocs(q);
 
       const txns = snapshot.docs.map(doc => {
         const data = doc.data();
+        
+        // Try createdAt first, then saleDate as fallback
+        let date = null;
+        if (data.createdAt?.toDate) {
+          date = data.createdAt.toDate();
+        } else if (data.saleDate) {
+          // Parse saleDate string like "OCT 22 2025"
+          date = new Date(data.saleDate);
+        } else {
+          date = new Date();
+        }
+        
         return {
           id: doc.id,
-          total: data.totals?.total || 0,
-          date: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
+          total: data.amountPaid || data.totals?.total || data.total || 0, // Use amountPaid as primary field
+          date: date,
           items: data.items || []
         };
       });
@@ -192,16 +204,27 @@ const Dashboard = () => {
 
     // Aggregate sales by day
     txns.forEach(txn => {
-      const txnDateStr = txn.date.toDateString();
+      // Normalize transaction date to start of day
+      const txnDate = new Date(txn.date);
+      txnDate.setHours(0, 0, 0, 0);
+      const txnTime = txnDate.getTime();
       
       // Check if transaction matches any day in current week
-      const currentWeekDay = last8Days.find(d => d.currentDate.toDateString() === txnDateStr);
+      const currentWeekDay = last8Days.find(d => {
+        const dayDate = new Date(d.currentDate);
+        dayDate.setHours(0, 0, 0, 0);
+        return dayDate.getTime() === txnTime;
+      });
       if (currentWeekDay) {
         currentWeekDay.currentWeekSales += txn.total;
       }
       
       // Check if transaction matches any day in previous week
-      const previousWeekDay = last8Days.find(d => d.previousDate.toDateString() === txnDateStr);
+      const previousWeekDay = last8Days.find(d => {
+        const dayDate = new Date(d.previousDate);
+        dayDate.setHours(0, 0, 0, 0);
+        return dayDate.getTime() === txnTime;
+      });
       if (previousWeekDay) {
         previousWeekDay.lastWeekSales += txn.total;
       }
@@ -216,7 +239,6 @@ const Dashboard = () => {
       thisWeekActual: day.currentWeekSales,
       lastWeekActual: day.lastWeekSales
     }));
-
     setSalesData(chartData);
   };
 
@@ -389,11 +411,11 @@ const Dashboard = () => {
                   <div className="space-y-2.5">
                     <p className="leading-relaxed">
                       <span className="font-medium text-gray-900">Dark bars (This Week):</span>
-                      <span className="text-gray-600"> Sales for each day in the current week (Oct 2-9, 2025)</span>
+                      <span className="text-gray-600"> Sales for each day in the current week</span>
                     </p>
                     <p className="leading-relaxed">
                       <span className="font-medium text-gray-900">Light bars (Last Week):</span>
-                      <span className="text-gray-600"> Sales for the same day last week (Sept 25-Oct 2, 2025)</span>
+                      <span className="text-gray-600"> Sales for the same day last week</span>
                     </p>
                     <div className="mt-3 pt-3 border-t border-gray-200">
                       <p className="text-gray-600 leading-relaxed">
