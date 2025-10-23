@@ -75,7 +75,6 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
                     const productsSnapshot = await getDocs(productsRef);
                     productCount = productsSnapshot.docs.length;
                     
-                    console.log(`📊 ${unitName}: ${productCount} products`);
                 } catch (error) {
                     console.error(`Error counting products in ${unitName}:`, error);
                 }

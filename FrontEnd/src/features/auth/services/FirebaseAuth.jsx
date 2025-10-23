@@ -90,9 +90,7 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       setLoading(true); 
-      console.log('Simulating network delay...');
       await sleep(4000);
-      console.log('Delay over, proceeding with login');
       // Set loading to true on login request
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;

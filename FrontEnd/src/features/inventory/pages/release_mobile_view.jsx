@@ -69,7 +69,6 @@ const checkRestockingThreshold = (productData, variantIndex) => {
   const needsRestock = currentQty <= restockLevel;
   const isLowStock = currentQty <= (restockLevel * 1.5);
 
-  console.log(`🔍 Restock check - Product: ${productData.name || 'Unknown'}, Qty: ${currentQty}, Restock Level: ${restockLevel}, Needs Restock: ${needsRestock}`);
 
   return {
     needsRestock,
@@ -125,7 +124,6 @@ const generateRestockingNotification = async (restockingRequest, currentUser) =>
 // Helper function to generate restocking request
 const generateRestockingRequest = async (productData, variantIndex, locationInfo, currentUser) => {
   try {
-    console.log(`🚨 GENERATING RESTOCK REQUEST - Product: ${productData.name}, Variant Index: ${variantIndex}`);
 
     let variant = null;
     let isVariantRequest = true;
@@ -134,22 +132,17 @@ const generateRestockingRequest = async (productData, variantIndex, locationInfo
     if (variantIndex >= 0 && productData.variants?.[variantIndex]) {
       variant = productData.variants[variantIndex];
       isVariantRequest = true;
-      console.log(`📦 Variant product - Size: ${variant.size}, Quantity: ${variant.quantity}`);
     } else {
       // Non-variant product
       isVariantRequest = false;
-      console.log(`📦 Non-variant product - Quantity: ${productData.quantity}`);
     }
 
     const restockCheck = checkRestockingThreshold(productData, variantIndex);
-    console.log(`🔍 Restock check result:`, restockCheck);
 
     if (!restockCheck.needsRestock) {
-      console.log(`❌ No restock needed - Current qty (${restockCheck.currentQuantity}) > Restock level (${restockCheck.restockLevel})`);
       return null;
     }
 
-    console.log(`✅ Creating restock request...`);
 
     const requestId = `RSR-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -189,7 +182,6 @@ const generateRestockingRequest = async (productData, variantIndex, locationInfo
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
-    console.log('📝 Restocking Request Data:', restockingRequest);
 
     // Save to restocking requests collection
     await addDoc(collection(db, 'RestockingRequests'), restockingRequest);
@@ -220,7 +212,6 @@ const findProductInInventory = async (productId, variantId, variantName, storage
 
     // If we have fullLocation, use it for direct lookup
     if (fullLocation && !isQuotationProduct) {
-      console.log(`🎯 Using fullLocation for direct lookup: ${fullLocation}`);
 
       // Parse fullLocation - it might be in format "Unit 01/Shelf A/Row 1/Column 1"
       // or "Steel & Heavy Materials - Angle Irons & L-Beams - Row 1 - Column 1"
@@ -248,12 +239,10 @@ const findProductInInventory = async (productId, variantId, variantName, storage
             'Tools': 'Unit 03'
           };
           unitId = categoryToUnit[parts[0]] || 'Unit 01'; // Default to Unit 01
-          console.log(`🔍 Mapped category "${parts[0]}" to unitId: ${unitId}`);
         }
       }
 
       if (unitId) {
-        console.log(`🔍 Parsed unitId from fullLocation: ${unitId}`);
 
         // Try direct lookup using the productId
         const productRef = doc(db, 'Products', unitId, 'products', productId);
@@ -261,7 +250,6 @@ const findProductInInventory = async (productId, variantId, variantName, storage
 
         if (productDoc.exists()) {
           const productData = productDoc.data();
-          console.log(`✅ Found product using fullLocation: ${productData.name}`);
 
           return {
             productRef,
@@ -279,14 +267,12 @@ const findProductInInventory = async (productId, variantId, variantName, storage
 
     // Fallback to location-based lookup
     if (storageLocation && !isQuotationProduct) {
-      console.log(`🎯 Looking up product at: Products/${storageLocation}/products/${productId}`);
 
       const productRef = doc(db, 'Products', storageLocation, 'products', productId);
       const productDoc = await getDoc(productRef);
 
       if (productDoc.exists()) {
         const productData = productDoc.data();
-        console.log(`✅ Found product: ${productData.name}`);
 
         return {
           productRef,
@@ -303,7 +289,6 @@ const findProductInInventory = async (productId, variantId, variantName, storage
 
     // For quotation products or when we don't have location info, search all storage units
     if (isQuotationProduct || !storageLocation) {
-      console.log('🔍 Searching all storage units for quotation product...');
 
       const productsRef = collection(db, 'Products');
       const storageUnitsSnapshot = await getDocs(productsRef);
@@ -334,7 +319,6 @@ const findProductInInventory = async (productId, variantId, variantName, storage
             const categoryMatches = !category || productData.category === category;
 
             if (productNameMatches && categoryMatches) {
-              console.log(`✅ Found matching product: ${productBaseName} in ${unitId}`);
 
               const productRef = doc(db, 'Products', unitId, 'products', currentProductId);
               return {
@@ -371,7 +355,6 @@ const findProductInInventory = async (productId, variantId, variantName, storage
 
       if (fallbackProductDoc.exists()) {
         const productData = fallbackProductDoc.data();
-        console.log(`✅ Found product in ${unitId}: ${productData.name}`);
 
         return {
           productRef: fallbackProductRef,
@@ -397,13 +380,11 @@ const findProductInInventory = async (productId, variantId, variantName, storage
 // Function to find all locations where a product exists with available quantities
 const findAllProductLocations = async (productId, variantId, variantName, fullLocation, storageLocation) => {
   try {
-    console.log(`🔍 Finding all locations for product: ${variantName} (ID: ${productId}, VariantID: ${variantId})`);
 
     const allLocations = [];
 
     // If we have a variantId, try to find the variant document directly first
     if (variantId) {
-      console.log(`🎯 Looking for variant document directly: ${variantId}`);
 
       // Search all storage units for the variant document
       const productsRef = collection(db, 'Products');
@@ -422,7 +403,6 @@ const findAllProductLocations = async (productId, variantId, variantName, fullLo
 
           if (variantDoc.exists()) {
             const variantData = variantDoc.data();
-            console.log(`✅ Found variant document: ${variantData.name} at ${unitId}`);
 
             // Verify this is actually a variant and matches our product
             if (variantData.isVariant && (variantData.parentProductId === productId || variantData.id === productId)) {
@@ -449,11 +429,9 @@ const findAllProductLocations = async (productId, variantId, variantName, fullLo
               if (availableQty === 0) {
                 console.warn(`⚠️ WARNING: Variant found but OUT OF STOCK at ${unitId}`);
               } else {
-                console.log(`✅ Added variant location with ${availableQty} units`);
               }
 
               // Return immediately since we found the specific variant
-              console.log(`✅ Variant located. Total locations: ${allLocations.length}`);
               return allLocations;
             }
           }
@@ -463,12 +441,10 @@ const findAllProductLocations = async (productId, variantId, variantName, fullLo
         }
       }
 
-      console.log(`⚠️ Variant document not found, falling back to base product search`);
     }
 
     // If we have fullLocation, try direct lookup first (for base products or fallback)
     if (fullLocation) {
-      console.log(`🎯 Using fullLocation for direct lookup: ${fullLocation}`);
 
       // Parse fullLocation - it might be in format "Unit 01/Shelf A/Row 1/Column 1"
       // or "Steel & Heavy Materials - Angle Irons & L-Beams - Row 1 - Column 1"
@@ -496,12 +472,10 @@ const findAllProductLocations = async (productId, variantId, variantName, fullLo
             'Tools': 'Unit 03'
           };
           unitId = categoryToUnit[parts[0]] || 'Unit 01'; // Default to Unit 01
-          console.log(`🔍 Mapped category "${parts[0]}" to unitId: ${unitId}`);
         }
       }
 
       if (unitId) {
-        console.log(`🔍 Parsed unitId from fullLocation: ${unitId}`);
 
         try {
           const productRef = doc(db, 'Products', unitId, 'products', productId);
@@ -509,9 +483,6 @@ const findAllProductLocations = async (productId, variantId, variantName, fullLo
 
           if (productDoc.exists()) {
             const productData = productDoc.data();
-            console.log(`✅ Found product using fullLocation: ${productData.name}`);
-            console.log('🔍 DEBUGGING - Full product structure:', JSON.stringify(productData, null, 2));
-            console.log('🔍 DEBUGGING - Object keys:', Object.keys(productData));
 
             // CRITICAL: Extract base product ID to handle variant ID mismatches
             const extractBaseProductId = (id) => {
@@ -528,12 +499,6 @@ const findAllProductLocations = async (productId, variantId, variantName, fullLo
             const searchBaseId = extractBaseProductId(productId);
             const variantIdBaseId = extractBaseProductId(variantId || '');
 
-            console.log(`🔍 ID Analysis:
-  - Product Base ID: ${productBaseId}
-  - Search Base ID: ${searchBaseId}
-  - Variant Base ID: ${variantIdBaseId}
-  - IDs Match: ${productBaseId === searchBaseId || productBaseId === variantIdBaseId}`);
-
             // Check if this is the correct product (allowing for variant ID mismatches)
             const isCorrectProduct =
               productData.id === productId ||
@@ -544,37 +509,23 @@ const findAllProductLocations = async (productId, variantId, variantName, fullLo
               productDoc.id === variantId;
 
             if (!isCorrectProduct) {
-              console.log(`⚠️ Product ID mismatch - skipping this location`);
               // Don't throw error, just continue searching
             }
 
-            console.log(`✅ Product IDs match - proceeding with inventory check`);
 
             // Check multiple possible variant locations
             const variantsArray = productData.variants || productData.Variants || productData.productVariants || [];
             const hasVariants = Array.isArray(variantsArray) && variantsArray.length > 0;
 
-            console.log(`🔍 Product has variants: ${hasVariants}, variant count: ${variantsArray.length}`);
-            console.log(`🔍 Searching for variantId: ${variantId}, variantName: ${variantName}`);
 
             if (hasVariants) {
-              console.log('🔍 Available variants:', variantsArray.map((v, i) => ({
-                index: i,
-                id: v.id,
-                variantId: v.variantId,
-                size: v.size,
-                name: v.name,
-                quantity: v.quantity
-              })));
+
             }
 
             if (hasVariants && variantId) {
-              console.log(`🔍 Searching for variant in ${variantsArray.length} variants`);
-              console.log(`🔍 Looking for variantId: ${variantId}`);
 
               // Enhanced variant matching with normalization
               const normalizedSearchId = normalizeVariantId(variantId);
-              console.log(`🔍 Normalized search ID: ${normalizedSearchId}`);
 
               // Find the specific variant with improved matching
               const variantIndex = variantsArray.findIndex(v => {
@@ -604,13 +555,11 @@ const findAllProductLocations = async (productId, variantId, variantName, fullLo
                 return false;
               });
 
-              console.log(`🔍 Variant index found: ${variantIndex}`);
 
               if (variantIndex !== -1) {
                 const variant = variantsArray[variantIndex];
                 const availableQty = Number(variant.quantity) || 0;
 
-                console.log(`🔍 Variant found: ${variant.size || variant.name}, quantity: ${availableQty}`);
 
                 if (availableQty > 0) {
                   allLocations.push({
@@ -626,14 +575,9 @@ const findAllProductLocations = async (productId, variantId, variantName, fullLo
                     },
                     productData
                   });
-                  console.log(`✅ Added variant location with ${availableQty} units`);
                 } else {
-                  console.log(`⚠️ Variant found but quantity is 0`);
                 }
               } else {
-                console.log(`⚠️ Variant not found in array, but variantId exists. This indicates a data structure issue.`);
-                console.log(`🔍 Expected variantId: ${variantId}`);
-                console.log(`🔍 Available variant IDs:`, variantsArray.map(v => v.variantId || v.id || v.size));
 
                 // If variantId exists but variant not found, this is an error condition
                 // Don't fallback to non-variant - log error and skip this location
@@ -643,7 +587,6 @@ const findAllProductLocations = async (productId, variantId, variantName, fullLo
             } else if (!hasVariants) {
               // Non-variant product OR product that should be treated as non-variant
               const availableQty = Number(productData.quantity) || 0;
-              console.log(`🔍 Non-variant product, quantity: ${availableQty}`);
 
               // CRITICAL: Always add the location even if quantity is 0
               // This allows proper error messages and restock request generation
@@ -666,21 +609,16 @@ const findAllProductLocations = async (productId, variantId, variantName, fullLo
                 console.warn(`⚠️ WARNING: Product found but OUT OF STOCK at ${unitId}`);
                 console.warn(`   Location: ${unitId}/${productData.shelfName}/${productData.rowName}/${productData.columnIndex}`);
               } else {
-                console.log(`✅ Added non-variant location with ${availableQty} units`);
               }
 
               // Return immediately since we found the product (even if out of stock)
-              console.log(`✅ Product located using fullLocation. Total locations: ${allLocations.length}`);
               return allLocations;
             } else {
-              console.log(`⚠️ Product has variants but no variantId provided - this is unexpected for variant products`);
-              console.log(`🔍 Product structure:`, { hasVariants, variantId, variantName });
               // Don't add this location - variant products must have variantId
             }
 
             // If we found the product using fullLocation, return it
             if (allLocations.length > 0) {
-              console.log(`✅ Found ${allLocations.length} locations using fullLocation for ${variantName}`);
               return allLocations;
             }
           }
@@ -691,7 +629,6 @@ const findAllProductLocations = async (productId, variantId, variantName, fullLo
     }
 
     // Fallback: search all storage units
-    console.log('🔍 Searching all storage units...');
 
     const productsRef = collection(db, 'Products');
     const storageUnitsSnapshot = await getDocs(productsRef);
@@ -804,7 +741,6 @@ const findAllProductLocations = async (productId, variantId, variantName, fullLo
       }
     }
 
-    console.log(`✅ Found ${allLocations.length} locations for ${variantName}`);
     return allLocations;
   } catch (error) {
     console.error(`Error finding all locations for product ${variantName}:`, error);
@@ -815,21 +751,17 @@ const findAllProductLocations = async (productId, variantId, variantName, fullLo
 // Function to update inventory by deducting released items
 const updateInventoryQuantities = async (releasedProducts, currentUser) => {
   try {
-    console.log('\n📦 Starting inventory update for', releasedProducts.length, 'products');
 
     for (const product of releasedProducts) {
       if (product.status !== 'released') {
-        console.log(`⏭️ Skipping ${product.name} - status: ${product.status}`);
         continue;
       }
 
       const releasedQty = Number(product.releasedQty);
       if (isNaN(releasedQty) || releasedQty <= 0) {
-        console.log(`⏭️ Skipping ${product.name} - invalid quantity: ${releasedQty}`);
         continue;
       }
 
-      console.log(`\n🔄 Processing ${product.name} - Qty to release: ${releasedQty}`);
 
       // Find all locations where this product exists
       const allLocations = await findAllProductLocations(
@@ -879,15 +811,12 @@ const updateInventoryQuantities = async (releasedProducts, currentUser) => {
       // Sort locations by available quantity (descending) to prioritize locations with more stock
       allLocations.sort((a, b) => b.currentQty - a.currentQty);
 
-      console.log(`📍 Found product in ${allLocations.length} locations:`);
       allLocations.forEach((loc, index) => {
         const status = loc.currentQty === 0 ? '❌ OUT OF STOCK' : '✅';
-        console.log(`  ${status} ${index + 1}. ${loc.location.storageLocation}/${loc.location.shelfName}/${loc.location.rowName}/${loc.location.columnIndex}: ${loc.currentQty} units`);
       });
 
       // Calculate total available quantity across all locations
       const totalAvailable = allLocations.reduce((sum, loc) => sum + loc.currentQty, 0);
-      console.log(`📊 Total available across all locations: ${totalAvailable} units`);
 
       if (totalAvailable < releasedQty) {
         // For quotation products, allow negative inventory with warning
@@ -922,7 +851,6 @@ const updateInventoryQuantities = async (releasedProducts, currentUser) => {
 
         const deductQty = Math.min(remainingQty, location.currentQty);
 
-        console.log(`🔄 Deducting ${deductQty} units from ${location.location.storageLocation}/${location.location.shelfName}/${location.location.rowName}/${location.location.columnIndex}`);
 
         // Deduct from this location using transaction
         await runTransaction(db, async (transaction) => {
@@ -939,12 +867,10 @@ const updateInventoryQuantities = async (releasedProducts, currentUser) => {
 
           if (isVariantDocument) {
             // VARIANT DOCUMENT: Update the variant document directly
-            console.log(`📦 Updating variant document at ${location.location.storageLocation}`);
 
             const currentQty = Number(productData.quantity) || 0;
             const newQty = currentQty - deductQty;
 
-            console.log(`➡️ Updating variant quantity: ${currentQty} - ${deductQty} = ${newQty}`);
 
             // Validate that we're not going negative (unless it's a quotation product)
             const isQuotationProduct = product.productId && product.productId.startsWith('quotation-');
@@ -961,7 +887,6 @@ const updateInventoryQuantities = async (releasedProducts, currentUser) => {
             // Check for low stock on variant
             const restockLevel = productData.restockLevel || productData.maximumStockLevel || 10;
             if (newQty <= restockLevel) {
-              console.log(`Low stock detected for variant (${newQty} <= ${restockLevel}), generating restock request...`);
 
               // Generate restock request using the centralized function with variant data
               await generateRestockingRequest(productData, -1, location.location, currentUser);
@@ -972,14 +897,12 @@ const updateInventoryQuantities = async (releasedProducts, currentUser) => {
 
             if (hasVariants && location.variantIndex >= 0) {
               // LEGACY: Product has nested variants - update the specific variant's quantity
-              console.log(`� Updating nested variant at ${location.location.storageLocation}`);
 
               const variants = [...productData.variants];
               const variant = variants[location.variantIndex];
               const currentQty = Number(variant.quantity) || 0;
               const newQty = currentQty - deductQty;
 
-              console.log(`📊 Variant ${variant.size || variant.name} - Current: ${currentQty}, Deducting: ${deductQty}, New: ${newQty}`);
 
               // Validate that we're not going negative (unless it's a quotation product)
               const isQuotationProduct = product.productId && product.productId.startsWith('quotation-');
@@ -1002,7 +925,6 @@ const updateInventoryQuantities = async (releasedProducts, currentUser) => {
               // Check for low stock on variant
               const restockLevel = variant.restockLevel || productData.restockLevel || productData.reorderPoint || 10;
               if (newQty <= restockLevel) {
-                console.log(`Low stock detected for variant (${newQty} <= ${restockLevel}), generating restock request...`);
 
                 // Generate restock request using the centralized function with updated product data
                 const updatedProductData = { ...productData, variants };
@@ -1010,12 +932,10 @@ const updateInventoryQuantities = async (releasedProducts, currentUser) => {
               }
             } else {
               // BASE PRODUCT: Non-variant product - update base product quantity
-              console.log(`📦 Updating non-variant product at ${location.location.storageLocation}`);
 
               const currentQty = Number(productData.quantity) || 0;
               const newQty = currentQty - deductQty;
 
-              console.log(`➡️ Updating quantity: ${currentQty} - ${deductQty} = ${newQty}`);
 
               // Validate that we're not going negative (unless it's a quotation product)
               const isQuotationProduct = product.productId && product.productId.startsWith('quotation-');
@@ -1032,7 +952,6 @@ const updateInventoryQuantities = async (releasedProducts, currentUser) => {
               // Generate restock request if quantity is low
               const restockLevel = productData.restockLevel || productData.reorderPoint || 10;
               if (newQty <= restockLevel) {
-                console.log(`⚠️ Low stock detected (${newQty} <= ${restockLevel}), generating restock request...`);
 
                 // Generate restock request using the centralized function with updated product data
                 const updatedProductData = { ...productData, quantity: newQty };
@@ -1051,13 +970,10 @@ const updateInventoryQuantities = async (releasedProducts, currentUser) => {
         remainingQty -= deductQty;
       }
 
-      console.log(`✅ Successfully processed ${product.name}:`);
       deductionDetails.forEach((detail, index) => {
-        console.log(`  ${index + 1}. ${detail.location.storageLocation}/${detail.location.shelfName}/${detail.location.rowName}/${detail.location.columnIndex}: -${detail.deductedQty} units (remaining: ${detail.remainingAtLocation})`);
       });
     }
 
-    console.log('\n✅ All inventory updates completed successfully');
   } catch (error) {
     console.error('❌ Error in inventory deduction:', error);
     throw new Error(`Failed to update inventory: ${error.message}`);

@@ -21,7 +21,6 @@ export const initializeStorageUnitsFromConfig = async () => {
       });
     }
 
-    console.log('✅ Storage units initialized from config successfully');
     return { success: true, count: STORAGE_UNITS.length };
   } catch (error) {
     console.error('Error initializing storage units from config:', error);
@@ -82,7 +81,6 @@ export const updateStorageUnit = async (unitId, unitData) => {
       lastUpdated: new Date().toISOString()
     }, { merge: true });
 
-    console.log('✅ Storage unit updated successfully:', unitId);
     return { success: true };
   } catch (error) {
     console.error('Error updating storage unit:', error);
@@ -98,7 +96,6 @@ export const deleteStorageUnit = async (unitId) => {
     const unitRef = doc(db, 'StorageUnits', unitId);
     await deleteDoc(unitRef);
 
-    console.log('✅ Storage unit deleted successfully:', unitId);
     return { success: true };
   } catch (error) {
     console.error('Error deleting storage unit:', error);
@@ -118,7 +115,6 @@ export const createStorageUnit = async (unitData) => {
       lastUpdated: new Date().toISOString()
     });
 
-    console.log('✅ Storage unit created successfully:', unitData.id);
     return { success: true };
   } catch (error) {
     console.error('Error creating storage unit:', error);

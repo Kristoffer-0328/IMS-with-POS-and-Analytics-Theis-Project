@@ -32,7 +32,6 @@ const ShelfViewModal = ({
     
     // Debug logging
     if (isSelected) {
-      console.log('✅ Location selected:', locationKey);
     }
     
     return isSelected;
@@ -51,21 +50,17 @@ const ShelfViewModal = ({
     const locationKey = `${unitName}-${shelfName}-${rowName}-${columnIndex}`;
     const existingAllocation = selectedLocations.find(loc => loc.id === locationKey);
     
-    console.log('🖱️ Cell clicked:', { shelfName, rowName, columnIndex, locationKey, existingAllocation: !!existingAllocation });
     
     if (existingAllocation) {
       // Remove allocation
-      console.log('❌ Removing allocation for:', locationKey);
       onLocationSelect(shelfName, rowName, columnIndex, -1);
     } else {
       // Add allocation
       const remainingQty = getRemainingQuantity();
       if (remainingQty > 0) {
         const allocateQty = Math.min(remainingQty, cellCapacity);
-        console.log('➕ Adding allocation:', { locationKey, allocateQty, remainingQty, cellCapacity });
         onLocationSelect(shelfName, rowName, columnIndex, allocateQty);
       } else {
-        console.log('⚠️ No remaining quantity to allocate');
       }
     }
   };
@@ -90,7 +85,6 @@ const ShelfViewModal = ({
     setLoading(true);
     try {
       const unitName = selectedUnit.title.split(' - ')[0]; // Extract "Unit 01" from "Unit 01 - Steel & Heavy Materials"
-      console.log('Fetching products for unit:', unitName);
 
       const products = [];
       
@@ -99,7 +93,6 @@ const ShelfViewModal = ({
       const productsRef = collection(db, 'Products', unitName, 'products');
       const productsSnapshot = await getDocs(productsRef);
 
-      console.log(`Found ${productsSnapshot.docs.length} base products in ${unitName}`);
 
       // Fetch base products AND their variants
       for (const productDoc of productsSnapshot.docs) {
@@ -128,7 +121,6 @@ const ShelfViewModal = ({
         const variantsSnapshot = await getDocs(variantsRef);
         
         if (variantsSnapshot.docs.length > 0) {
-          console.log(`  └─ Found ${variantsSnapshot.docs.length} variants for ${productData.name}`);
         }
         
         variantsSnapshot.docs.forEach(variantDoc => {
@@ -148,20 +140,11 @@ const ShelfViewModal = ({
               isVariant: true
             };
 
-            console.log('  📦 Variant loaded:', {
-              name: variantInfo.name,
-              location: variantInfo.locationKey,
-              shelf: variantInfo.shelfName,
-              row: variantInfo.rowName,
-              column: variantInfo.columnIndex
-            });
-
             products.push(variantInfo);
           }
         });
       }
 
-      console.log(`✅ Successfully loaded ${products.length} products (base + variants) from ${unitName}`);
       setProducts(products);
     } catch (error) {
       console.error('Error fetching unit products:', error);
@@ -208,7 +191,6 @@ const ShelfViewModal = ({
     });
     
     if (found) {
-      console.log(`✅ Found product at ${shelfName}-${rowName}-Col${columnIndex}:`, found.name);
     }
     
     return found;

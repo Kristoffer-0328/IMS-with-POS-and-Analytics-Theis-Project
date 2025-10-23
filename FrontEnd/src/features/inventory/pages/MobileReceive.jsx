@@ -319,17 +319,14 @@ const MobileReceive = () => {
         return;
       }
 
-      console.log(`📸 Processing image: ${file.name} (${file.type}, ${(file.size / 1024).toFixed(1)}KB)`);
 
       const reader = new FileReader();
 
       reader.onloadstart = () => {
-        console.log('📖 Starting to read image file...');
       };
 
       reader.onloadend = () => {
         try {
-          console.log('✅ Image file read successfully');
           handleProductChange(selectedIndex, 'photo', file);
           handleProductChange(selectedIndex, 'photoPreview', reader.result);
           alert('✅ Photo uploaded successfully!');
@@ -350,7 +347,6 @@ const MobileReceive = () => {
       reader.onprogress = (event) => {
         if (event.lengthComputable) {
           const percentComplete = (event.loaded / event.total) * 100;
-          console.log(`📖 Reading progress: ${percentComplete.toFixed(1)}%`);
         }
       };
 
@@ -554,7 +550,6 @@ const MobileReceive = () => {
   // Function to find product in inventory using NEW NESTED STRUCTURE
   const findProductInInventory = async (productId, productName, variantId = null) => {
     try {
-      console.log(`🔍 Searching for product: ${productName} (ID: ${productId}, Variant ID: ${variantId})`);
       
       // Get all storage units (top-level documents in Products collection)
       const productsCollection = collection(db, 'Products');
@@ -574,7 +569,6 @@ const MobileReceive = () => {
           
           if (variantDoc.exists()) {
             const variantData = variantDoc.data();
-            console.log(`✅ Found variant in ${storageLocation}:`, variantData);
             
             return {
               ref: variantRef,
@@ -588,7 +582,6 @@ const MobileReceive = () => {
             };
           }
         }
-        console.log(`⚠️ Variant ID ${variantId} not found, falling back to base product search`);
       }
       
       // Search through each storage unit's products subcollection
@@ -604,7 +597,6 @@ const MobileReceive = () => {
         
         if (productDoc.exists()) {
           const productData = productDoc.data();
-          console.log(`✅ Found product in ${storageLocation}:`, productData);
           
           return {
             ref: productRef,
@@ -627,7 +619,6 @@ const MobileReceive = () => {
           if (!variantNameSnapshot.empty) {
             const firstVariantDoc = variantNameSnapshot.docs[0];
             const variantData = firstVariantDoc.data();
-            console.log(`✅ Found variant by name in ${storageLocation}:`, variantData);
             
             return {
               ref: firstVariantDoc.ref,
@@ -647,10 +638,8 @@ const MobileReceive = () => {
           
           // If we found both variants and base products, prefer variants (they're more specific)
           if (!variantNameSnapshot.empty && !baseNameSnapshot.empty) {
-            console.log(`✅ Found both variants and base products for "${productName}". Prioritizing variant.`);
             const firstVariantDoc = variantNameSnapshot.docs[0];
             const variantData = firstVariantDoc.data();
-            console.log(`✅ Selected variant by name in ${storageLocation}:`, variantData);
             
             return {
               ref: firstVariantDoc.ref,
@@ -667,7 +656,6 @@ const MobileReceive = () => {
           if (!baseNameSnapshot.empty) {
             const firstBaseDoc = baseNameSnapshot.docs[0];
             const baseData = firstBaseDoc.data();
-            console.log(`✅ Found base product by name in ${storageLocation}:`, baseData);
             
             return {
               ref: firstBaseDoc.ref,
@@ -683,7 +671,6 @@ const MobileReceive = () => {
         }
       }
 
-      console.log(`❌ Product not found: ${productName} (ID: ${productId}, Variant ID: ${variantId})`);
       return null;
       
     } catch (error) {
@@ -695,15 +682,12 @@ const MobileReceive = () => {
   // Function to update inventory quantities by adding received items
   const updateInventoryQuantities = async (receivedProducts) => {
     try {
-      console.log('📦 Updating inventory for received products:', receivedProducts);
 
       for (const product of receivedProducts) {
         if (!product.receivedQuantity || product.receivedQuantity <= 0) {
-          console.log(`⏭️ Skipping ${product.productName} - no quantity delivered`);
           continue;
         }
 
-        console.log(`\n🔄 Processing ${product.productName} (${product.receivedQuantity} units)`);
 
         // Find the product in inventory
         const productInfo = await findProductInInventory(product.productId, product.productName || 'Unknown Product', product.variantId);
@@ -712,7 +696,6 @@ const MobileReceive = () => {
           throw new Error(`Product "${product.productName}" (ID: ${product.productId}, Variant ID: ${product.variantId || 'N/A'}) not found in inventory. Cannot update stock levels.`);
         }
 
-        console.log(`📍 Found at: Products/${productInfo.location.storageLocation}/products/${product.productId}`);
 
         // Update the product using a transaction
         await runTransaction(db, async (transaction) => {
@@ -730,13 +713,11 @@ const MobileReceive = () => {
 
           if (isVariantDocument) {
             // VARIANT DOCUMENT: Update the variant document directly
-            console.log(`📦 Updating variant document at ${productInfo.location.storageLocation}`);
 
             const currentQty = Number(productData.quantity) || 0;
             const receivedQty = Number(product.receivedQuantity);
             const newQty = currentQty + receivedQty;
 
-            console.log(`➡️ Updating variant quantity: ${currentQty} + ${receivedQty} = ${newQty}`);
 
             // Update variant document quantity
             transaction.update(productInfo.ref, {
@@ -746,14 +727,12 @@ const MobileReceive = () => {
               lastUpdated: serverTimestamp()
             });
 
-            console.log(`✅ Updated variant ${productData.variantName || productData.size || product.productName} quantity to ${newQty}`);
           } else {
             // BASE PRODUCT: Check if this product has nested variants (legacy structure)
             const hasVariants = productData.variants && Array.isArray(productData.variants) && productData.variants.length > 0;
 
             if (hasVariants && product.variantId) {
               // LEGACY: Product has nested variants - update the specific variant's quantity
-              console.log(`📦 Updating nested variant at ${productInfo.location.storageLocation}`);
 
               const variants = [...productData.variants];
               const variantIndex = variants.findIndex(v =>
@@ -771,7 +750,6 @@ const MobileReceive = () => {
               const receivedQty = Number(product.receivedQuantity);
               const newQty = currentQty + receivedQty;
 
-              console.log(`📊 Variant ${variant.size || variant.name} - Current: ${currentQty}, Adding: ${receivedQty}, New: ${newQty}`);
 
               // Update the variant quantity
               variants[variantIndex] = {
@@ -788,16 +766,13 @@ const MobileReceive = () => {
                 lastUpdated: serverTimestamp()
               });
 
-              console.log(`✅ Updated nested variant ${variant.size || variant.name} quantity to ${newQty}`);
             } else {
               // BASE PRODUCT: Non-variant product - update base product quantity
-              console.log(`📦 Updating base product (non-variant) at ${productInfo.location.storageLocation}`);
 
               const currentQty = Number(productData.quantity) || 0;
               const receivedQty = Number(product.receivedQuantity);
               const newQty = currentQty + receivedQty;
 
-              console.log(`➡️ Updating quantity: ${currentQty} + ${receivedQty} = ${newQty}`);
 
               // Update product quantity
               transaction.update(productInfo.ref, {
@@ -807,13 +782,11 @@ const MobileReceive = () => {
                 lastUpdated: serverTimestamp()
               });
 
-              console.log(`✅ Updated base product ${product.productName} quantity to ${newQty}`);
             }
           }
         });
       }
 
-      console.log('✅ All inventory quantities updated successfully');
 
     } catch (error) {
       console.error('❌ Error in inventory update:', error);
@@ -832,15 +805,12 @@ const MobileReceive = () => {
         deliveryData.products.map(async (product) => {
           if (product.photo && product.photoPreview && product.photoPreview.startsWith('data:')) {
             try {
-              console.log(`📤 Uploading image for ${product.name}...`);
               const uploadResult = await uploadImage(product.photo, (progress) => {
-                console.log(`📤 Upload progress for ${product.name}: ${progress}%`);
               }, {
                 folder: 'receiving-photos',
                 publicId: `receiving-${poId}-${product.productId}-${Date.now()}`
               });
               
-              console.log(`✅ Image uploaded for ${product.name}: ${uploadResult.url}`);
               return {
                 ...product,
                 photo: uploadResult.url, // Replace File object with URL

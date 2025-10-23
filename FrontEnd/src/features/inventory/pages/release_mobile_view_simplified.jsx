@@ -4,14 +4,12 @@
 const simplifiedInventoryDeduction = async (product, location, deductQty, transaction, currentUser) => {
   const productData = location.productData;
   
-  console.log(`📦 Processing inventory deduction for ${product.name}`);
   
   // Check if this is a variant product based on transaction data
   const isVariantProduct = product.variantId && product.variantId !== product.productId;
   
   if (isVariantProduct) {
     // This is a variant product - update the specific variant
-    console.log(`🔄 Updating variant product: ${product.name} (Variant ID: ${product.variantId})`);
     
     // Check if product has variants array
     const hasVariants = productData.variants && Array.isArray(productData.variants) && productData.variants.length > 0;
@@ -32,7 +30,6 @@ const simplifiedInventoryDeduction = async (product, location, deductQty, transa
         const currentQty = Number(variant.quantity) || 0;
         const newQty = currentQty - deductQty;
         
-        console.log(`📊 Variant ${variant.size || variant.name || product.variantId} - Current: ${currentQty}, Deducting: ${deductQty}, New: ${newQty}`);
         
         // Validate that we're not going negative (unless it's a quotation product)
         const isQuotationProduct = product.productId && product.productId.startsWith('quotation-');
@@ -55,7 +52,6 @@ const simplifiedInventoryDeduction = async (product, location, deductQty, transa
         // Check for low stock on variant
         const restockLevel = variant.restockLevel || productData.restockLevel || productData.reorderPoint || 10;
         if (newQty <= restockLevel) {
-          console.log(`⚠️ Low stock detected for variant (${newQty} <= ${restockLevel}), generating restock request...`);
           
           // Generate restock request using the centralized function with updated product data
           const updatedProductData = { ...productData, variants };
@@ -67,7 +63,6 @@ const simplifiedInventoryDeduction = async (product, location, deductQty, transa
         const currentQty = Number(productData.quantity) || 0;
         const newQty = currentQty - deductQty;
         
-        console.log(`➡️ Fallback - Updating base product quantity: ${currentQty} - ${deductQty} = ${newQty}`);
         
         transaction.update(location.productRef, {
           quantity: Math.max(0, newQty),
@@ -80,7 +75,6 @@ const simplifiedInventoryDeduction = async (product, location, deductQty, transa
       const currentQty = Number(productData.quantity) || 0;
       const newQty = currentQty - deductQty;
       
-      console.log(`➡️ Fallback - Updating base product quantity: ${currentQty} - ${deductQty} = ${newQty}`);
       
       transaction.update(location.productRef, {
         quantity: Math.max(0, newQty),
@@ -89,12 +83,10 @@ const simplifiedInventoryDeduction = async (product, location, deductQty, transa
     }
   } else {
     // This is a non-variant product - update base product quantity
-    console.log(`📦 Updating non-variant product: ${product.name}`);
     
     const currentQty = Number(productData.quantity) || 0;
     const newQty = currentQty - deductQty;
 
-    console.log(`➡️ Updating quantity: ${currentQty} - ${deductQty} = ${newQty}`);
 
     // Validate that we're not going negative (unless it's a quotation product)
     const isQuotationProduct = product.productId && product.productId.startsWith('quotation-');
@@ -111,7 +103,6 @@ const simplifiedInventoryDeduction = async (product, location, deductQty, transa
     // Generate restock request if quantity is low
     const restockLevel = productData.restockLevel || productData.reorderPoint || 10;
     if (newQty <= restockLevel) {
-      console.log(`⚠️ Low stock detected (${newQty} <= ${restockLevel}), generating restock request...`);
       
       // Generate restock request using the centralized function with updated product data
       const updatedProductData = { ...productData, quantity: newQty };

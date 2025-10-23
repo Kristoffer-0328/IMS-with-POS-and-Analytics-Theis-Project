@@ -9,7 +9,6 @@ const InitializeStorageUnits = () => {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  console.log('InitializeStorageUnits component is rendering');
 
   const handleInitialize = async () => {
     if (!window.confirm('This will create storage units in the StorageUnits collection. Continue?')) {

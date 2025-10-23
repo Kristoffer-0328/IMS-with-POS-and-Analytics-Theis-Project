@@ -13,14 +13,8 @@ const db = getFirestore(app);
  * @returns {Promise<Object|null>} - Notification object or null if failed
  */
 export const generatePurchaseOrderNotification = async (poData, currentUser, action, notes = '') => {
-  console.log('🚀 generatePurchaseOrderNotification called with:', { action, poData: poData?.poNumber, currentUser: currentUser?.role });
-  console.log('🔥 generatePurchaseOrderNotification called with action:', action);
-  console.log('📊 PO Data keys:', Object.keys(poData || {}));
-  console.log('👤 Current User keys:', Object.keys(currentUser || {}));
   try {
-    console.log('🔥 generatePurchaseOrderNotification called with action:', action);
     if (!poData || !currentUser) {
-      console.log('❌ Missing poData or currentUser, returning null');
       return null;
     }
 
@@ -32,8 +26,6 @@ export const generatePurchaseOrderNotification = async (poData, currentUser, act
       console.error('❌ PO Data dump:', JSON.stringify(poData, null, 2));
       return null;
     }
-
-    console.log('📋 Processing notification for PO:', poData.poNumber, 'Action:', action);
 
     const notificationId = `PO-NOT-${action.toUpperCase()}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -71,7 +63,6 @@ export const generatePurchaseOrderNotification = async (poData, currentUser, act
         break;
 
       case 'submitted':
-        console.log('PO Notification - Submitted case, PO Data:', poData);
         notificationConfig = {
           type: 'po_pending_approval',
           priority: 'high',
@@ -114,9 +105,7 @@ export const generatePurchaseOrderNotification = async (poData, currentUser, act
     };
 
     // Save to notifications collection
-    console.log('💾 Saving notification to Firestore with type:', notificationConfig.type);
     await addDoc(collection(db, 'Notifications'), notification);
-    console.log('✅ Notification saved successfully');
 
     return notification;
   } catch (error) {

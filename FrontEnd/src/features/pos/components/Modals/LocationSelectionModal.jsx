@@ -74,39 +74,26 @@ export default function LocationSelectionModal({
 
   // Handle location selection from shelf view (multi-select with auto-allocation)
   const handleShelfLocationSelect = (shelfName, rowName, columnIndex, quantityToAllocate) => {
-    console.log('📥 ===== LOCATION SELECTION HANDLER =====');
-    console.log('📍 Received:', { shelfName, rowName, columnIndex, quantityToAllocate });
     
     // If quantityToAllocate is -1, remove this location
     if (quantityToAllocate === -1) {
       const locationKey = `${selectedStorageUnit.title.split(' - ')[0]}-${shelfName}-${rowName}-${columnIndex}`;
-      console.log('🗑️ Removing location:', locationKey);
-      console.log('📊 Before removal:', {
+      console.log({
         selectedCount: selectedLocations.length,
         totalAllocated: selectedLocations.reduce((sum, loc) => sum + (loc.allocatedQuantity || 0), 0)
       });
       
       setSelectedLocations(prev => {
         const updated = prev.filter(loc => loc.id !== locationKey);
-        console.log('📊 After removal:', {
+        console.log({
           selectedCount: updated.length,
           totalAllocated: updated.reduce((sum, loc) => sum + (loc.allocatedQuantity || 0), 0)
         });
         return updated;
       });
-      console.log('===== END REMOVAL =====\n');
       return;
     }
 
-    console.log('🔍 Looking for matching variant location...');
-    console.log('Available variant locations:', variantLocations.map(v => ({
-      storageLocation: v.storageLocation,
-      shelfName: v.shelfName,
-      rowName: v.rowName,
-      columnIndex: v.columnIndex,
-      quantity: v.quantity
-    })));
-    
     // Find the location variant that matches this cell
     const locationVariant = variantLocations.find(loc => 
       loc.storageLocation === selectedStorageUnit.title.split(' - ')[0] &&
@@ -116,12 +103,11 @@ export default function LocationSelectionModal({
     );
 
     if (!locationVariant) {
-      console.log('❌ No matching variant found for this location');
       alert('This location does not contain the selected product variant.');
       return;
     }
     
-    console.log('✅ Found variant:', {
+    console.log({
       variantId: locationVariant.variantId,
       availableQty: locationVariant.quantity,
       price: locationVariant.price
@@ -132,7 +118,6 @@ export default function LocationSelectionModal({
     const existingIndex = selectedLocations.findIndex(loc => loc.id === locationKey);
 
     if (existingIndex >= 0) {
-      console.log('⚠️ Location already selected (should not reach here - handled above)');
       setSelectedLocations(prev => prev.filter((_, idx) => idx !== existingIndex));
     } else {
       // Calculate remaining quantity needed
@@ -142,7 +127,7 @@ export default function LocationSelectionModal({
       // Only allocate what's actually needed, not more than available in this cell
       const actualAllocation = Math.min(remainingNeeded, locationVariant.quantity, quantityToAllocate);
       
-      console.log('📊 Allocation Calculation:', {
+      console.log({
         currentAllocated,
         remainingNeeded,
         cellAvailable: locationVariant.quantity,
@@ -152,7 +137,6 @@ export default function LocationSelectionModal({
 
       // Don't allocate if nothing is needed
       if (actualAllocation <= 0) {
-        console.log('🚫 No allocation needed - remaining quantity satisfied');
         return;
       }
 
@@ -164,7 +148,7 @@ export default function LocationSelectionModal({
         fullPath: `${locationVariant.storageLocation} - ${shelfName} - ${rowName} - Column ${columnIndex}`
       };
       
-      console.log('➕ Adding new selection:', {
+      console.log({
         locationKey,
         allocatedQuantity: actualAllocation,
         fullPath: newSelection.fullPath
@@ -174,7 +158,7 @@ export default function LocationSelectionModal({
         const updated = [...prev, newSelection];
         const newTotal = updated.reduce((sum, loc) => sum + (loc.allocatedQuantity || 0), 0);
         
-        console.log('📊 Updated Allocation Status:', {
+        console.log({
           totalLocations: updated.length,
           totalAllocated: newTotal,
           remaining: Number(qty) - newTotal,
@@ -185,7 +169,6 @@ export default function LocationSelectionModal({
         return updated;
       });
     }
-    console.log('===== END LOCATION SELECTION =====\n');
   };
 
   // Confirm multi-location allocation

@@ -6,7 +6,6 @@ const db = getFirestore(app);
 
 // Test function to simulate inventory update
 const testInventoryUpdate = async () => {
-  console.log('🧪 Testing inventory update logic...');
 
   try {
     // Sample product data from POS transaction
@@ -23,11 +22,9 @@ const testInventoryUpdate = async () => {
       columnIndex: 1
     };
 
-    console.log('📦 Test product data:', testProduct);
 
     // Construct the product reference path directly
     const productRef = doc(db, 'Products', testProduct.storageLocation, 'products', testProduct.productId);
-    console.log(`🎯 Direct product lookup at: Products/${testProduct.storageLocation}/products/${testProduct.productId}`);
 
     // Get current product data
     const productDoc = await getDoc(productRef);
@@ -38,17 +35,14 @@ const testInventoryUpdate = async () => {
     }
 
     const productData = productDoc.data();
-    console.log(`✅ Found test product: ${productData.name} with current data:`, productData);
 
     // Since all products in POS transactions have variantId, we always update the specific variant/product quantity directly
     if (testProduct.variantId) {
       // Product is a variant - update its own quantity
-      console.log(`🔄 Updating variant product quantity`);
 
       const currentQty = Number(productData.quantity) || 0;
       const newQty = currentQty - testProduct.releasedQty;
 
-      console.log(`📊 Variant - Current: ${currentQty}, Deducting: ${testProduct.releasedQty}, New: ${newQty}`);
 
       if (newQty < 0) {
         console.warn(`⚠️ WARNING: Variant quantity going negative: ${newQty}`);
@@ -69,13 +63,10 @@ const testInventoryUpdate = async () => {
           lastUpdated: serverTimestamp()
         });
 
-        console.log(`✅ Updated variant quantity to ${newQty}`);
       });
 
-      console.log(`✅ Successfully processed ${testProduct.name}: deducted ${testProduct.releasedQty} units`);
     }
 
-    console.log('✅ Test inventory update completed successfully');
   } catch (error) {
     console.error('❌ Error in test inventory update:', error);
   }

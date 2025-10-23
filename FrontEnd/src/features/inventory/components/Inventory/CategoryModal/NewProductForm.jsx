@@ -374,7 +374,6 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                 const productRef = doc(db, 'Products', storageUnitPath, 'products', productId);
                 await setDoc(productRef, cleanProduct);
 
-                console.log(`Product created at: Products/${storageUnitPath}/products/${productId}`);
 
                 // If supplier is provided, automatically link the product
                 if (currentSupplier) {
@@ -385,7 +384,6 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                             lastUpdated: new Date().toISOString()
                         });
 
-                        console.log('Product linked to supplier:', linkResult);
                     } catch (error) {
                         console.error('Error linking product to supplier:', error);
                     }

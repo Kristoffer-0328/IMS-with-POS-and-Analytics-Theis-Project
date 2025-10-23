@@ -29,38 +29,22 @@ function InventoryTurnoverReport({
   const [reportContent, setReportContent] = useState(null);
   const [activeInfoModal, setActiveInfoModal] = useState(null);
 
-  // List of available months for filter
-  const months = [
-    'All Months',
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
+  // Date range filters
+  const [startDate, setStartDate] = useState(() => {
+    const today = new Date();
+    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    return firstDayOfMonth.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
 
-  // List of available years for filter
-  const currentYear = new Date().getFullYear();
-  const years = [
-    currentYear.toString(),
-    (currentYear - 1).toString(),
-    (currentYear - 2).toString(),
-    (currentYear - 3).toString(),
-  ];
-
-  // Helper function to get performance level
-  const getPerformanceLevel = (turnoverRate) => {
-    if (turnoverRate >= 3) return "EXCELLENT";
-    if (turnoverRate >= 2) return "GOOD";
-    if (turnoverRate >= 1) return "MODERATE";
-    return "NEEDS IMPROVEMENT";
+  // Helper function to get status based on turnover rate
+  const getProductStatus = (turnoverRate) => {
+    if (turnoverRate >= 4) return { status: 'Fast-moving', emoji: '🟩' };
+    if (turnoverRate >= 2) return { status: 'Moderate', emoji: '🟧' };
+    return { status: 'Slow-moving', emoji: '🟥' };
   };
 
   // Helper function to get concise paragraph-style performance analysis
@@ -77,15 +61,21 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       return `Currently, your inventory turnover rate is ${rate}x, which suggests your stock is moving slower than ideal. However, this is something we can work on improving. A good start would be running a clearance sale for older stock and adjusting your pricing strategy. Consider ordering smaller quantities in future purchases and focus on promoting your faster-moving products. These adjustments will help improve your stock flow and business performance.`;
     }
   };
+
+  // Helper function to get performance level string
+  const getPerformanceLevel = (turnoverRate) => {
+    if (turnoverRate >= 3) return 'EXCELLENT';
+    if (turnoverRate >= 2) return 'GOOD';
+    if (turnoverRate >= 1) return 'MODERATE';
+    return 'NEEDS IMPROVEMENT';
+  };
   
 
   // Function to generate analysis report
   const generateAnalysisReport = () => {
     if (!data) return;
 
-    const period = monthFilter === 'All Months' 
-      ? `Year ${yearFilter}`
-      : `${monthFilter} ${yearFilter}`;
+    const period = `${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}`;
 
     const analysis = getPerformanceAnalysis(
       data.averageTurnoverRate,
@@ -112,117 +102,304 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
         averageInventory: data.averageInventory.toLocaleString()
       },
       analysis,
-      monthlyData: monthFilter === 'All Months' ? data.monthlyData : null
+      monthlyData: data.monthlyData,
+      productData: data.productData || []
     };
   };
 
-  // Function to generate PDF
-  const generatePDF = (reportText) => {
+  // Function to generate professional PDF
+  const generatePDF = (report) => {
     const pdf = new jsPDF();
     const pageWidth = pdf.internal.pageSize.width;
+    const pageHeight = pdf.internal.pageSize.height;
     const margin = 15;
     const contentWidth = pageWidth - (margin * 2);
     let yPos = margin;
 
-    // Add title
-    pdf.setFontSize(18);
+    // Header with company branding
+    pdf.setFontSize(20);
     pdf.setFont('helvetica', 'bold');
-    const title = 'Inventory Turnover Analysis Report';
-    const titleWidth = pdf.getStringUnitWidth(title) * pdf.getFontSize() / pdf.internal.scaleFactor;
-    const titleX = (pageWidth - titleWidth) / 2;
-    pdf.text(title, titleX, yPos);
+    pdf.setTextColor(0, 0, 0);
+    const companyName = 'Glory Star Hardware';
+    pdf.text(companyName, pageWidth / 2, yPos, { align: 'center' });
+    yPos += 7;
+
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(100, 100, 100);
+    pdf.text('Construction Materials Corporation', pageWidth / 2, yPos, { align: 'center' });
     yPos += 10;
 
-    // Add period
-    pdf.setFontSize(12);
+    // Document title with underline
+    pdf.setFontSize(16);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(0, 0, 0);
+    pdf.text('INVENTORY TURNOVER ANALYSIS REPORT', pageWidth / 2, yPos, { align: 'center' });
+    pdf.setLineWidth(0.5);
+    pdf.line(margin, yPos + 2, pageWidth - margin, yPos + 2);
+    yPos += 12;
+
+    // Report metadata box
+    pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
-    const period = monthFilter === 'All Months' ? `Year ${yearFilter}` : `${monthFilter} ${yearFilter}`;
-    pdf.text(`Period: ${period}`, margin, yPos);
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setFillColor(245, 245, 245);
+    pdf.rect(margin, yPos, contentWidth, 15, 'F');
+    pdf.rect(margin, yPos, contentWidth, 15, 'S');
+
+    pdf.text(`Period: ${report.period}`, margin + 5, yPos + 6);
+    pdf.text(`Generated: ${report.generatedAt}`, margin + 5, yPos + 11);
+    yPos += 20;
+
+    // Key Metrics Section with boxes
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('KEY PERFORMANCE METRICS', margin, yPos);
     yPos += 8;
 
-    // Add generation date
-    const generatedDate = `Generated: ${new Date().toLocaleString()}`;
-    pdf.text(generatedDate, margin, yPos);
-    yPos += 15;
+    const boxWidth = (contentWidth - 10) / 3;
+    const boxHeight = 25;
 
-    // Add sections with proper formatting
-    const sections = reportText.split('\n\n');
-    sections.forEach(section => {
-      if (section.includes('=')) return; // Skip separator lines
+    // Turnover Rate Box
+    pdf.setDrawColor(59, 130, 246);
+    pdf.setLineWidth(0.5);
+    pdf.rect(margin, yPos, boxWidth, boxHeight, 'S');
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text('AVERAGE TURNOVER RATE', margin + boxWidth / 2, yPos + 6, { align: 'center' });
+    pdf.setFontSize(18);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(59, 130, 246);
+    pdf.text(`${report.metrics.turnoverRate}x`, margin + boxWidth / 2, yPos + 15, { align: 'center' });
+    pdf.setFontSize(7);
+    pdf.setTextColor(100, 100, 100);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(report.metrics.performanceLevel, margin + boxWidth / 2, yPos + 21, { align: 'center' });
 
-      // Check if we need a new page
-      if (yPos > pdf.internal.pageSize.height - margin) {
+    // Total Sales Box
+    pdf.setDrawColor(34, 197, 94);
+    pdf.rect(margin + boxWidth + 5, yPos, boxWidth, boxHeight, 'S');
+    pdf.setFontSize(8);
+    pdf.text('TOTAL SALES', margin + boxWidth + 5 + boxWidth / 2, yPos + 6, { align: 'center' });
+    pdf.setFontSize(14);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(34, 197, 94);
+    pdf.text(`₱${report.metrics.totalSales}`, margin + boxWidth + 5 + boxWidth / 2, yPos + 15, { align: 'center' });
+    pdf.setFontSize(7);
+    pdf.setTextColor(100, 100, 100);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('Period Total', margin + boxWidth + 5 + boxWidth / 2, yPos + 21, { align: 'center' });
+
+    // Average Inventory Box
+    pdf.setDrawColor(251, 146, 60);
+    pdf.rect(margin + (boxWidth + 5) * 2, yPos, boxWidth, boxHeight, 'S');
+    pdf.setFontSize(8);
+    pdf.text('AVERAGE INVENTORY', margin + (boxWidth + 5) * 2 + boxWidth / 2, yPos + 6, { align: 'center' });
+    pdf.setFontSize(14);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(251, 146, 60);
+    pdf.text(`₱${report.metrics.averageInventory}`, margin + (boxWidth + 5) * 2 + boxWidth / 2, yPos + 15, { align: 'center' });
+    pdf.setFontSize(7);
+    pdf.setTextColor(100, 100, 100);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('Period Average', margin + (boxWidth + 5) * 2 + boxWidth / 2, yPos + 21, { align: 'center' });
+
+    yPos += boxHeight + 15;
+
+    // Performance Analysis Section
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(0, 0, 0);
+    pdf.text('PERFORMANCE ANALYSIS', margin, yPos);
+    yPos += 8;
+
+    pdf.setDrawColor(200, 200, 200);
+    pdf.setFillColor(250, 250, 250);
+    const analysisBoxHeight = 40;
+    pdf.rect(margin, yPos, contentWidth, analysisBoxHeight, 'FD');
+
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(50, 50, 50);
+    const analysisLines = pdf.splitTextToSize(report.analysis, contentWidth - 10);
+    let analysisY = yPos + 6;
+    analysisLines.forEach(line => {
+      if (analysisY > yPos + analysisBoxHeight - 4) return;
+      pdf.text(line, margin + 5, analysisY);
+      analysisY += 4;
+    });
+    yPos += analysisBoxHeight + 15;
+
+    // Product Turnover Breakdown
+    if (report.productData && report.productData.length > 0) {
+      if (yPos > pageHeight - 80) {
         pdf.addPage();
         yPos = margin;
       }
 
-      // Handle section titles
-      if (section.toUpperCase() === section && section.trim().length > 0) {
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(14);
-        pdf.text(section.trim(), margin, yPos);
-        yPos += 8;
-        // Add underline
-        pdf.setLineWidth(0.5);
-        pdf.line(margin, yPos - 2, margin + contentWidth / 2, yPos - 2);
-        yPos += 5;
-      } else {
-        // Handle regular content
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(10);
-        const lines = pdf.splitTextToSize(section, contentWidth);
-        lines.forEach(line => {
-          // Check for bullet points
-          if (line.startsWith('•')) {
-            pdf.text('•', margin, yPos);
-            pdf.text(line.substring(1).trim(), margin + 5, yPos);
-          } else if (line.startsWith('  -')) {
-            pdf.text('-', margin + 5, yPos);
-            pdf.text(line.substring(3).trim(), margin + 10, yPos);
-          } else {
-            pdf.text(line, margin, yPos);
-          }
-          yPos += 5;
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('PRODUCT TURNOVER BREAKDOWN', margin, yPos);
+      yPos += 8;
+
+      // Table setup
+      const colWidths = [45, 30, 25, 20, 30, 20, 25];
+      const headers = ['Product Name', 'Category', 'Sales (₱)', 'Qty', 'Avg Inv (₱)', 'Rate', 'Status'];
+
+      // Draw header
+      pdf.setFillColor(0, 0, 0);
+      pdf.rect(margin, yPos, contentWidth, 8, 'F');
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(255, 255, 255);
+
+      let xPos = margin + 2;
+      headers.forEach((header, i) => {
+        pdf.text(header, xPos, yPos + 5.5);
+        xPos += colWidths[i];
+      });
+      yPos += 8;
+
+      // Draw rows
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(0, 0, 0);
+
+      report.productData.forEach((product, index) => {
+        if (yPos > pageHeight - margin - 10) {
+          pdf.addPage();
+          yPos = margin;
+
+          // Redraw headers
+          pdf.setFillColor(0, 0, 0);
+          pdf.rect(margin, yPos, contentWidth, 8, 'F');
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(255, 255, 255);
+          xPos = margin + 2;
+          headers.forEach((header, i) => {
+            pdf.text(header, xPos, yPos + 5.5);
+            xPos += colWidths[i];
+          });
+          yPos += 8;
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(0, 0, 0);
+        }
+
+        // Alternating row colors
+        if (index % 2 === 0) {
+          pdf.setFillColor(248, 250, 252);
+          pdf.rect(margin, yPos, contentWidth, 7, 'F');
+        }
+
+        const { status } = getProductStatus(product.turnoverRate);
+
+        xPos = margin + 2;
+        const rowData = [
+          product.productName.length > 20 ? product.productName.substring(0, 18) + '..' : product.productName,
+          product.category.length > 12 ? product.category.substring(0, 10) + '..' : product.category,
+          `₱${product.sales.toLocaleString()}`,
+          product.quantitySold.toString(),
+          `₱${product.averageInventory.toLocaleString()}`,
+          `${product.turnoverRate.toFixed(2)}x`,
+          status
+        ];
+
+        rowData.forEach((data, i) => {
+          pdf.text(data, xPos, yPos + 5);
+          xPos += colWidths[i];
         });
-        yPos += 3;
-      }
-    });
+        yPos += 7;
+      });
+    }
+
+    // Footer
+    yPos = pageHeight - 15;
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.5);
+    pdf.line(margin, yPos, pageWidth - margin, yPos);
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 100, 100);
+    pdf.text('Glory Star Hardware - Construction Materials Corporation', pageWidth / 2, yPos + 5, { align: 'center' });
+    pdf.text(`Report generated on ${report.generatedAt}`, pageWidth / 2, yPos + 9, { align: 'center' });
 
     return pdf;
   };
 
-  // Function to handle report generation and display
+  // Function to handle report generation and direct download
   const handleGenerateReport = () => {
+    console.log('Generate Report button clicked');
+    console.log('Data available:', !!data);
+    console.log('Data object:', data);
 
-    const report = generateAnalysisReport();
+    if (!data) {
+      console.error('No data available for report generation');
+      alert('No data available. Please ensure data is loaded before generating reports.');
+      return;
+    }
 
-    if (!report) return;
+    try {
+      const report = generateAnalysisReport();
+      console.log('Report generated:', report);
 
-    // Set the report content and show modal
-    setReportContent(report);
-    setShowReportModal(true);
+      if (!report) {
+        console.error('Failed to generate report - generateAnalysisReport returned null');
+        alert('Failed to generate report. Please try again.');
+        return;
+      }
 
-  };
+      // Set the report content for modal (in case user wants to preview)
+      setReportContent(report);
 
-  // Function to download as PDF
+      // Automatically download PDF
+      console.log('Generating PDF...');
+      const pdf = generatePDF(report);
+      const start = startDate.replace(/-/g, '');
+      const end = endDate.replace(/-/g, '');
+      const filename = `Inventory_Turnover_Report_${start}_${end}`;
+
+      console.log('Downloading PDF...');
+      // Download PDF
+      pdf.save(`${filename}.pdf`);
+
+      console.log('PDF download completed, showing modal...');
+      // Optional: Show modal for preview (comment out if not needed)
+      setShowReportModal(true);
+
+      console.log('Report generation completed successfully');
+
+    } catch (error) {
+      console.error('Error generating report:', error);
+      alert('An error occurred while generating the report. Please check the console for details.');
+    }
+  };  // Function to download as PDF
   const handleDownloadPDF = () => {
-    if (!reportContent) return;
-    const pdf = generatePDF(reportContent.analysis);
-    pdf.save(`Inventory_Turnover_Report_${yearFilter}_${monthFilter.replace(' ', '_')}.pdf`);
-  };
+    console.log('Download PDF button clicked');
+    console.log('reportContent available:', !!reportContent);
+    console.log('reportContent:', reportContent);
 
-  // Function to download as Text
-  const handleDownloadText = () => {
-    if (!reportContent) return;
-    const blob = new Blob([reportContent.analysis], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Inventory_Turnover_Report_${yearFilter}_${monthFilter.replace(' ', '_')}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (!reportContent) {
+      console.error('No report content available for PDF download');
+      alert('No report content available. Please generate the report first.');
+      return;
+    }
+
+    try {
+      console.log('Generating PDF...');
+      const pdf = generatePDF(reportContent);
+      console.log('PDF generated:', pdf);
+
+      const start = startDate.replace(/-/g, '');
+      const end = endDate.replace(/-/g, '');
+      const filename = `Inventory_Turnover_Report_${start}_${end}.pdf`;
+      console.log('Saving PDF with filename:', filename);
+
+      pdf.save(filename);
+      console.log('PDF download initiated');
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+      alert('An error occurred while downloading the PDF. Please check the console for details.');
+    }
   };
 
   useEffect(() => {
@@ -231,19 +408,9 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
         setLoading(true);
         setError(null);
         
-        // Convert month name to number, null if "All Months" is selected
-        let monthNumber = null;
-        if (monthFilter !== 'All Months') {
-          // Find the actual month number (1-12)
-          const monthIndex = months.indexOf(monthFilter);
-          if (monthIndex > 0) { // Skip 'All Months' at index 0
-            monthNumber = (monthIndex).toString().padStart(2, '0');
-          }
-        }
-
         const result = await ReportingService.getInventoryTurnover(
-          yearFilter,
-          monthNumber
+          startDate,
+          endDate
         );
 
         setData(result);
@@ -256,7 +423,7 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
     };
 
     fetchData();
-  }, [yearFilter, monthFilter]);
+  }, [startDate, endDate]);
 
   // Custom tooltip for the chart
   const CustomTooltip = ({ active, payload, label }) => {
@@ -389,54 +556,24 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
 
       {/* Filter Section */}
       <div className="flex flex-wrap gap-3 justify-end mb-6">
-        <div className="relative inline-block">
-          <select
-            className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300"
-            value={yearFilter}
-            onChange={(e) => setYearFilter(e.target.value)}>
-            {years.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
-          </select>
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-            <svg
-              className="fill-current h-4 w-4"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20">
-              <path
-                fillRule="evenodd"
-                d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </div>
+        <div className="flex flex-col">
+          <label className="text-sm font-medium text-gray-700 mb-1">Start Date</label>
+          <input
+            type="date"
+            className="px-3 py-2 border border-gray-200 text-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
         </div>
 
-        <div className="relative inline-block">
-          <select
-            className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300"
-            value={monthFilter}
-            onChange={(e) => setMonthFilter(e.target.value)}>
-            {months.map((month) => (
-              <option key={month} value={month}>
-                {month}
-              </option>
-            ))}
-          </select>
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-            <svg
-              className="fill-current h-4 w-4"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20">
-              <path
-                fillRule="evenodd"
-                d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </div>
+        <div className="flex flex-col">
+          <label className="text-sm font-medium text-gray-700 mb-1">End Date</label>
+          <input
+            type="date"
+            className="px-3 py-2 border border-gray-200 text-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+          />
         </div>
       </div>
 
@@ -509,7 +646,7 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
         </div>
       </div>
 
-      {/* Action Buttons */}
+      {/* Generate Report Button */}
       <div className="flex justify-end gap-3 mb-6">
         <button 
           onClick={handleGenerateReport}
@@ -583,58 +720,83 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
         </div>
       </div>
 
-      {/* Monthly Data Table with Info Button */}
-      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-gray-800 font-semibold">Monthly Performance</h3>
-          <button
-            onClick={() => setActiveInfoModal('monthlyTable')}
-            className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-            title="About the monthly breakdown"
-          >
-            <FiInfo className="w-5 h-5 text-gray-400" />
-          </button>
-        </div>
-
+      {/* Product-Level Turnover Table */}
+      <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100 mb-6">
+        <h3 className="text-gray-800 font-semibold mb-4">Product Turnover Analysis</h3>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Month
+                  Product Name
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Sales
+                  Category
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Avg Inventory
+                  Sales (₱)
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Turn over Rate
+                  Quantity Sold
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Average Inventory (₱)
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Turnover Rate (x)
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
-              {data.monthlyData.map((item, index) => (
-                <tr key={index} className="hover:bg-gray-50">
-                  <td className="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {item.month}
-                  </td>
-                  <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
-                    ₱{item.sales}
-                  </td>
-                  <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
-                    ₱{item.avgInventory}
-                  </td>
-                  <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
-                    {item.turnoverRate}x
+              {data.productData && data.productData.length > 0 ? (
+                data.productData.map((product, index) => {
+                  const { status, emoji } = getProductStatus(product.turnoverRate);
+                  return (
+                    <tr key={index} className="hover:bg-gray-50">
+                      <td className="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {product.productName}
+                      </td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
+                        {product.category}
+                      </td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
+                        ₱{product.sales.toLocaleString()}
+                      </td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
+                        {product.quantitySold} pcs
+                      </td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
+                        ₱{product.averageInventory.toLocaleString()}
+                      </td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
+                        {product.turnoverRate.toFixed(2)}x
+                      </td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
+                        <span className="flex items-center gap-2">
+                          <span>{emoji}</span>
+                          <span>{status}</span>
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500" colSpan="7">
+                    No product data available for the selected period.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Monthly Data Table with Info Button */}
+      
 
       {/* Info Modal */}
       <InfoModal
@@ -645,130 +807,265 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       />
 
       {/* Report Modal */}
+     {/* Report Modal - Enhanced Formal Document Style */}
       {showReportModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-800">Inventory Turnover Analysis</h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  Period: {reportContent.period} • Generated: {reportContent.generatedAt}
-                </p>
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-6xl max-h-[95vh] flex flex-col shadow-2xl">
+            {/* Elegant Header */}
+            <div className="relative bg-gradient-to-br from-slate-800 via-slate-700 to-slate-900 text-white px-8 py-8 rounded-t-xl">
+              <div className="text-center space-y-3">
+                <div className="inline-block">
+                  <h1 className="text-4xl font-bold tracking-tight mb-1">Glory Star Hardware</h1>
+                  <div className="h-px bg-gradient-to-r from-transparent via-blue-400 to-transparent"></div>
+                </div>
+                <p className="text-slate-300 text-sm font-medium tracking-wide">Construction Materials Corporation</p>
+                
+                <div className="mt-6 pt-6 border-t border-slate-600">
+                  <h2 className="text-2xl font-bold tracking-wide">INVENTORY TURNOVER ANALYSIS</h2>
+                  <p className="text-slate-300 text-sm mt-2">Official Report Document</p>
+                </div>
               </div>
-              <button 
+              
+              <button
                 onClick={() => setShowReportModal(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="absolute top-6 right-6 p-2 hover:bg-white/10 rounded-full transition-all duration-200"
               >
                 <FiX size={24} />
               </button>
             </div>
 
-            {/* Modal Content */}
-            <div className="flex-1 overflow-y-auto">
-              {/* Key Metrics Section */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-6 bg-gray-50 border-b">
-                <div className="bg-white p-4 rounded-lg shadow-sm">
-                  <div className="text-sm text-gray-500 font-medium mb-1">TURNOVER RATE</div>
-                  <div className="text-2xl font-bold text-gray-900">{reportContent.metrics.turnoverRate}x</div>
-                  <div className={`text-sm font-medium mt-1 ${reportContent.metrics.performanceColor}`}>
-                    {reportContent.metrics.performanceLevel}
+            {/* Report Metadata Bar */}
+            <div className="bg-slate-50 border-b-2 border-slate-200 px-8 py-4">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-6">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Report Period</span>
+                    <p className="text-sm font-bold text-slate-800 mt-0.5">{reportContent.period}</p>
+                  </div>
+                  <div className="h-8 w-px bg-slate-300"></div>
+                  <div>
+                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Generated On</span>
+                    <p className="text-sm font-bold text-slate-800 mt-0.5">{reportContent.generatedAt}</p>
                   </div>
                 </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm">
-                  <div className="text-sm text-gray-500 font-medium mb-1">TOTAL SALES</div>
-                  <div className="text-2xl font-bold text-gray-900">₱{reportContent.metrics.totalSales}</div>
-                  <div className="text-sm text-gray-500 mt-1">Period Total</div>
-                </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm">
-                  <div className="text-sm text-gray-500 font-medium mb-1">AVERAGE INVENTORY</div>
-                  <div className="text-2xl font-bold text-gray-900">₱{reportContent.metrics.averageInventory}</div>
-                  <div className="text-sm text-gray-500 mt-1">Period Average</div>
+                <div className={`px-4 py-2 rounded-lg font-bold text-sm ${
+                  reportContent.metrics.performanceLevel === 'EXCELLENT' ? 'bg-green-100 text-green-700' :
+                  reportContent.metrics.performanceLevel === 'GOOD' ? 'bg-blue-100 text-blue-700' :
+                  reportContent.metrics.performanceLevel === 'MODERATE' ? 'bg-yellow-100 text-yellow-700' :
+                  'bg-red-100 text-red-700'
+                }`}>
+                  {reportContent.metrics.performanceLevel}
                 </div>
               </div>
-
-              {/* Analysis Section */}
-              <div className="p-6">
-                <h4 className="text-lg font-semibold text-gray-800 mb-4">Performance Analysis</h4>
-                <div className="bg-white border border-gray-200 rounded-lg p-5 text-gray-600 leading-relaxed">
-                  {reportContent.analysis}
-                </div>
-              </div>
-
-              {/* Monthly Breakdown Section */}
-              {reportContent.monthlyData && (
-                <div className="px-6 pb-6">
-                  <h4 className="text-lg font-semibold text-gray-800 mb-4">Monthly Performance Breakdown</h4>
-                  <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Month</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Turnover Rate</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sales</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Inventory</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Performance</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {reportContent.monthlyData.map((month, index) => {
-                          const monthlyPerformance = getPerformanceLevel(parseFloat(month.turnoverRate));
-                          const monthlyColor = {
-                            'EXCELLENT': 'text-green-600',
-                            'GOOD': 'text-blue-600',
-                            'MODERATE': 'text-yellow-600',
-                            'NEEDS IMPROVEMENT': 'text-red-600'
-                          }[monthlyPerformance];
-                          
-                          return (
-                            <tr key={index} className="hover:bg-gray-50">
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                {month.month}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                {month.turnoverRate}x
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                ₱{month.sales}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                                ₱{month.avgInventory}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                <span className={monthlyColor}>{monthlyPerformance}</span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
             </div>
 
-            {/* Modal Footer */}
-            <div className="border-t p-6 bg-gray-50">
-              <div className="flex justify-end gap-4">
-                <button
-                  onClick={handleDownloadPDF}
-                  className="px-6 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 font-medium"
-                >
-                  <AiOutlineFilePdf size={20} />
-                  <span>Download PDF</span>
-                </button>
-                <button
-                  onClick={handleDownloadText}
-                  className="px-6 py-2.5 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors flex items-center gap-2 font-medium"
-                >
-                  <FiFileText size={20} />
-                  <span>Download Text</span>
-                </button>
+            {/* Scrollable Report Content */}
+            <div className="flex-1 overflow-y-auto bg-gradient-to-b from-white to-slate-50">
+              <div className="p-8 space-y-8">
+                
+                {/* Executive Summary Section */}
+                <section>
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="h-1 w-12 bg-blue-600 rounded"></div>
+                    <h3 className="text-xl font-bold text-slate-800 uppercase tracking-wide">Executive Summary</h3>
+                  </div>
+                  
+                  {/* Key Metrics Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    {/* Turnover Rate Card */}
+                    <div className="relative overflow-hidden bg-white rounded-xl shadow-lg border-2 border-blue-200 hover:shadow-xl transition-shadow">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-bl-full"></div>
+                      <div className="relative p-6">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-xs font-bold text-blue-600 uppercase tracking-widest">Turnover Rate</span>
+                          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                            <span className="text-xl">🔄</span>
+                          </div>
+                        </div>
+                        <p className="text-4xl font-bold text-blue-600 mb-1">{reportContent.metrics.turnoverRate}x</p>
+                        <p className="text-xs text-slate-500 font-medium">Average Rate</p>
+                      </div>
+                    </div>
+
+                    {/* Total Sales Card */}
+                    <div className="relative overflow-hidden bg-white rounded-xl shadow-lg border-2 border-green-200 hover:shadow-xl transition-shadow">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/5 rounded-bl-full"></div>
+                      <div className="relative p-6">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-xs font-bold text-green-600 uppercase tracking-widest">Total Sales</span>
+                          <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                            <span className="text-xl">💰</span>
+                          </div>
+                        </div>
+                        <p className="text-3xl font-bold text-green-600 mb-1">₱{reportContent.metrics.totalSales}</p>
+                        <p className="text-xs text-slate-500 font-medium">Period Revenue</p>
+                      </div>
+                    </div>
+
+                    {/* Average Inventory Card */}
+                    <div className="relative overflow-hidden bg-white rounded-xl shadow-lg border-2 border-orange-200 hover:shadow-xl transition-shadow">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/5 rounded-bl-full"></div>
+                      <div className="relative p-6">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-xs font-bold text-orange-600 uppercase tracking-widest">Avg Inventory</span>
+                          <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                            <span className="text-xl">📦</span>
+                          </div>
+                        </div>
+                        <p className="text-3xl font-bold text-orange-600 mb-1">₱{reportContent.metrics.averageInventory}</p>
+                        <p className="text-xs text-slate-500 font-medium">Average Value</p>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Performance Analysis Section */}
+                <section>
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="h-1 w-12 bg-blue-600 rounded"></div>
+                    <h3 className="text-xl font-bold text-slate-800 uppercase tracking-wide">Performance Analysis</h3>
+                  </div>
+                  <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
+                    <div className="prose prose-slate max-w-none">
+                      <p className="text-slate-700 leading-relaxed text-justify">{reportContent.analysis}</p>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Product Turnover Analysis - Main Focus */}
+                {reportContent.productData && reportContent.productData.length > 0 && (
+                  <section>
+                    <div className="flex items-center gap-3 mb-5">
+                      <div className="h-1 w-12 bg-blue-600 rounded"></div>
+                      <h3 className="text-xl font-bold text-slate-800 uppercase tracking-wide">Product Turnover Analysis</h3>
+                    </div>
+                    
+                    <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-slate-200">
+                          <thead>
+                            <tr className="bg-gradient-to-r from-slate-800 to-slate-700">
+                              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
+                                Product Name
+                              </th>
+                              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
+                                Category
+                              </th>
+                              <th className="px-6 py-4 text-right text-xs font-bold text-white uppercase tracking-wider">
+                                Sales Amount
+                              </th>
+                              <th className="px-6 py-4 text-center text-xs font-bold text-white uppercase tracking-wider">
+                                Qty Sold
+                              </th>
+                              <th className="px-6 py-4 text-right text-xs font-bold text-white uppercase tracking-wider">
+                                Avg Inventory
+                              </th>
+                              <th className="px-6 py-4 text-center text-xs font-bold text-white uppercase tracking-wider">
+                                Turnover Rate
+                              </th>
+                              <th className="px-6 py-4 text-center text-xs font-bold text-white uppercase tracking-wider">
+                                Status
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {reportContent.productData.map((product, index) => {
+                              const { status, emoji } = getProductStatus(product.turnoverRate);
+                              return (
+                                <tr 
+                                  key={index} 
+                                  className={`${
+                                    index % 2 === 0 ? 'bg-white' : 'bg-slate-50'
+                                  } hover:bg-blue-50 transition-colors`}
+                                >
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="text-sm font-semibold text-slate-900">
+                                      {product.productName}
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                                      {product.category}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                                    <span className="text-sm font-bold text-green-600">
+                                      ₱{product.sales.toLocaleString()}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                    <span className="text-sm font-medium text-slate-700">
+                                      {product.quantitySold}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                                    <span className="text-sm font-bold text-orange-600">
+                                      ₱{product.averageInventory.toLocaleString()}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                    <span className="inline-flex items-center px-3 py-1 rounded-lg text-sm font-bold bg-blue-100 text-blue-700">
+                                      {product.turnoverRate.toFixed(2)}x
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                                    <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold text-xs ${
+                                      status === 'Fast-moving' ? 'bg-green-100 text-green-700 border border-green-200' :
+                                      status === 'Moderate' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
+                                      'bg-red-100 text-red-700 border border-red-200'
+                                    }`}>
+                                      <span className="text-base">{emoji}</span>
+                                      <span>{status}</span>
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                {/* Report Footer Note */}
+                <div className="mt-8 pt-6 border-t-2 border-slate-200">
+                  <p className="text-xs text-slate-500 text-center">
+                    This report is generated automatically based on sales and inventory data. For inquiries, please contact the management team.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Enhanced Footer with Actions */}
+            <div className="border-t-2 border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100 px-8 py-5 rounded-b-xl">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2 text-slate-600">
+                  <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+                  <span className="text-xs font-semibold">Glory Star Hardware - Official Document</span>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowReportModal(false)}
+                    className="px-6 py-2.5 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-all duration-200 flex items-center gap-2 font-semibold text-sm shadow-sm"
+                  >
+                    <FiX size={16} />
+                    <span>Close</span>
+                  </button>
+                  <button
+                    onClick={handleDownloadPDF}
+                    className="px-6 py-2.5 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-200 flex items-center gap-2 font-semibold text-sm shadow-lg hover:shadow-xl"
+                  >
+                    <AiOutlineFilePdf size={18} />
+                    <span>Download PDF</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }

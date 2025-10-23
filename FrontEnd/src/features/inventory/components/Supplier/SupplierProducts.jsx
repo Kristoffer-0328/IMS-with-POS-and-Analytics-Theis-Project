@@ -45,23 +45,18 @@ const SupplierProducts = ({ supplier, onClose }) => {
         };
       });
 
-      console.log('Supplier data map:', supplierDataMap);
-      console.log('Product IDs linked to supplier:', Object.keys(supplierDataMap));
 
       // Step 2: Use listenToProducts service to get all products (more efficient)
       const unsubscribe = listenToProducts((allProducts) => {
-        console.log('Total products from listenToProducts:', allProducts.length);
 
         // Step 3: Filter products that are linked to this supplier
         const linkedProducts = allProducts.filter(product => {
           const isLinked = supplierDataMap[product.id] !== undefined;
           if (isLinked) {
-            console.log('Found linked product:', product.id, product.name);
           }
           return isLinked;
         });
 
-        console.log('Total linked products found:', linkedProducts.length);
 
         // Step 4: Group products by base identity to consolidate duplicates across storage locations
         const productGroups = {};

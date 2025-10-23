@@ -50,14 +50,12 @@ const Audit_trail = () => {
         setError(null);
         try {
             const logs = [];
-            console.log('Starting audit log fetch...');
 
             // Fetch POS Transactions
             try {
                 const posRef = collection(db, 'posTransactions');
                 const posQuery = query(posRef, orderBy('createdAt', 'desc'), limit(50));
                 const posSnapshot = await getDocs(posQuery);
-                console.log('POS Transactions fetched:', posSnapshot.docs.length);
                 posSnapshot.docs.forEach(doc => {
                     const data = doc.data();
                     logs.push({
@@ -80,7 +78,6 @@ const Audit_trail = () => {
                 const receivingRef = collection(db, 'receivingTransactions');
                 const receivingQuery = query(receivingRef, orderBy('receivingDate', 'desc'), limit(30));
                 const receivingSnapshot = await getDocs(receivingQuery);
-                console.log('Receiving Transactions fetched:', receivingSnapshot.docs.length);
                 receivingSnapshot.docs.forEach(doc => {
                     const data = doc.data();
                     logs.push({
@@ -103,7 +100,6 @@ const Audit_trail = () => {
                 const releaseRef = collection(db, 'release_logs');
                 const releaseQuery = query(releaseRef, orderBy('releaseDate', 'desc'), limit(30));
                 const releaseSnapshot = await getDocs(releaseQuery);
-                console.log('Release logs fetched:', releaseSnapshot.docs.length);
                 releaseSnapshot.docs.forEach(doc => {
                     const data = doc.data();
                     logs.push({
@@ -126,7 +122,6 @@ const Audit_trail = () => {
                 const poRef = collection(db, 'purchase_orders');
                 const poQuery = query(poRef, orderBy('createdAt', 'desc'), limit(20));
                 const poSnapshot = await getDocs(poQuery);
-                console.log('Purchase orders fetched:', poSnapshot.docs.length);
                 poSnapshot.docs.forEach(doc => {
                     const data = doc.data();
                     logs.push({
@@ -148,7 +143,6 @@ const Audit_trail = () => {
             try {
                 const usersRef = collection(db, 'User');
                 const usersSnapshot = await getDocs(usersRef);
-                console.log('Users fetched:', usersSnapshot.docs.length);
                 usersSnapshot.docs.forEach(doc => {
                     const data = doc.data();
                     if (data.createdAt) {
@@ -182,7 +176,6 @@ const Audit_trail = () => {
 
             // Sort all logs by timestamp
             logs.sort((a, b) => b.timestamp - a.timestamp);
-            console.log('Total logs collected:', logs.length);
 
             setAuditLogs(logs);
             calculateStats(logs);

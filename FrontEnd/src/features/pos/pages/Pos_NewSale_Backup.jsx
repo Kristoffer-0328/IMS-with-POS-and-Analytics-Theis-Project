@@ -567,7 +567,6 @@ export default function Pos_NewSale() {
                 lastUpdated: serverTimestamp()
               });
 
-              console.log(`✅ Updated ${item.name}: ${currentQty} - ${item.qty} = ${newQty}`);
             } else {
               console.warn(`Product not found at path: Products/${item.storageLocation}/products/${item.variantId || item.id}`);
             }

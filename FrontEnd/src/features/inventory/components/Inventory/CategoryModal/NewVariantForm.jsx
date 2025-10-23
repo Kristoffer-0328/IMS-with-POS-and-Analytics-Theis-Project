@@ -330,18 +330,12 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                 // Remove any undefined values
                 const cleanVariantData = JSON.parse(JSON.stringify(variantProductData));
 
-                console.log('=== VARIANT CREATION DEBUG ===');
-                console.log('Storage Unit Path:', location.unit);
-                console.log('Variant ID:', variantId);
-                console.log('Full Path:', `Products/${location.unit}/products/${variantId}`);
-                console.log('Variant Data:', cleanVariantData);
 
                 // Write variant to Products/{storageLocation}/products/{variantId} - NESTED BY STORAGE UNIT
                 const storageUnitPath = location.unit;
                 const variantRef = doc(db, 'Products', storageUnitPath, 'products', variantId);
                 await setDoc(variantRef, cleanVariantData);
 
-                console.log(`✅ Variant created at: Products/${storageUnitPath}/products/${variantId}`);
 
                 // If supplier is provided, create supplier-product relationship for the variant
                 if (currentSupplier) {
@@ -354,7 +348,6 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                             lastUpdated: new Date().toISOString()
                         });
 
-                        console.log('Variant linked to supplier');
                     } catch (linkError) {
                         console.error('Error linking variant to supplier:', linkError);
                         // Don't fail the whole operation if linking fails

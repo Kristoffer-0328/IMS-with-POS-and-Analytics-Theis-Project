@@ -19,9 +19,7 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      console.log('Before sleep');
       await sleep(5000);
-      console.log('After sleep');
       const result = await login(email, password);
       if (result.success) {
         // Navigate based on user role

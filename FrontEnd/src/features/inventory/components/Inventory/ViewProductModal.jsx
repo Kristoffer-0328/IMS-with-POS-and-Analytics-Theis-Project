@@ -35,7 +35,6 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
       try {
         const storageLocation = product.storageLocation;
         if (!storageLocation) {
-          console.log('No storage location on product');
           setVariants([]);
           return;
         }
@@ -54,7 +53,6 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
           ...doc.data()
         }));
         
-        console.log(`Found ${variantsList.length} variants for product ${product.id}`);
         setVariants(variantsList);
       } catch (error) {
         console.error('Error fetching variants:', error);
@@ -325,7 +323,6 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
         lastUpdated: new Date().toISOString()
       });
 
-      console.log(`✅ Image updated at: Products/${storageLocation}/products/${productId}`);
 
       alert('Image uploaded successfully!');
       setImageUrl(cloudinaryUrl);
