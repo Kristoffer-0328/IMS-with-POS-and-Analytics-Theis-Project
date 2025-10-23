@@ -35,27 +35,29 @@ const RestockingRequest = () => {
     
     // Try ordering by timestamp, fallback to listening without ordering if it fails
       const unsubscribe = onSnapshot(restockRequestsRef, (snapshot) => {
-        const requestsData = snapshot.docs.map(doc => {
-          const data = doc.data();
+        const requestsData = snapshot.docs
+          .map(doc => {
+            const data = doc.data();
 
-          // Handle different date formats
-          let createdAtDate;
-          if (data.timestamp?.toDate) {
-            createdAtDate = data.timestamp.toDate();
-          } else if (data.createdAt) {
-            createdAtDate = typeof data.createdAt === 'string' ? new Date(data.createdAt) : data.createdAt;
-          } else {
-            createdAtDate = new Date();
-          }
-          
-          return {
-            id: doc.id,
-            ...data,
-            createdAt: createdAtDate,
-            // Use the supplierName field directly
-            supplierName: data.supplierName || 'Unknown Supplier'
-          };
-        });
+            // Handle different date formats
+            let createdAtDate;
+            if (data.timestamp?.toDate) {
+              createdAtDate = data.timestamp.toDate();
+            } else if (data.createdAt) {
+              createdAtDate = typeof data.createdAt === 'string' ? new Date(data.createdAt) : data.createdAt;
+            } else {
+              createdAtDate = new Date();
+            }
+            
+            return {
+              id: doc.id,
+              ...data,
+              createdAt: createdAtDate,
+              // Use the supplierName field directly
+              supplierName: data.supplierName || 'Unknown Supplier'
+            };
+          })
+          .filter(request => request.status !== 'processed'); // Filter out processed requests
         
         // Sort manually by createdAt in descending order
         requestsData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));      
@@ -107,6 +109,12 @@ const RestockingRequest = () => {
         return (
           <span className="px-4 py-1.5 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
             Processing
+          </span>
+        );
+      case 'processed':
+        return (
+          <span className="px-4 py-1.5 bg-purple-100 text-purple-800 rounded-full text-xs font-medium">
+            Processed
           </span>
         );
       case 'completed':

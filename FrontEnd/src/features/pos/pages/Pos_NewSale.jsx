@@ -297,7 +297,15 @@ export default function Pos_NewSale() {
               unit: item.unit || 'pcs',
               variantDetails: item.variantDetails || {},
               fromQuotation: quotationNumber.trim(),
-              originalProductId: productMatch.id // Store original product ID for inventory tracking
+              originalProductId: productMatch.id, // Store original product ID for inventory tracking
+              // Include location information from quotation
+              storageLocation: item.storageLocation || '',
+              shelfName: item.shelfName || '',
+              rowName: item.rowName || '',
+              columnIndex: item.columnIndex || '',
+              fullLocation: item.fullLocation || '',
+              variantId: item.variantId || productMatch.id,
+              baseProductId: item.baseProductId || productMatch.id
             });
           } else {
             // Product not found in inventory, still add it for reference
@@ -312,7 +320,15 @@ export default function Pos_NewSale() {
               unit: item.unit || 'pcs',
               variantDetails: item.variantDetails || {},
               fromQuotation: quotationNumber.trim(),
-              notInInventory: true // Flag for products not in current inventory
+              notInInventory: true, // Flag for products not in current inventory
+              // Include location information from quotation even if product not found
+              storageLocation: item.storageLocation || '',
+              shelfName: item.shelfName || '',
+              rowName: item.rowName || '',
+              columnIndex: item.columnIndex || '',
+              fullLocation: item.fullLocation || '',
+              variantId: item.variantId || '',
+              baseProductId: item.baseProductId || ''
             });
           }
         }

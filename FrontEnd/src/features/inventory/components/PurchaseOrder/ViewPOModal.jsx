@@ -133,22 +133,22 @@ const ViewPOModal = ({ poId, onClose }) => {
           }
         }
 
-        // Generate notification for approval/rejection
-        try {
-          console.log('🔔 About to generate notification for PO approval/rejection');
-          console.log('Generating PO', action, 'notification for:', poData.poNumber);
-          if (poData) {
-            await generatePurchaseOrderNotification(poData, currentUser, action, approvalNotes);
-            console.log('PO', action, 'notification generated successfully');
-          } else {
-            console.error('No PO data available for notification');
-          }
-        } catch (notificationError) {
-          console.error('Failed to generate PO', action, 'notification:', notificationError);
-          // Don't fail the approval process if notification fails
+      // Generate notification for approval/rejection
+      try {
+        console.log('🔔 About to generate notification for PO approval/rejection');
+        console.log('Generating PO', action, 'notification for:', poData.poNumber);
+        console.log('📊 PO Data dump:', JSON.stringify(poData, null, 2));
+        console.log('👤 Current User dump:', JSON.stringify(currentUser, null, 2));
+        if (poData) {
+          await generatePurchaseOrderNotification(poData, currentUser, action, approvalNotes);
+          console.log('PO', action, 'notification generated successfully');
+        } else {
+          console.error('No PO data available for notification');
         }
-
-        onClose();
+      } catch (notificationError) {
+        console.error('Failed to generate PO', action, 'notification:', notificationError);
+        // Don't fail the approval process if notification fails
+      }        onClose();
       } else {
         throw new Error(result.error || 'Failed to process approval');
       }
@@ -483,15 +483,118 @@ const ViewPOModal = ({ poId, onClose }) => {
             </div>
           </div>
 
-          {/* Payment Terms Section */}
-          <div className="bg-blue-50 rounded-xl border border-blue-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Payment Terms</h3>
-            <div className="bg-white rounded-lg border border-blue-200 p-4">
-              <p className="text-gray-700 text-sm leading-relaxed">
-                {poData.paymentTerms || 'No payment terms specified'}
-              </p>
+          {/* Received Products Section - Shows images from mobile receiving */}
+          {poData.status === 'received' && poData.receivedProducts && poData.receivedProducts.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                📸 Received Products & Photos
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {poData.receivedProducts.map((product, index) => (
+                  <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50 hover:bg-gray-100 transition-colors">
+                    <div className="space-y-3">
+                      {/* Product Photo */}
+                      {product.photo ? (
+                        <div className="relative">
+                          <img
+                            src={product.photo}
+                            alt={`Received ${product.productName}`}
+                            className="w-full h-32 object-cover rounded-lg border border-gray-300"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              e.target.nextElementSibling.style.display = 'flex';
+                            }}
+                          />
+                          <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full font-medium">
+                            ✓ Received
+                          </div>
+                          {/* Fallback for broken images */}
+                          <div className="hidden w-full h-32 bg-gray-200 rounded-lg border border-gray-300 items-center justify-center">
+                            <div className="text-center">
+                              <div className="text-gray-400 text-2xl mb-1">📷</div>
+                              <span className="text-gray-500 text-xs">Image unavailable</span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="w-full h-32 bg-gray-200 rounded-lg flex items-center justify-center border border-gray-300">
+                          <div className="text-center">
+                            <div className="text-gray-400 text-2xl mb-1">📷</div>
+                            <span className="text-gray-500 text-sm">No photo taken</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Product Details */}
+                      <div className="space-y-1">
+                        <h4 className="font-semibold text-gray-900 text-sm">{product.productName}</h4>
+                        <div className="text-xs text-gray-600 space-y-1">
+                          <p><span className="font-medium">SKU:</span> {product.productId}</p>
+                          <p><span className="font-medium">Received:</span> {product.receivedQuantity} units</p>
+                          <p><span className="font-medium">Accepted:</span> {product.receivedQuantity} | <span className="font-medium">Rejected:</span> {product.rejectedQuantity || 0}</p>
+                          {product.unitPrice && (
+                            <p><span className="font-medium">Unit Price:</span> ₱{product.unitPrice.toLocaleString()}</p>
+                          )}
+                        </div>
+
+                        {/* Rejection Reason */}
+                        {product.rejectedQuantity > 0 && product.rejectionReason && (
+                          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs">
+                            <p className="font-medium text-red-800">Rejection Reason:</p>
+                            <p className="text-red-700">{product.rejectionReason}</p>
+                          </div>
+                        )}
+
+                        {/* Notes */}
+                        {product.notes && (
+                          <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                            <p className="font-medium text-blue-800">Notes:</p>
+                            <p className="text-blue-700">{product.notes}</p>
+                          </div>
+                        )}
+
+                        {/* Received By */}
+                        {product.receivedBy && (
+                          <div className="mt-2 text-xs text-gray-500">
+                            <p><span className="font-medium">Received by:</span> {product.receivedBy.name}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Summary of received items */}
+              <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <h4 className="font-semibold text-green-800 mb-2">Receiving Summary</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <p className="text-green-700 font-medium">Total Items</p>
+                    <p className="text-green-900 text-lg font-bold">{poData.receivedProducts.length}</p>
+                  </div>
+                  <div>
+                    <p className="text-green-700 font-medium">Total Received</p>
+                    <p className="text-green-900 text-lg font-bold">
+                      {poData.receivedProducts.reduce((sum, p) => sum + (p.receivedQuantity || 0), 0)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-green-700 font-medium">Total Rejected</p>
+                    <p className="text-green-900 text-lg font-bold">
+                      {poData.receivedProducts.reduce((sum, p) => sum + (p.rejectedQuantity || 0), 0)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-green-700 font-medium">Photos Taken</p>
+                    <p className="text-green-900 text-lg font-bold">
+                      {poData.receivedProducts.filter(p => p.photo).length}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Documents Section */}
           {documents.length > 0 && (

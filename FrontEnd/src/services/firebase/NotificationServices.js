@@ -14,6 +14,9 @@ const db = getFirestore(app);
  */
 export const generatePurchaseOrderNotification = async (poData, currentUser, action, notes = '') => {
   console.log('🚀 generatePurchaseOrderNotification called with:', { action, poData: poData?.poNumber, currentUser: currentUser?.role });
+  console.log('🔥 generatePurchaseOrderNotification called with action:', action);
+  console.log('📊 PO Data keys:', Object.keys(poData || {}));
+  console.log('👤 Current User keys:', Object.keys(currentUser || {}));
   try {
     console.log('🔥 generatePurchaseOrderNotification called with action:', action);
     if (!poData || !currentUser) {
@@ -26,6 +29,7 @@ export const generatePurchaseOrderNotification = async (poData, currentUser, act
     const missingFields = requiredFields.filter(field => !poData[field]);
     if (missingFields.length > 0) {
       console.error('❌ Missing required PO fields:', missingFields, 'Available fields:', Object.keys(poData));
+      console.error('❌ PO Data dump:', JSON.stringify(poData, null, 2));
       return null;
     }
 

@@ -5,7 +5,7 @@ import { useServices } from '../../../../services/firebase/ProductServices';
 import { useSupplierServices } from '../../../../services/firebase/SupplierServices';
 import { useAuth } from '../../../auth/services/FirebaseAuth';
 import { generatePurchaseOrderNotification } from '../../../../services/firebase/NotificationServices';
-import { getFirestore, collection, query, where, getDocs } from 'firebase/firestore';
+import { getFirestore, collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import app from '../../../../FirebaseConfig';
 
 const CreatePOModal = ({ onClose, onSuccess }) => {
@@ -264,6 +264,32 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
       } catch (notificationError) {
         console.error('Failed to generate PO creation notification:', notificationError);
         // Don't fail the PO creation if notification fails
+      }
+
+      // Update restocking requests to mark them as processed
+      try {
+        const restockRequestsRef = collection(db, 'RestockingRequests');
+        
+        // Get all restock request IDs that were used in this PO
+        const restockRequestIds = items
+          .filter(item => item.restockRequestId)
+          .map(item => item.restockRequestId);
+
+        // Update each restocking request to mark it as processed
+        for (const requestId of restockRequestIds) {
+          const requestRef = doc(db, 'RestockingRequests', requestId);
+          await updateDoc(requestRef, {
+            status: 'processed',
+            processedAt: new Date(),
+            poId: result.id,
+            poNumber: result.poNumber
+          });
+        }
+
+        console.log(`Updated ${restockRequestIds.length} restocking requests to processed status`);
+      } catch (restockError) {
+        console.error('Failed to update restocking requests:', restockError);
+        // Don't fail the PO creation if restock request update fails
       }
 
       onSuccess();

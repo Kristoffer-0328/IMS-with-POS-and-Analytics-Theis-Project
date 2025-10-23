@@ -18,6 +18,7 @@ import app from '../../../services/firebase/config';
 import storage from '../../../services/firebase/StorageConfig';
 import { useAuth } from '../../auth/services/FirebaseAuth';
 import { AnalyticsService } from '../../../services/firebase/AnalyticsService';
+import { uploadImage } from '../../../services/cloudinary/CloudinaryService';
 
 // Helper function to generate receiving notification
 const generateReceivingNotification = async (receivingData, currentUser) => {
@@ -619,64 +620,66 @@ const MobileReceive = () => {
         
         // If not found by ID, try querying by name in this storage unit
         // First prioritize variants over base products
-        const variantNameQuery = query(productsRef, where('name', '==', productName), where('isVariant', '==', true));
-        const variantNameSnapshot = await getDocs(variantNameQuery);
-        
-        if (!variantNameSnapshot.empty) {
-          const firstVariantDoc = variantNameSnapshot.docs[0];
-          const variantData = firstVariantDoc.data();
-          console.log(`✅ Found variant by name in ${storageLocation}:`, variantData);
+        if (productName && productName.trim() !== '') {
+          const variantNameQuery = query(productsRef, where('name', '==', productName), where('isVariant', '==', true));
+          const variantNameSnapshot = await getDocs(variantNameQuery);
           
-          return {
-            ref: firstVariantDoc.ref,
-            data: variantData,
-            location: {
-              storageLocation,
-              shelfName: variantData.shelfName,
-              rowName: variantData.rowName,
-              columnIndex: variantData.columnIndex
-            }
-          };
-        }
-        
-        // If no variants found, try base products
-        const baseNameQuery = query(productsRef, where('name', '==', productName), where('isVariant', '==', false));
-        const baseNameSnapshot = await getDocs(baseNameQuery);
-        
-        // If we found both variants and base products, prefer variants (they're more specific)
-        if (!variantNameSnapshot.empty && !baseNameSnapshot.empty) {
-          console.log(`✅ Found both variants and base products for "${productName}". Prioritizing variant.`);
-          const firstVariantDoc = variantNameSnapshot.docs[0];
-          const variantData = firstVariantDoc.data();
-          console.log(`✅ Selected variant by name in ${storageLocation}:`, variantData);
+          if (!variantNameSnapshot.empty) {
+            const firstVariantDoc = variantNameSnapshot.docs[0];
+            const variantData = firstVariantDoc.data();
+            console.log(`✅ Found variant by name in ${storageLocation}:`, variantData);
+            
+            return {
+              ref: firstVariantDoc.ref,
+              data: variantData,
+              location: {
+                storageLocation,
+                shelfName: variantData.shelfName,
+                rowName: variantData.rowName,
+                columnIndex: variantData.columnIndex
+              }
+            };
+          }
           
-          return {
-            ref: firstVariantDoc.ref,
-            data: variantData,
-            location: {
-              storageLocation,
-              shelfName: variantData.shelfName,
-              rowName: variantData.rowName,
-              columnIndex: variantData.columnIndex
-            }
-          };
-        }
-        
-        if (!baseNameSnapshot.empty) {
-          const firstBaseDoc = baseNameSnapshot.docs[0];
-          const baseData = firstBaseDoc.data();
-          console.log(`✅ Found base product by name in ${storageLocation}:`, baseData);
+          // If no variants found, try base products
+          const baseNameQuery = query(productsRef, where('name', '==', productName), where('isVariant', '==', false));
+          const baseNameSnapshot = await getDocs(baseNameQuery);
           
-          return {
-            ref: firstBaseDoc.ref,
-            data: baseData,
-            location: {
-              storageLocation,
-              shelfName: baseData.shelfName,
-              rowName: baseData.rowName,
-              columnIndex: baseData.columnIndex
-            }
-          };
+          // If we found both variants and base products, prefer variants (they're more specific)
+          if (!variantNameSnapshot.empty && !baseNameSnapshot.empty) {
+            console.log(`✅ Found both variants and base products for "${productName}". Prioritizing variant.`);
+            const firstVariantDoc = variantNameSnapshot.docs[0];
+            const variantData = firstVariantDoc.data();
+            console.log(`✅ Selected variant by name in ${storageLocation}:`, variantData);
+            
+            return {
+              ref: firstVariantDoc.ref,
+              data: variantData,
+              location: {
+                storageLocation,
+                shelfName: variantData.shelfName,
+                rowName: variantData.rowName,
+                columnIndex: variantData.columnIndex
+              }
+            };
+          }
+          
+          if (!baseNameSnapshot.empty) {
+            const firstBaseDoc = baseNameSnapshot.docs[0];
+            const baseData = firstBaseDoc.data();
+            console.log(`✅ Found base product by name in ${storageLocation}:`, baseData);
+            
+            return {
+              ref: firstBaseDoc.ref,
+              data: baseData,
+              location: {
+                storageLocation,
+                shelfName: baseData.shelfName,
+                rowName: baseData.rowName,
+                columnIndex: baseData.columnIndex
+              }
+            };
+          }
         }
       }
 
@@ -695,19 +698,18 @@ const MobileReceive = () => {
       console.log('📦 Updating inventory for received products:', receivedProducts);
 
       for (const product of receivedProducts) {
-        // Skip if no quantity delivered
         if (!product.receivedQuantity || product.receivedQuantity <= 0) {
-          console.log(`⏭️ Skipping ${product.name} - no quantity delivered`);
+          console.log(`⏭️ Skipping ${product.productName} - no quantity delivered`);
           continue;
         }
 
-        console.log(`\n🔄 Processing ${product.name} (${product.receivedQuantity} units)`);
+        console.log(`\n🔄 Processing ${product.productName} (${product.receivedQuantity} units)`);
 
         // Find the product in inventory
-        const productInfo = await findProductInInventory(product.productId, product.name, product.variantId);
+        const productInfo = await findProductInInventory(product.productId, product.productName || 'Unknown Product', product.variantId);
 
         if (!productInfo) {
-          throw new Error(`Product "${product.name}" (ID: ${product.productId}, Variant ID: ${product.variantId || 'N/A'}) not found in inventory. Cannot update stock levels.`);
+          throw new Error(`Product "${product.productName}" (ID: ${product.productId}, Variant ID: ${product.variantId || 'N/A'}) not found in inventory. Cannot update stock levels.`);
         }
 
         console.log(`📍 Found at: Products/${productInfo.location.storageLocation}/products/${product.productId}`);
@@ -718,7 +720,7 @@ const MobileReceive = () => {
           const currentProductDoc = await transaction.get(productInfo.ref);
 
           if (!currentProductDoc.exists()) {
-            throw new Error(`Product "${product.name}" was deleted during update process.`);
+            throw new Error(`Product "${product.productName}" was deleted during update process.`);
           }
 
           const productData = currentProductDoc.data();
@@ -744,7 +746,7 @@ const MobileReceive = () => {
               lastUpdated: serverTimestamp()
             });
 
-            console.log(`✅ Updated variant ${productData.variantName || productData.size || product.name} quantity to ${newQty}`);
+            console.log(`✅ Updated variant ${productData.variantName || productData.size || product.productName} quantity to ${newQty}`);
           } else {
             // BASE PRODUCT: Check if this product has nested variants (legacy structure)
             const hasVariants = productData.variants && Array.isArray(productData.variants) && productData.variants.length > 0;
@@ -761,7 +763,7 @@ const MobileReceive = () => {
               );
 
               if (variantIndex === -1) {
-                throw new Error(`Variant ${product.variantName || product.variantId} not found in product ${product.name}`);
+                throw new Error(`Variant ${product.variantName || product.variantId} not found in product ${product.productName}`);
               }
 
               const variant = variants[variantIndex];
@@ -805,7 +807,7 @@ const MobileReceive = () => {
                 lastUpdated: serverTimestamp()
               });
 
-              console.log(`✅ Updated base product ${product.name} quantity to ${newQty}`);
+              console.log(`✅ Updated base product ${product.productName} quantity to ${newQty}`);
             }
           }
         });
@@ -824,8 +826,44 @@ const MobileReceive = () => {
       setIsSubmitting(true);
       setProcessingStep('Preparing data...');
 
+      // Upload images to Cloudinary and replace base64 data with URLs
+      setProcessingStep('Uploading images...');
+      const productsWithUploadedImages = await Promise.all(
+        deliveryData.products.map(async (product) => {
+          if (product.photo && product.photoPreview && product.photoPreview.startsWith('data:')) {
+            try {
+              console.log(`📤 Uploading image for ${product.name}...`);
+              const uploadResult = await uploadImage(product.photo, (progress) => {
+                console.log(`📤 Upload progress for ${product.name}: ${progress}%`);
+              }, {
+                folder: 'receiving-photos',
+                publicId: `receiving-${poId}-${product.productId}-${Date.now()}`
+              });
+              
+              console.log(`✅ Image uploaded for ${product.name}: ${uploadResult.url}`);
+              return {
+                ...product,
+                photo: uploadResult.url, // Replace File object with URL
+                photoPreview: uploadResult.url // Replace base64 with URL
+              };
+            } catch (uploadError) {
+              console.error(`❌ Failed to upload image for ${product.name}:`, uploadError);
+              // Keep the original data if upload fails, but log the error
+              return product;
+            }
+          }
+          return product;
+        })
+      );
+
+      // Update deliveryData with uploaded images
+      const updatedDeliveryData = {
+        ...deliveryData,
+        products: productsWithUploadedImages
+      };
+
       // Prepare received items for processing
-      const receivedItems = deliveryData.products
+      const receivedItems = updatedDeliveryData.products
         .filter(p => p.status === 'received' && (p.acceptedQty > 0 || p.rejectedQty > 0))
         .map(product => ({
           productId: product.productId,
@@ -838,7 +876,7 @@ const MobileReceive = () => {
           unitPrice: product.unitPrice || 0,
           rejectionReason: product.rejectionReason || '',
           notes: product.notes || '',
-          photo: product.photoPreview || null,
+          photo: product.photoPreview || null, // Now contains URL instead of base64
           variantId: product.variantId || null,
           variantName: product.variantName || null,
           receivedBy: {
@@ -857,8 +895,8 @@ const MobileReceive = () => {
       // Validate and parse delivery date/time
       let deliveryDateTime;
       try {
-        if (deliveryData.deliveryDateTime && deliveryData.deliveryDateTime.includes('T')) {
-          deliveryDateTime = new Date(deliveryData.deliveryDateTime);
+        if (updatedDeliveryData.deliveryDateTime && updatedDeliveryData.deliveryDateTime.includes('T')) {
+          deliveryDateTime = new Date(updatedDeliveryData.deliveryDateTime);
           // Check if the date is valid
           if (isNaN(deliveryDateTime.getTime())) {
             throw new Error('Invalid date format');
@@ -868,7 +906,7 @@ const MobileReceive = () => {
           deliveryDateTime = new Date();
         }
       } catch (error) {
-        console.warn('Invalid delivery date/time, using current timestamp:', deliveryData.deliveryDateTime);
+        console.warn('Invalid delivery date/time, using current timestamp:', updatedDeliveryData.deliveryDateTime);
         deliveryDateTime = new Date();
       }
       
@@ -877,11 +915,11 @@ const MobileReceive = () => {
         
         // Calculate total ordered vs received for summary
         const orderSummary = {
-          totalItemsOrdered: deliveryData.products.length,
+          totalItemsOrdered: updatedDeliveryData.products.length,
           totalItemsReceived: receivedItems.length,
-          totalQuantityOrdered: deliveryData.products.reduce((sum, p) => sum + (p.expectedQty || 0), 0),
+          totalQuantityOrdered: updatedDeliveryData.products.reduce((sum, p) => sum + (p.expectedQty || 0), 0),
           totalQuantityReceived: receivedItems.reduce((sum, p) => sum + (p.receivedQuantity || 0), 0),
-          itemsWithDiscrepancies: deliveryData.products.filter(p => (parseInt(p.acceptedQty) || 0) !== p.expectedQty).length
+          itemsWithDiscrepancies: updatedDeliveryData.products.filter(p => (parseInt(p.acceptedQty) || 0) !== p.expectedQty).length
         };
         
         await updateDoc(poRef, {
@@ -891,13 +929,13 @@ const MobileReceive = () => {
           orderSummary: orderSummary,
           receivedProducts: receivedItems,
           deliveryDetails: {
-            drNumber: deliveryData.drNumber || '',
-            invoiceNumber: deliveryData.invoiceNumber || '',
+            drNumber: updatedDeliveryData.drNumber || '',
+            invoiceNumber: updatedDeliveryData.invoiceNumber || '',
             deliveryDateTime: deliveryDateTime,
-            driverName: deliveryData.driverName || '',
-            truckNumber: deliveryData.truckNumber || '',
-            receivedBy: deliveryData.receivedBy || '',
-            projectSite: deliveryData.projectSite || ''
+            driverName: updatedDeliveryData.driverName || '',
+            truckNumber: updatedDeliveryData.truckNumber || '',
+            receivedBy: updatedDeliveryData.receivedBy || '',
+            projectSite: updatedDeliveryData.projectSite || ''
           },
           updatedAt: serverTimestamp()
         });
@@ -914,19 +952,19 @@ const MobileReceive = () => {
         type: 'receiving',
         poId: poId,
         deliveryDetails: {
-          drNumber: deliveryData.drNumber || '',
-          invoiceNumber: deliveryData.invoiceNumber || '',
+          drNumber: updatedDeliveryData.drNumber || '',
+          invoiceNumber: updatedDeliveryData.invoiceNumber || '',
           deliveryDateTime: transactionDateTime,
-          driverName: deliveryData.driverName || '',
-          truckNumber: deliveryData.truckNumber || '',
-          receivedBy: deliveryData.receivedBy || '',
-          projectSite: deliveryData.projectSite || ''
+          driverName: updatedDeliveryData.driverName || '',
+          truckNumber: updatedDeliveryData.truckNumber || '',
+          receivedBy: updatedDeliveryData.receivedBy || '',
+          projectSite: updatedDeliveryData.projectSite || ''
         },
         items: receivedItems,
         summary: {
-          totalOrderValue: deliveryData.products.reduce((sum, p) => sum + ((p.unitPrice || 0) * (p.expectedQty || 0)), 0),
+          totalOrderValue: updatedDeliveryData.products.reduce((sum, p) => sum + ((p.unitPrice || 0) * (p.expectedQty || 0)), 0),
           totalReceivedValue: receivedItems.reduce((sum, p) => sum + ((p.unitPrice || 0) * (p.receivedQuantity || 0)), 0),
-          itemsCount: deliveryData.products.length,
+          itemsCount: updatedDeliveryData.products.length,
           receivedItemsCount: receivedItems.length
         },
         status: 'completed',
@@ -992,13 +1030,13 @@ const MobileReceive = () => {
           referenceType: 'receiving_record',
           referenceId: poId,
           poId: poId,
-          drNumber: deliveryData.drNumber || null,
-          invoiceNumber: deliveryData.invoiceNumber || null,
+          drNumber: updatedDeliveryData.drNumber || null,
+          invoiceNumber: updatedDeliveryData.invoiceNumber || null,
           // Supplier Information
           supplier: poData?.supplierName || 'Unknown Supplier',
           supplierContact: poData?.supplierContact || '',
           // Delivery Information
-          driverName: deliveryData.driverName || '',
+          driverName: updatedDeliveryData.driverName || '',
           deliveryDate: receivingTimestamp,
           // Condition & Status
           condition: product.rejectedQuantity > 0 ? 'partial' : 'complete',
@@ -1008,7 +1046,7 @@ const MobileReceive = () => {
           movementDate: receivingTimestamp,
           createdAt: new Date(),
           // Additional Context
-          notes: deliveryData.projectSite || ''
+          notes: updatedDeliveryData.projectSite || ''
         });
       });
       await Promise.all(stockMovementPromises);
@@ -1018,15 +1056,15 @@ const MobileReceive = () => {
       // Set completion data and show completion page
       setCompletionData({
         poId,
-        poNumber: deliveryData.poNumber,
+        poNumber: updatedDeliveryData.poNumber,
         deliveryDetails: {
-          drNumber: deliveryData.drNumber,
-          driverName: deliveryData.driverName,
-          deliveryDateTime: deliveryData.deliveryDateTime,
-          receivedBy: deliveryData.receivedBy
+          drNumber: updatedDeliveryData.drNumber,
+          driverName: updatedDeliveryData.driverName,
+          deliveryDateTime: updatedDeliveryData.deliveryDateTime,
+          receivedBy: updatedDeliveryData.receivedBy
         },
         productsReceived: receivedItems,
-        totalProducts: deliveryData.products.length,
+        totalProducts: updatedDeliveryData.products.length,
         timestamp: new Date().toISOString()
       });
       
