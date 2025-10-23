@@ -453,7 +453,15 @@ const Pos_Quotation = () => {
           quantity: Number(item.qty || item.quantity) || 0,
           unitPrice: Number(item.price || item.unitPrice) || 0,
           amount: Number((item.price || item.unitPrice) * (item.qty || item.quantity)) || 0,
-          variantDetails: item.variantDetails || {}
+          variantDetails: item.variantDetails || {},
+          // Location information
+          storageLocation: item.storageLocation || '',
+          shelfName: item.shelfName || '',
+          rowName: item.rowName || '',
+          columnIndex: item.columnIndex || '',
+          fullLocation: item.fullLocation || '',
+          variantId: item.variantId || '',
+          baseProductId: item.baseProductId || ''
         })),
         
         // Totals

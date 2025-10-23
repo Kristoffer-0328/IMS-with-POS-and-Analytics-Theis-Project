@@ -41,7 +41,7 @@ const ViewReceivingTransactionModal = ({ transactionId, poId, onClose }) => {
           }
         }
 
-        // Fetch PO data for additional context
+        // Fetch PO data for additional context and images
         let poInfo = null;
         if (poId) {
           const poQuery = query(collection(db, 'purchase_orders'), where('__name__', '==', poId));
@@ -290,7 +290,7 @@ const ViewReceivingTransactionModal = ({ transactionId, poId, onClose }) => {
           </div>
 
           {/* Received Items */}
-          <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Received Items</h3>
             <div className="space-y-4">
               {transaction.items?.map((item, index) => (
@@ -335,6 +335,49 @@ const ViewReceivingTransactionModal = ({ transactionId, poId, onClose }) => {
               ))}
             </div>
           </div>
+
+          {/* Received Products & Photos */}
+          {poData?.receivedProducts && poData.receivedProducts.length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Received Products & Photos</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {poData.receivedProducts.map((product, index) => (
+                  <div key={index} className="border border-gray-200 rounded-lg p-4">
+                    <div className="mb-3">
+                      <h4 className="font-semibold text-gray-900 text-sm">{product.productName}</h4>
+                      <p className="text-xs text-gray-500">SKU: {product.sku || 'N/A'}</p>
+                      <p className="text-xs text-gray-500">Received: {product.receivedQuantity || 0} {product.unit || 'pcs'}</p>
+                    </div>
+                    {product.photo ? (
+                      <div className="relative">
+                        <img
+                          src={product.photo}
+                          alt={`${product.productName} - Received Product`}
+                          className="w-full h-32 object-cover rounded-lg border border-gray-200"
+                          onError={(e) => {
+                            e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJDMTMuMSAyIDE0IDIuOSAxNCA0VjE2QzE0IDE3LjEgMTMuMSAxOCA5LjUgMTJDOS41IDE4IDkgMTcuMSAxOSA5QzkgOC45IDkuNSAyIDkuNSA0VjJDOS41IDIuOSAxMC40IDIgMTIgMlpNMTIgN0MxMS41IDcgMTEgNy41IDExIDhDMTEgOC41IDExLjUgOSA5IDlDOSAxMC41IDEwLjUgMTEgMTIgMTFDMTMuNSA5IDE1IDguNSA5IDhDOS43IDggOSAxMC43IDkgMTJDOSA5LjUgMTAuNSA5IDEyIDlaIiBmaWxsPSIjOWNhM2FmIi8+Cjwvc3ZnPgo=';
+                            e.target.alt = 'Image not available';
+                          }}
+                        />
+                        <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                          Photo
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="w-full h-32 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
+                        <div className="text-center">
+                          <svg className="w-8 h-8 text-gray-400 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <p className="text-xs text-gray-500">No photo available</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
