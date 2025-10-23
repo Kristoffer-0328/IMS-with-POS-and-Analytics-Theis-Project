@@ -5,24 +5,19 @@ import app from '../../FirebaseConfig';
 const db = getFirestore(app);
 
 export const ReportingService = {
-  async getInventoryTurnover(year, month) {
+  async getInventoryTurnover(startDate, endDate) {
     try {
 
-      // Calculate date range
-      const startDate = month 
-        ? moment(`${year}-${month}-01`).format('YYYYMMDD')
-        : moment(`${year}-01-01`).format('YYYYMMDD');
-      
-      const endDate = month
-        ? moment(`${year}-${month}-01`).endOf('month').format('YYYYMMDD')
-        : moment(`${year}-12-31`).format('YYYYMMDD');
+      // Ensure dates are in YYYYMMDD format
+      const start = moment(startDate).format('YYYYMMDD');
+      const end = moment(endDate).format('YYYYMMDD');
 
       // Get inventory snapshots for the period
       const snapshotsRef = collection(db, 'inventory_snapshots');
       const snapshotsQuery = query(
         snapshotsRef,
-        where('date', '>=', startDate),
-        where('date', '<=', endDate),
+        where('date', '>=', start),
+        where('date', '<=', end),
         orderBy('date')
       );
 
@@ -30,8 +25,8 @@ export const ReportingService = {
       const salesRef = collection(db, 'sales_aggregates');
       const salesQuery = query(
         salesRef,
-        where('date', '>=', startDate),
-        where('date', '<=', endDate),
+        where('date', '>=', start),
+        where('date', '<=', end),
         orderBy('date')
       );
 
@@ -55,82 +50,111 @@ export const ReportingService = {
         ...doc.data()
       }));
 
-      // Calculate monthly metrics
+      // Calculate monthly metrics within the date range
       const monthlyData = [];
       let totalSales = 0;
       let totalInventoryValue = 0;
       let inventoryCount = 0;
 
-      // Group by month if year view
-      if (!month) {
-        for (let m = 0; m < 12; m++) {
-          const monthStr = (m + 1).toString().padStart(2, '0');
-          const monthStart = moment(`${year}-${monthStr}-01`).format('YYYYMMDD');
-          const monthEnd = moment(`${year}-${monthStr}-01`).endOf('month').format('YYYYMMDD');
+      // Product-level data aggregation
+      const productMap = new Map();
 
-          // Get snapshots for this month
-          const monthSnapshots = snapshots.filter(s => 
-            s.date >= monthStart && s.date <= monthEnd
-          );
+      // Group by month
+      const startMoment = moment(startDate);
+      const endMoment = moment(endDate);
+      const monthsDiff = endMoment.diff(startMoment, 'months') + 1;
 
-          // Get sales for this month
-          const monthSales = sales.filter(s => 
-            s.date >= monthStart && s.date <= monthEnd
-          );
+      for (let i = 0; i < monthsDiff; i++) {
+        const currentMonth = startMoment.clone().add(i, 'months');
+        const monthStart = currentMonth.startOf('month').format('YYYYMMDD');
+        const monthEnd = currentMonth.endOf('month').format('YYYYMMDD');
 
-          const avgInventory = monthSnapshots.reduce((sum, s) => sum + (s.totalValue || 0), 0) / 
-            (monthSnapshots.length || 1);
+        // Get snapshots for this month
+        const monthSnapshots = snapshots.filter(s => 
+          s.date >= monthStart && s.date <= monthEnd
+        );
 
-          const monthlySales = monthSales.reduce((sum, s) => sum + (s.total_sales || 0), 0);
+        // Get sales for this month
+        const monthSales = sales.filter(s => 
+          s.date >= monthStart && s.date <= monthEnd
+        );
 
-          monthlyData.push({
-            month: moment(`${year}-${monthStr}-01`).format('MMMM'),
-            sales: monthlySales,
-            avgInventory: avgInventory,
-            turnoverRate: avgInventory === 0 ? 0 : (monthlySales / avgInventory)
-          });
+        const avgInventory = monthSnapshots.reduce((sum, s) => sum + (s.totalValue || 0), 0) / 
+          (monthSnapshots.length || 1);
 
-          totalSales += monthlySales;
-          totalInventoryValue += avgInventory;
-          if (monthSnapshots.length > 0) inventoryCount++;
-        }
-      } else {
-        // Daily data for specific month
-        const daysInMonth = moment().year(year).month(month - 1).date(1).daysInMonth();
-        
-        for (let d = 1; d <= daysInMonth; d++) {
-          const date = moment().year(year).month(month - 1).date(d).format('YYYYMMDD');
-          const snapshot = snapshots.find(s => s.date === date);
-          const sale = sales.find(s => s.date === date);
+        const monthlySales = monthSales.reduce((sum, s) => sum + (s.total_sales || 0), 0);
 
-          if (snapshot) {
-            totalInventoryValue += snapshot.totalValue || 0;
-            inventoryCount++;
+        // Aggregate product-level data
+        monthSales.forEach(sale => {
+          if (sale.products && Array.isArray(sale.products)) {
+            sale.products.forEach(product => {
+              const key = product.productId || product.name;
+              if (!productMap.has(key)) {
+                productMap.set(key, {
+                  productName: product.name || 'Unknown Product',
+                  category: product.category || 'Uncategorized',
+                  totalSales: 0,
+                  totalQuantity: 0,
+                  inventoryValues: []
+                });
+              }
+              const prodData = productMap.get(key);
+              prodData.totalSales += product.sales || 0;
+              prodData.totalQuantity += product.quantity || 0;
+            });
           }
-
-          if (sale) {
-            totalSales += sale.total_sales || 0;
-          }
-        }
-
-        // For month view, we'll just have one entry
-        monthlyData.push({
-          month: moment().year(year).month(month - 1).date(1).format('MMMM'),
-          sales: totalSales,
-          avgInventory: totalInventoryValue / (inventoryCount || 1),
-          turnoverRate: totalInventoryValue === 0 ? 0 : (totalSales / totalInventoryValue)
         });
+
+        // Aggregate inventory per product
+        monthSnapshots.forEach(snapshot => {
+          if (snapshot.products && Array.isArray(snapshot.products)) {
+            snapshot.products.forEach(product => {
+              const key = product.productId || product.name;
+              if (productMap.has(key)) {
+                productMap.get(key).inventoryValues.push(product.value || 0);
+              }
+            });
+          }
+        });
+
+        monthlyData.push({
+          month: currentMonth.format('MMMM YYYY'),
+          sales: monthlySales,
+          avgInventory: avgInventory,
+          turnoverRate: avgInventory === 0 ? 0 : (monthlySales / avgInventory)
+        });
+
+        totalSales += monthlySales;
+        totalInventoryValue += avgInventory;
+        if (monthSnapshots.length > 0) inventoryCount++;
       }
 
       const averageInventory = totalInventoryValue / (inventoryCount || 1);
       const averageTurnoverRate = averageInventory === 0 ? 0 : (totalSales / averageInventory);
+
+      // Calculate product-level turnover
+      const productData = Array.from(productMap.entries()).map(([key, data]) => {
+        const avgInventory = data.inventoryValues.length > 0 
+          ? data.inventoryValues.reduce((sum, val) => sum + val, 0) / data.inventoryValues.length 
+          : 0;
+        const turnoverRate = avgInventory === 0 ? 0 : (data.totalSales / avgInventory);
+        
+        return {
+          productName: data.productName,
+          category: data.category,
+          sales: data.totalSales,
+          quantitySold: data.totalQuantity,
+          averageInventory: avgInventory,
+          turnoverRate: turnoverRate
+        };
+      });
 
       const result = {
         averageTurnoverRate,
         totalSales,
         averageInventory,
         chartData: monthlyData.map(data => ({
-          name: data.month.substring(0, 3),
+          name: moment(data.month, 'MMMM YYYY').format('MMM YYYY'),
           value: data.turnoverRate
         })),
         monthlyData: monthlyData.map(data => ({
@@ -138,7 +162,8 @@ export const ReportingService = {
           sales: data.sales.toLocaleString(),
           avgInventory: data.avgInventory.toLocaleString(),
           turnoverRate: data.turnoverRate.toFixed(2)
-        }))
+        })),
+        productData: productData
       };
 
       return result;

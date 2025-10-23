@@ -469,17 +469,13 @@ export default function Pos_NewSale() {
         console.warn("Skipping invalid product data:", product);
         return;
       }
-  
-      // Group by parentProductId if it exists (for variants), otherwise by product id (for base products)
-      // This ensures variants are grouped with their parent product
-      const groupKey = product.parentProductId || product.id;
-      
-      // Create a unique key based on the group key
-      const uniqueKey = groupKey;
-  
-      if (!grouped[uniqueKey]) {
-        grouped[uniqueKey] = {
-          id: groupKey, // Use the group key as the id
+
+      // Group by base identity (name, brand, specifications, category)
+      const groupKey = `${product.name || 'unknown'}_${product.brand || 'generic'}_${product.specifications || ''}_${product.category || ''}`;
+
+      if (!grouped[groupKey]) {
+        grouped[groupKey] = {
+          id: product.id, // Use first product's id for cart logic
           name: product.name, // Name should be the same for all products in the group
           category: product.category,
           brand: product.brand || 'Generic',
@@ -492,7 +488,7 @@ export default function Pos_NewSale() {
       }
       
       // Add this product instance to allLocations
-      grouped[uniqueKey].allLocations.push({
+      grouped[groupKey].allLocations.push({
         variantId: product.id,
         baseProductId: product.parentProductId || product.id,
         category: product.category,
@@ -511,7 +507,7 @@ export default function Pos_NewSale() {
       });
       
       // Add to total quantity
-      grouped[uniqueKey].quantity += Number(product.quantity) || 0;
+      grouped[groupKey].quantity += Number(product.quantity) || 0;
     });
 
     // Now consolidate by variant (size/unit) - combining different locations

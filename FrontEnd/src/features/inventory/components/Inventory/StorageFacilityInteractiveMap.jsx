@@ -61,8 +61,6 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
   // Fetch capacities when storage units are loaded
   useEffect(() => {
     if (storageUnits.length > 0) {
-      console.log('Storage units loaded:', storageUnits);
-      console.log('Shelf layouts created:', shelfLayouts);
       fetchUnitCapacities();
     }
   }, [storageUnits]);
@@ -141,7 +139,6 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           status: getCapacityStatus(occupancyRate)
         };
         
-        console.log(`${unitName}: ${productCount} products / ${totalSlots} slots (${(occupancyRate * 100).toFixed(1)}%)`);
       }
       
       setUnitCapacities(capacities);
@@ -161,13 +158,8 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
 
   // Open shelf view modal
   const openShelfView = (unitId) => {
-    console.log('Opening shelf view for:', unitId);
-    console.log('Available shelfLayouts:', Object.keys(shelfLayouts));
-    console.log('Selected unit data:', shelfLayouts[unitId]);
-    console.log('Storage units data:', storageUnits);
     
     if (shelfLayouts[unitId]) {
-      console.log('Setting selectedUnit to:', shelfLayouts[unitId]);
       setSelectedUnit(shelfLayouts[unitId]);
       setIsModalOpen(true);
     } else {

@@ -323,7 +323,6 @@ const Pos_Quotation = () => {
     // Check if locationData is an array (multi-location) or single object
     if (Array.isArray(locationData)) {
       // Multi-location allocation
-      console.log('Multi-location selection:', locationData);
       
       locationData.forEach(locationVariant => {
         const displayName = locationVariant.size || locationVariant.unit 

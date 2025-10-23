@@ -7,7 +7,6 @@ const QuickQuantityModal = ({
   onAdd,
   maxQuantity
 }) => {
-  console.log('QuickQuantityModal rendered with:', { product, maxQuantity });
   
   // Early return if product is null
   if (!product) {
@@ -67,7 +66,6 @@ const QuickQuantityModal = ({
   const variantUnit = firstVariant.unit || 'pcs';
   const variantPrice = firstVariant.unitPrice || firstVariant.price || 0;
 
-  console.log('Modal variant data:', { firstVariant, variantUnit, variantPrice });
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

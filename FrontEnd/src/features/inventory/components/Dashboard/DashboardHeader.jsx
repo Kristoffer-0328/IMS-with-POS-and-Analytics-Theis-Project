@@ -48,18 +48,16 @@ const DashboardHeader = () => {
 
   useEffect(() => {
     if (!currentUser?.role) {
-      console.log('No user role available, skipping notification fetch');
       return;
     }
 
     const userRole = currentUser.role;
-    console.log('Fetching notifications for user role:', userRole);
 
     // Query notifications collection - include all notification types
     const notificationsQuery = query(
       collection(db, 'Notifications'),
       where('status', '==', 'active'),
-      where('type', 'in', ['restock_alert', 'sale_completed', 'release_mobile_view', 'receiving_completed', 'release_completed', 'po_pending_approval', 'po_approved', 'po_rejected', 'draft_po_created']),
+      where('type', 'in', ['restocking_request', 'sale_completed', 'release_mobile_view', 'receiving_completed', 'release_completed', 'po_pending_approval', 'po_approved', 'po_rejected', 'draft_po_created']),
       orderBy('createdAt', 'desc')
     );
 
@@ -83,8 +81,6 @@ const DashboardHeader = () => {
           }
           return true;
         });
-
-        console.log(`Found ${allNotifications.length} total notifications, ${filteredNotifications.length} for role ${userRole}`);
 
         // Check for new notifications
         const newNotifications = filteredNotifications.filter(
@@ -124,26 +120,18 @@ const DashboardHeader = () => {
   // Add this function
   const handleNotificationClick = (notification) => {
     setShowNotifications(false); // Close the dropdown
-    console.log('Notification clicked:', notification);
     if (!currentUser) {
-      console.log('User not authenticated, showing alert.');
       alert('You must be logged in to view this page.');
       return;
     }
-    if (notification.type === 'restock_alert') {
-      console.log('Navigating to /im/restocking-request');
+    if (notification.type === 'restocking_request') {
       navigate('/im/restocking-request');
     } else if (notification.type === 'sale_completed' || notification.type === 'release_mobile_view' || notification.type === 'release_completed') {
-      console.log('Navigating to /im/inventory?tab=release');
       navigate('/im/inventory?tab=release');
     } else if (notification.type === 'receiving_completed') {
-      console.log('Navigating to /im/receiving');
       navigate('/im/receiving');
     } else if (notification.type === 'po_pending_approval' || notification.type === 'po_approved' || notification.type === 'po_rejected' || notification.type === 'draft_po_created') {
-      console.log('Navigating to /admin/purchase-orders');
       navigate('/admin/purchase-orders');
-    } else {
-      console.log('Notification type not handled:', notification.type);
     }
   };
 

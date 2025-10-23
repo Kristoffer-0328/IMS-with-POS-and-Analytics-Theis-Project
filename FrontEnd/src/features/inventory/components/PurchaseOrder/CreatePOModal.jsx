@@ -286,7 +286,6 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
           });
         }
 
-        console.log(`Updated ${restockRequestIds.length} restocking requests to processed status`);
       } catch (restockError) {
         console.error('Failed to update restocking requests:', restockError);
         // Don't fail the PO creation if restock request update fails

@@ -88,9 +88,6 @@ const ViewPOModal = ({ poId, onClose }) => {
 
   // Handle approval/rejection
   const handleApprovalAction = async (action) => {
-    console.log('🔄 handleApprovalAction called with action:', action);
-    console.log('👤 Current user:', currentUser);
-    console.log('📄 PO data:', poData);
     setProcessingAction(true);  
     try {
       setError(null);
@@ -135,13 +132,8 @@ const ViewPOModal = ({ poId, onClose }) => {
 
       // Generate notification for approval/rejection
       try {
-        console.log('🔔 About to generate notification for PO approval/rejection');
-        console.log('Generating PO', action, 'notification for:', poData.poNumber);
-        console.log('📊 PO Data dump:', JSON.stringify(poData, null, 2));
-        console.log('👤 Current User dump:', JSON.stringify(currentUser, null, 2));
         if (poData) {
           await generatePurchaseOrderNotification(poData, currentUser, action, approvalNotes);
-          console.log('PO', action, 'notification generated successfully');
         } else {
           console.error('No PO data available for notification');
         }
@@ -213,10 +205,8 @@ const ViewPOModal = ({ poId, onClose }) => {
       if (result.success) {
         // Generate notification immediately after successful submission
         try {
-          console.log('Generating PO submission notification for:', poData.poNumber);
           if (poData) {
             await generatePurchaseOrderNotification(poData, currentUser, 'submitted');
-            console.log('PO submission notification generated successfully');
           } else {
             console.error('No PO data available for notification');
           }

@@ -72,7 +72,6 @@ export const ServicesProvider = ({ children }) => {
           });
         }
 
-        console.log(`Fetched ${allProducts.length} products from ${storageUnitsSnapshot.docs.length} storage units`);
         
         setProducts(allProducts);
         if (onUpdate) onUpdate(allProducts);
@@ -92,7 +91,6 @@ export const ServicesProvider = ({ children }) => {
       collection(db, "Products"),
       (snapshot) => {
         if (!isFirstLoad) {
-          console.log('Products collection changed, refetching...');
           fetchAllProducts();
         }
         isFirstLoad = false;
@@ -104,7 +102,6 @@ export const ServicesProvider = ({ children }) => {
 
     // Return cleanup function
     return () => {
-      console.log('Unsubscribing from Products listener');
       unsubscribe();
     };
   }, []); // Empty dependency array since it doesn't depend on any external values
