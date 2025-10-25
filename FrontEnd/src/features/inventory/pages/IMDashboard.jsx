@@ -184,7 +184,7 @@ const IMDashboard = () => {
     <div className="">
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 mb-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-5">
         
         {/* Total Stock */}
         <div className="bg-white rounded-xl p-4 sm:p-5 shadow-sm border border-gray-100">
@@ -238,26 +238,10 @@ const IMDashboard = () => {
           </div>
         </div>
 
-        {/* Total Sales */}
-        <div className="bg-white rounded-xl p-4 sm:p-5 shadow-sm border border-gray-100">
-          <div className="flex justify-between items-center">
-            <div>
-              <p className="text-gray-500 text-xs sm:text-sm mb-1">Transfers</p>
-              <h3 className="text-xl sm:text-2xl font-bold text-gray-800">Ongoing</h3>
-              <div className="flex items-center text-red-500 text-xs mt-1">
-                <FiTrendingDown className="mr-1" />
-              </div>
-            </div>
-            <div className="bg-purple-50 p-2 sm:p-3 rounded-lg">
-              <FiRefreshCw className="text-purple-500" size={20} />
-            </div>
-          </div>
-        </div>
-
       </div>
 
       {/* Inventory Chart */}
-      <div className="bg-white rounded-xl shadow-sm mb-6 p-5s sm:p-4 border border-gray-100 h-[450px]">
+      <div className="bg-white rounded-xl shadow-sm mb-6 p-5s sm:p-4 border border-gray-100 h-[660px]">
         <div className="flex justify-between items-center mb-3">
           <h3 className="text-lg sm:text-xl text-gray-800 font-semibold">
             Glory Star Hardware
@@ -273,25 +257,7 @@ const IMDashboard = () => {
         <DashboardBarChart data={chartData} CustomTooltip={CustomTooltip} />
       </div>
 
-      {/* Inventory Turnover Chart */}
-      <div className="bg-white rounded-xl shadow-sm mb-6 p-4 sm:p-5 border border-gray-100 h-[450px]">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="text-lg sm:text-xl text-gray-800 font-semibold">
-            Inventory Turnover
-          </h3>
-          <button
-            onClick={() => setActiveModal('turnover')}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-            title="How to read this chart"
-          >
-            <FiInfo className="w-5 h-5 text-gray-500" />
-          </button>
-        </div>
-        <div className="h-[300px]">
-         <InventoryTrendChart />
-        </div>
-      </div>
-
+     
     
       {/* Info Modals */}
       <InfoModal

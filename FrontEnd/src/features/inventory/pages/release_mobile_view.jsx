@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
 import { useAuth } from '../../auth/services/FirebaseAuth';
+import { uploadImage } from '../../../services/cloudinary/CloudinaryService';
 import {
   FiPackage,
   FiCheckCircle,
@@ -1340,10 +1341,45 @@ const ReleaseMobileView = () => {
         return;
       }
 
+      // Upload photos to Cloudinary
+      setProcessingStep('Uploading photos...');
+      const productsWithPhotoUrls = await Promise.all(
+        products.map(async (product) => {
+          if (product.photo && product.status === 'released') {
+            try {
+              const uploadResult = await uploadImage(product.photo, (progress) => {
+                // Optional: Could show upload progress per photo
+              }, {
+                folder: `ims-releases/${releaseData.transactionId}`,
+                publicId: `${product.productId || product.id}_${Date.now()}`
+              });
+              
+              return {
+                ...product,
+                photoUrl: uploadResult.url,
+                photoPublicId: uploadResult.publicId
+              };
+            } catch (photoError) {
+              console.error(`Failed to upload photo for ${product.name}:`, photoError);
+              // Continue without photo rather than failing the entire release
+              return {
+                ...product,
+                photoUrl: null,
+                photoPublicId: null
+              };
+            }
+          }
+          return product;
+        })
+      );
+
+      // Update products array with photo URLs
+      setProducts(productsWithPhotoUrls);
+
       // Update inventory quantities (deduct released items)
 
       setProcessingStep('Updating inventory...');
-      await updateInventoryQuantities(products);
+      await updateInventoryQuantities(productsWithPhotoUrls);
 
       // Update the release transaction document
 
@@ -1361,7 +1397,7 @@ const ReleaseMobileView = () => {
           releaseDateTime: new Date(`${releaseDetails.releasedDate}T${releaseDetails.releasedTime}`),
           notes: releaseDetails.notes || ''
         },
-        releasedProducts: products.map(p => {
+        releasedProducts: productsWithPhotoUrls.map(p => {
           // Create a clean object without undefined values
           const cleanProduct = {
             id: p.id,
@@ -1374,7 +1410,8 @@ const ReleaseMobileView = () => {
             productName: p.productName || p.name,
             category: p.category || '',
             unitPrice: Number(p.unitPrice) || 0,
-            hasPhoto: !!p.photoPreview // Store flag instead of actual photo data
+            photoUrl: p.photoUrl || null,
+            photoPublicId: p.photoPublicId || null
           };
           
           // Only add optional fields if they have values
@@ -1404,7 +1441,7 @@ const ReleaseMobileView = () => {
         releasedBy: currentUser?.uid || 'unknown',
         releasedByName: releaseDetails.releasedBy,
         releaseDate: releaseTimestamp,
-        products: products.filter(p => p.status === 'released').map(p => {
+        products: productsWithPhotoUrls.filter(p => p.status === 'released').map(p => {
           const logProduct = {
             productId: p.productId || '',
             productName: p.name || '',
@@ -1414,7 +1451,8 @@ const ReleaseMobileView = () => {
             unitPrice: Number(p.unitPrice) || 0,
             totalValue: (Number(p.releasedQty) || 0) * (Number(p.unitPrice) || 0),
             category: p.category || '',
-            hasPhoto: !!p.photoPreview // Store flag instead of actual photo data
+            photoUrl: p.photoUrl || null,
+            photoPublicId: p.photoPublicId || null
           };
           
           // Add optional fields only if they exist
@@ -1439,7 +1477,7 @@ const ReleaseMobileView = () => {
 
       // Create individual stock movement entries for each released product
       setProcessingStep('Recording stock movements...');
-      const stockMovementPromises = products
+      const stockMovementPromises = productsWithPhotoUrls
         .filter(p => p.status === 'released' && Number(p.releasedQty) > 0)
         .map(async (product) => {
           const movementRef = doc(collection(db, 'stock_movements'));
@@ -1477,6 +1515,10 @@ const ReleaseMobileView = () => {
             remarks: product.remarks || '',
             status: 'completed',
             
+            // Photo Information
+            photoUrl: product.photoUrl || null,
+            photoPublicId: product.photoPublicId || null,
+            
             // Timestamps
             movementDate: releaseTimestamp,
             createdAt: serverTimestamp(),
@@ -1504,13 +1546,14 @@ const ReleaseMobileView = () => {
         releaseId,
         releasedByName: releaseDetails.releasedBy,
         totalValue: releaseData.totals?.total || 0,
-        releasedProducts: products.filter(p => p.status === 'released').map(p => ({
+        releasedProducts: productsWithPhotoUrls.filter(p => p.status === 'released').map(p => ({
           productName: p.name,
           variantName: p.variantName,
           quantity: p.releasedQty,
           unitPrice: p.unitPrice,
           totalValue: Number(p.releasedQty) * Number(p.unitPrice),
-          category: p.category
+          category: p.category,
+          photoUrl: p.photoUrl
         }))
       }, currentUser);
 

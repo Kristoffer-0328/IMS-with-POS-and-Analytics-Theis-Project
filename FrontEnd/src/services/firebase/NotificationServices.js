@@ -84,12 +84,20 @@ export const generatePurchaseOrderNotification = async (poData, currentUser, act
         itemCount: poData.items?.length || 0,
         deliveryDate: poData.deliveryDate,
         paymentTerms: poData.paymentTerms,
-        items: poData.items?.map(item => ({
-          productName: item.productName,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          total: item.total
-        })) || [],
+        // For approval notifications, only include essential item info to reduce document size
+        ...(action === 'approved' ? {
+          topItems: poData.items?.slice(0, 3).map(item => ({
+            productName: item.productName,
+            quantity: item.quantity
+          })) || []
+        } : {
+          items: poData.items?.map(item => ({
+            productName: item.productName,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            total: item.total
+          })) || []
+        }),
         ...(notes && { approvalNotes: notes }),
         action,
         actionTimestamp: serverTimestamp()

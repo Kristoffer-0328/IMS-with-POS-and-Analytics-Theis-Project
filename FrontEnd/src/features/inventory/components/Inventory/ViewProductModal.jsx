@@ -12,7 +12,7 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [imageUrl, setImageUrl] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'variants', 'additional'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'variants', 'supplier', 'additional'
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [selectedUnitForMap, setSelectedUnitForMap] = useState(null);
   const [variants, setVariants] = useState([]); // For flat structure variants
@@ -351,16 +351,130 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
     "categoryValues",
     "createdAt",
     "lastUpdated",
-    "restockLevel"
+    "restockLevel",
+    "storageLocation",
+    "shelfName",
+    "rowName",
+    "columnIndex",
+    "fullLocation",
+    "isVariant",
+    "variantName",
+    "parentProductId",
+    "locations",
+    "quantity",
+    "unitPrice",
+    "price",
+    "unit",
+    "maximumStockLevel",
+    // Supplier fields (expanded)
+    "supplierId",
+    "supplierName",
+    "supplierContact",
+    "supplierEmail",
+    "supplierPhone",
+    "supplierAddress",
+    "supplierContactPerson",
+    "supplierWebsite",
+    "supplierNotes",
+    "supplier",
+    "suppliers",
+    "supplierInfo",
+    "supplierDetails",
+    "vendor",
+    "vendors",
+    "vendorInfo",
+    "manufacturer",
+    "manufacturers"
   ];
 
   const additionalFields = Object.entries(product).filter(
-    ([key, value]) => 
-      !standardKeys.includes(key) && 
-      typeof value !== 'function' && 
-      key !== 'ref' &&
-      key !== 'key'
+    ([key, value]) => {
+      // Exclude supplier-related fields using the same logic as supplierFields
+      const keyLower = key.toLowerCase();
+      const isSupplierRelated = 
+        keyLower.includes('supplier') || 
+        keyLower.includes('vendor') || 
+        keyLower.includes('manufacturer') ||
+        ["supplierId", "supplierName", "supplierContact", "supplierEmail", "supplierPhone", "supplierAddress", "supplierContactPerson", "supplierWebsite", "supplierNotes"].includes(key);
+      
+      return !standardKeys.includes(key) && 
+        !isSupplierRelated &&
+        typeof value !== 'function' && 
+        key !== 'ref' &&
+        key !== 'key' &&
+        value !== null &&
+        value !== undefined &&
+        value !== '' &&
+        !(Array.isArray(value) && value.length === 0) &&
+        !(typeof value === 'object' && Object.keys(value).length === 0);
+    }
   );
+
+  // Filter supplier-related fields (expanded to catch more patterns)
+  const supplierFields = Object.entries(product).filter(
+    ([key, value]) => {
+      const keyLower = key.toLowerCase();
+      const isSupplierRelated = 
+        keyLower.includes('supplier') || 
+        keyLower.includes('vendor') || 
+        keyLower.includes('manufacturer') ||
+        ["supplierId", "supplierName", "supplierContact", "supplierEmail", "supplierPhone", "supplierAddress", "supplierContactPerson", "supplierWebsite", "supplierNotes"].includes(key);
+      
+      return isSupplierRelated &&
+        value !== null &&
+        value !== undefined &&
+        value !== '' &&
+        !(Array.isArray(value) && value.length === 0) &&
+        !(typeof value === 'object' && Object.keys(value).length === 0);
+    }
+  );
+
+  // Helper function to format values nicely
+  const formatValue = (value) => {
+    if (value === null || value === undefined) return "N/A";
+    
+    if (typeof value === 'boolean') {
+      return value ? "Yes" : "No";
+    }
+    
+    if (typeof value === 'number') {
+      return value.toLocaleString();
+    }
+    
+    if (typeof value === 'string') {
+      // Check if it's a timestamp
+      if (value.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/) || value.match(/^\d{13}$/)) {
+        return formatDate(value);
+      }
+      return value;
+    }
+    
+    if (Array.isArray(value)) {
+      if (value.length === 0) return "None";
+      if (value.length === 1) return formatValue(value[0]);
+      return `${value.length} items`;
+    }
+    
+    if (typeof value === 'object') {
+      // Handle specific object types
+      if (value.latitude && value.longitude) {
+        return `Lat: ${value.latitude}, Lng: ${value.longitude}`;
+      }
+      
+      if (value.width && value.height) {
+        return `${value.width} × ${value.height}`;
+      }
+      
+      // For other objects, show key-value pairs
+      const entries = Object.entries(value).filter(([k, v]) => v !== null && v !== undefined && v !== '');
+      if (entries.length === 0) return "N/A";
+      if (entries.length === 1) return `${entries[0][0]}: ${formatValue(entries[0][1])}`;
+      
+      return entries.map(([k, v]) => `${k.replace(/([A-Z])/g, ' $1').toLowerCase()}: ${formatValue(v)}`).join(', ');
+    }
+    
+    return String(value);
+  };
 
   // Get unit configuration for ShelfViewModal - using centralized config
   const getUnitConfig = (storageLocation) => {
@@ -623,6 +737,19 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
                   Variants ({loadingVariants ? '...' : variants.length})
                 </div>
               </button>
+              <button
+                onClick={() => setActiveTab('supplier')}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'supplier'
+                    ? (product.isVariant ? 'border-purple-500 text-purple-600' : 'border-orange-500 text-orange-600')
+                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <FiPackage size={16} />
+                  Supplier
+                </div>
+              </button>
               {additionalFields.length > 0 && (
                 <button
                   onClick={() => setActiveTab('additional')}
@@ -817,6 +944,75 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
               </div>
             )}
 
+            {/* Supplier Tab */}
+            {activeTab === 'supplier' && (
+              <div className="space-y-4">
+                {supplierFields.length > 0 ? (
+                  supplierFields.map(([key, value]) => (
+                    <div key={key} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                      <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                        <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2 capitalize">
+                          <FiPackage size={16} />
+                          {key.replace(/([A-Z])/g, ' $1').replace(/^(supplier|vendor|manufacturer)/i, '').trim() || 'Supplier Information'}
+                        </h4>
+                      </div>
+                      <div className="p-4">
+                        {Array.isArray(value) ? (
+                          // Handle array of suppliers
+                          <div className="space-y-3">
+                            {value.map((supplier, index) => (
+                              <div key={index} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                <div className="text-xs font-semibold text-gray-700 mb-2">
+                                  Supplier {index + 1}
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                  {Object.entries(supplier).map(([supplierKey, supplierValue]) => (
+                                    <div key={supplierKey}>
+                                      <div className="text-xs text-gray-500 mb-1 capitalize">
+                                        {supplierKey.replace(/([A-Z])/g, ' $1').trim()}
+                                      </div>
+                                      <div className="text-sm font-medium text-gray-900 break-words">
+                                        {formatValue(supplierValue)}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : typeof value === 'object' && value !== null ? (
+                          // Handle single supplier object
+                          <div className="grid grid-cols-2 gap-4">
+                            {Object.entries(value).map(([supplierKey, supplierValue]) => (
+                              <div key={supplierKey} className="pb-3 border-b border-gray-100 last:border-0">
+                                <div className="text-xs text-gray-500 mb-1 capitalize">
+                                  {supplierKey.replace(/([A-Z])/g, ' $1').trim()}
+                                </div>
+                                <div className="text-sm font-medium text-gray-900 break-words">
+                                  {formatValue(supplierValue)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          // Handle simple supplier field
+                          <div className="text-sm font-medium text-gray-900 break-words">
+                            {formatValue(value)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <FiPackage className="mx-auto mb-2" size={32} />
+                    <p>No supplier information available</p>
+                    <p className="text-xs mt-1">Supplier details will appear here when available</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Additional Info Tab */}
             {activeTab === 'additional' && (
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -832,7 +1028,7 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
                             {key.replace(/([A-Z])/g, ' $1').trim()}
                           </div>
                           <div className="text-sm font-medium text-gray-900 break-words">
-                            {value === null ? "N/A" : typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                            {formatValue(value)}
                           </div>
                         </div>
                       ))}

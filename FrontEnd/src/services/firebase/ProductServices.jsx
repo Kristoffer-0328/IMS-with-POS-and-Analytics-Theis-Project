@@ -324,6 +324,26 @@ export const useServices = () => {
     linkProductToSupplier,
     unlinkProductFromSupplier,
     updateSupplierProductDetails,
-    getSupplierProducts
+    getSupplierProducts,
+    listenToSupplierProducts: useCallback((supplierId, onUpdate) => {
+      if (!supplierId) return () => {};
+      
+      const supplierProductsRef = collection(db, 'supplier_products', supplierId, 'products');
+      const unsubscribe = onSnapshot(
+        supplierProductsRef,
+        (snapshot) => {
+          const products = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          if (onUpdate) onUpdate(products);
+        },
+        (error) => {
+          console.error('Error listening to supplier products:', error);
+        }
+      );
+      
+      return unsubscribe;
+    }, [])
   };
 };

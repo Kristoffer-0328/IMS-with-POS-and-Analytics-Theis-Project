@@ -9,12 +9,13 @@ import {
   Area,
   AreaChart,
 } from 'recharts';
-import { FiDownload, FiPrinter, FiLoader, FiFileText, FiX, FiInfo, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { FiDownload, FiPrinter, FiLoader, FiFileText, FiX, FiInfo, FiChevronLeft, FiChevronRight, FiDatabase } from 'react-icons/fi';
 import { X, Printer, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { AiOutlineFilePdf } from 'react-icons/ai';
 import { ReportingService } from '../../../../services/firebase/ReportingService';
 import jsPDF from 'jspdf';
 import InfoModal from '../Dashboard/InfoModal';
+import { AnalyticsService } from '../../../../services/firebase/AnalyticsService';
 
 function InventoryTurnoverReport({
   yearFilter,
@@ -42,6 +43,17 @@ function InventoryTurnoverReport({
     const today = new Date();
     return today.toISOString().split('T')[0];
   });
+
+  // Add chart update key to force re-render
+  const [chartUpdateKey, setChartUpdateKey] = useState(0);
+
+  // Helper function to determine granularity based on date range
+  const getGranularity = (start, end) => {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const daysDiff = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+    return daysDiff <= 31 ? 'weekly' : 'monthly';
+  };
 
   // Helper function to get status based on turnover rate
   const getProductStatus = (turnoverRate) => {
@@ -390,20 +402,60 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       console.error('Error generating report:', error);
       alert('An error occurred while generating the report. Please check the console for details.');
     }
-  };  // Function to download as PDF
-
+  };  // Function to generate test data for demonstration
+  const handleGenerateTestData = async () => {
+    try {
+      setLoading(true);
+      console.log('Generating test analytics data...');
+      
+      // Generate test inventory snapshots
+      const inventorySnapshots = await AnalyticsService.createTestInventorySnapshots();
+      console.log('Created inventory snapshots:', inventorySnapshots);
+      
+      // Generate test sales aggregations
+      const salesAggregations = await AnalyticsService.createTestSalesAggregations();
+      console.log('Created sales aggregations:', salesAggregations);
+      
+      alert('Test data generated successfully! You can now view the inventory turnover report.');
+      
+      // Refresh the data
+      const granularity = getGranularity(startDate, endDate);
+      const result = await ReportingService.getInventoryTurnover(
+        startDate,
+        endDate,
+        granularity
+      );
+      console.log('Refreshed data after test generation:', result);
+      setData(result);
+      // Force chart re-render
+      setChartUpdateKey(prev => prev + 1);
+      
+    } catch (error) {
+      console.error('Error generating test data:', error);
+      alert('Error generating test data: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
         setError(null);
         
+        console.log('Fetching turnover data for:', { startDate, endDate });
+        
+        const granularity = getGranularity(startDate, endDate);
+        
         const result = await ReportingService.getInventoryTurnover(
           startDate,
-          endDate
+          endDate,
+          granularity
         );
-
+        
         setData(result);
+        // Force chart re-render by updating the key
+        setChartUpdateKey(prev => prev + 1);
       } catch (err) {
         console.error('Error fetching turnover data:', err);
         setError('Failed to load report data. Please try again.');
@@ -427,9 +479,11 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
   // Custom tooltip for the chart
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
+      const granularity = data?.granularity || 'monthly';
+      const periodType = granularity === 'weekly' ? 'Week' : 'Month';
       return (
         <div className="bg-white p-3 shadow-lg rounded-lg border border-gray-100">
-          <p className="font-medium text-sm">{label}</p>
+          <p className="font-medium text-sm">{periodType}: {label}</p>
           <p className="text-sm text-blue-600">
             <span className="font-semibold">{payload[0].value.toFixed(2)}</span>
             x turnover rate
@@ -452,6 +506,11 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
             <li><span className="font-medium">Good (2-3x):</span> Healthy inventory movement</li>
             <li><span className="font-medium">Moderate (1-2x):</span> Room for improvement</li>
             <li><span className="font-medium">&lt;1x:</span> Potential overstocking issues</li>
+          </ul>
+          <p>The chart automatically adjusts its granularity based on your selected date range:</p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li><span className="font-medium">Short periods (≤31 days):</span> Shows weekly data points</li>
+            <li><span className="font-medium">Long periods (&gt;31 days):</span> Shows monthly data points</li>
           </ul>
           <p>The orange reference line at 3x marks the threshold for excellent performance.</p>
         </div>
@@ -648,6 +707,13 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       {/* Generate Report Button */}
       <div className="flex justify-end gap-3 mb-6">
         <button 
+          onClick={handleGenerateTestData}
+          className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors flex items-center gap-2"
+        >
+          <FiDatabase size={16} />
+          <span>Generate Test Data</span>
+        </button>
+        <button 
           onClick={handleGenerateReport}
           className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
         >
@@ -659,7 +725,9 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       {/* Chart with Info Button */}
       <div className="bg-white rounded-lg shadow-sm mb-6 p-6 border border-gray-100">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-gray-800 font-semibold">Inventory Turnover</h3>
+          <h3 className="text-gray-800 font-semibold">
+            Inventory Turnover {data?.granularity === 'weekly' ? '(Weekly)' : '(Monthly)'}
+          </h3>
           <button
             onClick={() => setActiveInfoModal('turnoverRate')}
             className="p-1 hover:bg-gray-100 rounded-full transition-colors"
@@ -672,6 +740,7 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
+              key={`${startDate}-${endDate}-${chartUpdateKey}`} // Force re-render when date range or data changes
               data={data.chartData}
               margin={{ top: 20, right: 20, left: 10, bottom: 20 }}>
               <defs>
@@ -690,6 +759,25 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
                 axisLine={false}
                 tickLine={false}
                 tick={{ fill: '#888', fontSize: 11 }}
+                tickFormatter={tick => {
+                  // Format '20251001' as 'Oct 01' for weekly, 'Oct' or 'Oct 2025' for monthly
+                  if (!tick) return '';
+                  if (data?.granularity === 'weekly') {
+                    // Show 'Oct 01' (month short + day)
+                    const year = tick.slice(0, 4);
+                    const month = tick.slice(4, 6);
+                    const day = tick.slice(6, 8);
+                    const date = new Date(`${year}-${month}-${day}`);
+                    return date.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+                  } else if (data?.granularity === 'monthly') {
+                    // Show 'Oct 2025'
+                    const year = tick.slice(0, 4);
+                    const month = tick.slice(4, 6);
+                    const date = new Date(`${year}-${month}-01`);
+                    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                  }
+                  return tick;
+                }}
               />
               <YAxis
                 axisLine={false}

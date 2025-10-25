@@ -80,12 +80,12 @@ export const AnalyticsService = {
       const startOfDay = moment(date).startOf('day').toDate();
       const endOfDay = moment(date).endOf('day').toDate();
 
-      // Get transactions for the specified day
-      const transactionsRef = collection(db, 'Transactions');
+      // Get transactions for the specified day - use posTransactions collection
+      const transactionsRef = collection(db, 'posTransactions');
       const q = query(
         transactionsRef,
-        where('timestamp', '>=', startOfDay),
-        where('timestamp', '<=', endOfDay)
+        where('createdAt', '>=', startOfDay),
+        where('createdAt', '<=', endOfDay)
       );
       const transactionsSnapshot = await getDocs(q);
 
@@ -185,80 +185,104 @@ export const AnalyticsService = {
   // Test function to create sample inventory snapshots
   async createTestInventorySnapshots() {
     try {
-      const testData = [
-        {
-          date: '20240101',  // January
-          totalValue: 50000,
-          totalQuantity: 100,
+      // Hardcoded for October 2025 for demo
+      const year = 2025;
+      const month = 9; // October (0-based)
+      const testData = [];
+      // Create 5 weekly snapshots for October 2025
+      const days = [1, 8, 15, 22, 29];
+      for (let i = 0; i < days.length; i++) {
+        const date = new Date(year, month, days[i]);
+        const dateId = formatDate(date);
+        testData.push({
+          date: dateId,
+          totalValue: 40000 + (i * 8000),
+          totalQuantity: 80 + (i * 15),
           products: {
             'test-product-1': {
-              name: 'Test Product 1',
-              category: 'Test Category',
-              quantity: 50,
-              value: 25000
+              name: 'Cement 40kg',
+              category: 'Construction Materials',
+              quantity: 40 + (i * 10),
+              value: 20000 + (i * 4000)
             },
             'test-product-2': {
-              name: 'Test Product 2',
-              category: 'Test Category',
-              quantity: 50,
-              value: 25000
+              name: 'Steel Rebar 12mm',
+              category: 'Steel Products',
+              quantity: 40 + (i * 10),
+              value: 20000 + (i * 4000)
             }
           }
-        },
-        {
-          date: '20240201',  // February
-          totalValue: 60000,
-          totalQuantity: 120,
-          products: {
-            'test-product-1': {
-              name: 'Test Product 1',
-              category: 'Test Category',
-              quantity: 60,
-              value: 30000
-            },
-            'test-product-2': {
-              name: 'Test Product 2',
-              category: 'Test Category',
-              quantity: 60,
-              value: 30000
-            }
-          }
-        },
-        {
-          date: '20240301',  // March
-          totalValue: 75000,
-          totalQuantity: 150,
-          products: {
-            'test-product-1': {
-              name: 'Test Product 1',
-              category: 'Test Category',
-              quantity: 75,
-              value: 37500
-            },
-            'test-product-2': {
-              name: 'Test Product 2',
-              category: 'Test Category',
-              quantity: 75,
-              value: 37500
-            }
-          }
-        }
-      ];
-
+        });
+      }
       // Save each snapshot
       for (const snapshot of testData) {
         await setDoc(doc(db, 'inventory_snapshots', snapshot.date), {
           ...snapshot,
-          date: snapshot.date,  // Add date field for querying
+          date: snapshot.date,
           timestamp: serverTimestamp(),
           snapshot_type: 'daily'
         });
-
       }
-
       return testData;
     } catch (error) {
       console.error('Error creating test inventory snapshots:', error);
+      throw error;
+    }
+  },
+
+  // Create test sales aggregation data
+  async createTestSalesAggregations() {
+    try {
+      // Hardcoded for October 2025 for demo
+      const year = 2025;
+      const month = 9; // October (0-based)
+      const testSalesData = [];
+      // Create 5 weekly sales for October 2025
+      const days = [1, 8, 15, 22, 29];
+      for (let i = 0; i < days.length; i++) {
+        const date = new Date(year, month, days[i]);
+        const dateId = formatDate(date);
+        testSalesData.push({
+          date: dateId,
+          total_sales: 12000 + (i * 3000),
+          total_quantity: 30 + (i * 8),
+          products_sold: {
+            'test-product-1': {
+              name: 'Cement 40kg',
+              category: 'Construction Materials',
+              quantity_sold: 10 + (i * 3),
+              total_value: 6000 + (i * 1500),
+              variants: [{
+                variantId: 'variant-1',
+                quantity_sold: 10 + (i * 3),
+                total_value: 6000 + (i * 1500)
+              }]
+            },
+            'test-product-2': {
+              name: 'Steel Rebar 12mm',
+              category: 'Steel Products',
+              quantity_sold: 20 + (i * 5),
+              total_value: 6000 + (i * 1500),
+              variants: [{
+                variantId: 'variant-2',
+                quantity_sold: 20 + (i * 5),
+                total_value: 6000 + (i * 1500)
+              }]
+            }
+          }
+        });
+      }
+      // Save each sales aggregation
+      for (const salesData of testSalesData) {
+        await setDoc(doc(db, 'sales_aggregates', salesData.date), {
+          ...salesData,
+          date: salesData.date,
+          timestamp: serverTimestamp()
+        });
+      }
+      return testSalesData;
+    } catch (error) {
+      console.error('Error creating test sales aggregations:', error);
       throw error;
     }
   },

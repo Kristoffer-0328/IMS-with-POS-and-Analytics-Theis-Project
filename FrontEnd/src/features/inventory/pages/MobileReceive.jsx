@@ -82,7 +82,8 @@ const MobileReceive = () => {
     invoiceNumber: '',
     poNumber: '',
     supplierName: '',
-    deliveryDateTime: '',
+    deliveryDate: '',
+    deliveryTime: '',
     driverName: '',
     truckNumber: '',
     receivedBy: '',
@@ -465,7 +466,13 @@ const MobileReceive = () => {
   const validateDeliveryInfo = () => {
     let newErrors = {};
     if (!deliveryData.driverName) newErrors.driverName = 'Driver Name is required';
-    if (!deliveryData.deliveryDateTime) newErrors.deliveryDateTime = 'Delivery Date & Time is required';
+    // Validate delivery date and time
+    if (!deliveryData.deliveryDate) {
+      newErrors.deliveryDate = 'Delivery Date is required';
+    }
+    if (!deliveryData.deliveryTime) {
+      newErrors.deliveryTime = 'Delivery Time is required';
+    }
     if (!deliveryData.receivedBy) newErrors.receivedBy = 'Received By is required';
 
     setErrors(newErrors);
@@ -808,7 +815,7 @@ const MobileReceive = () => {
               const uploadResult = await uploadImage(product.photo, (progress) => {
               }, {
                 folder: 'receiving-photos',
-                publicId: `receiving-${poId}-${product.productId}-${Date.now()}`
+                publicId: `receiving-${poId}-${product.id}-${Date.now()}`
               });
               
               return {
@@ -865,18 +872,18 @@ const MobileReceive = () => {
       // Validate and parse delivery date/time
       let deliveryDateTime;
       try {
-        if (updatedDeliveryData.deliveryDateTime && updatedDeliveryData.deliveryDateTime.includes('T')) {
-          deliveryDateTime = new Date(updatedDeliveryData.deliveryDateTime);
+        if (updatedDeliveryData.deliveryDate && updatedDeliveryData.deliveryTime) {
+          deliveryDateTime = new Date(`${updatedDeliveryData.deliveryDate}T${updatedDeliveryData.deliveryTime}`);
           // Check if the date is valid
           if (isNaN(deliveryDateTime.getTime())) {
             throw new Error('Invalid date format');
           }
         } else {
-          // Use current timestamp if date is invalid
+          // Use current timestamp if date/time is incomplete
           deliveryDateTime = new Date();
         }
       } catch (error) {
-        console.warn('Invalid delivery date/time, using current timestamp:', updatedDeliveryData.deliveryDateTime);
+        console.warn('Invalid delivery date/time, using current timestamp:', updatedDeliveryData.deliveryDate, updatedDeliveryData.deliveryTime);
         deliveryDateTime = new Date();
       }
       
@@ -1030,16 +1037,14 @@ const MobileReceive = () => {
         deliveryDetails: {
           drNumber: updatedDeliveryData.drNumber,
           driverName: updatedDeliveryData.driverName,
-          deliveryDateTime: updatedDeliveryData.deliveryDateTime,
+          deliveryDate: updatedDeliveryData.deliveryDate,
+          deliveryTime: updatedDeliveryData.deliveryTime,
           receivedBy: updatedDeliveryData.receivedBy
         },
         productsReceived: receivedItems,
         totalProducts: updatedDeliveryData.products.length,
         timestamp: new Date().toISOString()
       });
-      
-      // Generate notification for successful receiving
-      await generateReceivingNotification(receivingTransactionData, currentUser);
       
       setIsCompleted(true);
       
@@ -1116,8 +1121,8 @@ const MobileReceive = () => {
                   <span className="font-medium">{completionData.deliveryDetails?.driverName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Products Received:</span>
-                  <span className="font-medium">{completionData.productsReceived?.length} of {completionData.totalProducts}</span>
+                  <span className="text-gray-600">Delivery Date & Time:</span>
+                  <span className="font-medium">{completionData.deliveryDetails?.deliveryDate} {completionData.deliveryDetails?.deliveryTime}</span>
                 </div>
               </div>
             </div>
@@ -1176,7 +1181,8 @@ const MobileReceive = () => {
                   invoiceNumber: '',
                   poNumber: '',
                   supplierName: '',
-                  deliveryDateTime: '',
+                  deliveryDate: '',
+                  deliveryTime: '',
                   driverName: '',
                   truckNumber: '',
                   receivedBy: '',
@@ -1689,8 +1695,8 @@ const MobileReceive = () => {
                     <input
                       type="date"
                       name="deliveryDate"
-                      value={deliveryData.deliveryDateTime.split('T')[0]}
-                      onChange={(e) => setDeliveryData(prev => ({ ...prev, deliveryDateTime: e.target.value + 'T' + (prev.deliveryDateTime.split('T')[1] || '00:00') }))}
+                      value={deliveryData.deliveryDate}
+                      onChange={(e) => setDeliveryData(prev => ({ ...prev, deliveryDate: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                     />
                   </div>
@@ -1701,13 +1707,14 @@ const MobileReceive = () => {
                     <input
                       type="time"
                       name="deliveryTime"
-                      value={deliveryData.deliveryDateTime.split('T')[1] || ''}
-                      onChange={(e) => setDeliveryData(prev => ({ ...prev, deliveryDateTime: (prev.deliveryDateTime.split('T')[0] || '') + 'T' + e.target.value }))}
+                      value={deliveryData.deliveryTime}
+                      onChange={(e) => setDeliveryData(prev => ({ ...prev, deliveryTime: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                     />
                   </div>
                 </div>
-                {errors.deliveryDateTime && <p className="text-red-500 text-xs mt-1">{errors.deliveryDateTime}</p>}
+                {errors.deliveryDate && <p className="text-red-500 text-xs mt-1">{errors.deliveryDate}</p>}
+                {errors.deliveryTime && <p className="text-red-500 text-xs mt-1">{errors.deliveryTime}</p>}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1798,7 +1805,7 @@ const MobileReceive = () => {
                 </div>
                 <div className="flex justify-between py-2 border-b border-gray-100">
                   <span className="text-gray-600">Delivery Date & Time:</span>
-                  <span className="font-medium text-gray-900">{deliveryData.deliveryDateTime || '—'}</span>
+                  <span className="font-medium text-gray-900">{deliveryData.deliveryDate} {deliveryData.deliveryTime}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-gray-100">
                   <span className="text-gray-600">Received By:</span>

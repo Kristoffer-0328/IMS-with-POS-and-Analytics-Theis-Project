@@ -60,9 +60,9 @@ export const uploadImage = async (file, onProgress = null, options = {}) => {
         }
 
         // Validate file type
-        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-        if (!allowedTypes.includes(file.type)) {
-            throw new Error(`Invalid file type: ${file.type}. Allowed types: ${allowedTypes.join(', ')}`);
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif'];
+        if (!allowedTypes.includes(file.type) && !file.name?.toLowerCase().match(/\.(heic|heif|heics|heifs)$/)) {
+            throw new Error(`Invalid file type: ${file.type}. Allowed types: JPEG, PNG, GIF, WebP, HEIC, HEIF`);
         }
 
         // Validate file size (max 10MB)
@@ -85,12 +85,16 @@ export const uploadImage = async (file, onProgress = null, options = {}) => {
         
         formData.append('folder', sanitizedFolder);
         
-        // Debug logging
-        
-        
-        // Add optional parameters
+        // Sanitize public_id if provided
         if (options.publicId) {
-            formData.append('public_id', options.publicId);
+            const sanitizedPublicId = options.publicId
+                .replace(/[&\s]+/g, '-')  // Replace spaces and & with hyphens
+                .replace(/[^a-zA-Z0-9\-_]/g, '')  // Remove other special chars except hyphens and underscores
+                .replace(/--+/g, '-')  // Replace multiple hyphens with single
+                .replace(/^-|-$/g, '')  // Remove leading/trailing hyphens
+                .toLowerCase();  // Convert to lowercase for consistency
+            
+            formData.append('public_id', sanitizedPublicId);
         }
         if (options.tags && Array.isArray(options.tags)) {
             formData.append('tags', options.tags.join(','));
