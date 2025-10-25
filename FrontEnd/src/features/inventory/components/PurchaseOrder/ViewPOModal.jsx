@@ -130,16 +130,13 @@ const ViewPOModal = ({ poId, onClose }) => {
           }
         }
 
-      // Generate notification for approval/rejection
-      try {
-        if (poData) {
-          await generatePurchaseOrderNotification(poData, currentUser, action, approvalNotes);
-        } else {
-          console.error('No PO data available for notification');
-        }
-      } catch (notificationError) {
-        console.error('Failed to generate PO', action, 'notification:', notificationError);
-        // Don't fail the approval process if notification fails
+      // Generate notification asynchronously (fire-and-forget)
+      if (poData) {
+        generatePurchaseOrderNotification(poData, currentUser, action, approvalNotes)
+          .catch(notificationError => {
+            console.error('Failed to generate PO', action, 'notification:', notificationError);
+            // Don't show error to user - notification failure shouldn't block approval
+          });
       }        onClose();
       } else {
         throw new Error(result.error || 'Failed to process approval');
@@ -203,16 +200,15 @@ const ViewPOModal = ({ poId, onClose }) => {
       setError(null);
       const result = await poServices.submitPOForApproval(poId);
       if (result.success) {
-        // Generate notification immediately after successful submission
-        try {
-          if (poData) {
-            await generatePurchaseOrderNotification(poData, currentUser, 'submitted');
-          } else {
-            console.error('No PO data available for notification');
-          }
-        } catch (notificationError) {
-          console.error('Failed to generate PO submission notification:', notificationError);
-          // Don't fail the approval process if notification fails
+        // Generate notification asynchronously (fire-and-forget)
+        if (poData) {
+          generatePurchaseOrderNotification(poData, currentUser, 'submitted')
+            .catch(notificationError => {
+              console.error('Failed to generate PO submission notification:', notificationError);
+              // Don't fail the approval process if notification fails
+            });
+        } else {
+          console.error('No PO data available for notification');
         }
 
         // Reset loading state immediately after successful submission

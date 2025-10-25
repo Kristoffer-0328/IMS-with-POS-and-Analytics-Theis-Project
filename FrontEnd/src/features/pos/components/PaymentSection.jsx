@@ -41,7 +41,7 @@ const PaymentSection = ({
   
   // For digital payments (GCash, Online Banking), require reference number
   const needsReference = (paymentMethod === 'GCash' || paymentMethod === 'Online Banking');
-  const hasValidReference = true; // No longer requiring reference
+  const hasValidReference = !needsReference || (paymentReference && paymentReference.trim().length > 0);
   
   // Since this is always an invoice (walk-in) page, always require payment validation
   const canComplete = hasProducts && !isProcessing && Number(amountPaid) >= total && hasValidReference;
@@ -98,6 +98,24 @@ const PaymentSection = ({
         </div>
       </div>
 
+      {/* Transaction Reference - Show for digital payments */}
+      {needsReference && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-gray-700">Transaction Reference</h3>
+          <input
+            type="text"
+            value={paymentReference}
+            onChange={handleReferenceChange}
+            disabled={isProcessing}
+            placeholder="Transaction Reference # "
+            className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+          />
+          <p className="text-xs text-gray-500">
+            Enter the reference number from your {paymentMethod} transaction
+          </p>
+        </div>
+      )}
+
       {/* Amount Paid - Always show for invoice transactions */}
       <div className="space-y-3">
         <h3 className="text-sm font-semibold text-gray-700">Amount Paid</h3>
@@ -149,6 +167,8 @@ const PaymentSection = ({
           'No Products Added'
         ) : insufficientAmount ? (
           'Insufficient Amount'
+        ) : needsReference && !hasValidReference ? (
+          'Enter Transaction Reference'
         ) : (
           checkoutButtonText
         )}

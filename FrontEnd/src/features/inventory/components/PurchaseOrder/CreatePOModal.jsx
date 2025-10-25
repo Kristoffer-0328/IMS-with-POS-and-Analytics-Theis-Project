@@ -252,21 +252,19 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
       }
 
       // Generate notification for PO creation
-      try {
-        // Use the PO data that was just created, but add the generated fields
-        const notificationData = {
-          ...poData,
-          id: result.id,
-          poNumber: result.poNumber,
-          status: 'draft'
-        };
-        await generatePurchaseOrderNotification(notificationData, currentUser, 'created');
-      } catch (notificationError) {
-        console.error('Failed to generate PO creation notification:', notificationError);
-        // Don't fail the PO creation if notification fails
-      }
-
-      // Update restocking requests to mark them as processed
+      // Use the PO data that was just created, but add the generated fields
+      const notificationData = {
+        ...poData,
+        id: result.id,
+        poNumber: result.poNumber,
+        status: 'draft'
+      };
+      // Generate notification asynchronously (fire-and-forget)
+      generatePurchaseOrderNotification(notificationData, currentUser, 'created')
+        .catch(notificationError => {
+          console.error('Failed to generate PO creation notification:', notificationError);
+          // Don't fail the PO creation if notification fails
+        });
       try {
         const restockRequestsRef = collection(db, 'RestockingRequests');
         

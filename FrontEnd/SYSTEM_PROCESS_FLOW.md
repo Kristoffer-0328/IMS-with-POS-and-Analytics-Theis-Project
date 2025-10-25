@@ -359,7 +359,360 @@ This document outlines the complete end-to-end business process flow in the IMS 
 
 ---
 
-## 📋 Detailed Process Breakdown
+## 🎯 **COMPLETE ACTIVITY LIST FOR GANTT CHART**
+
+### **PHASE 1: Customer Transaction Flow**
+
+#### **1.1 Quotation Creation (POS Cashier)**
+- **1.1.1** Click "Create Quotation" button *(5 min)*
+- **1.1.2** Search and add products *(10 min)*
+- **1.1.3** Set quantities for each item *(5 min)*
+- **1.1.4** System calculates totals (subtotal, VAT, discount) *(auto)*
+- **1.1.5** Save quotation with customer details *(5 min)*
+- **1.1.6** Generate quotation number (QT-YYYY-XXXX) *(auto)*
+- **1.1.7** Print quotation for customer *(5 min)*
+
+#### **1.2 Invoice Generation (POS Cashier)**
+- **1.2.1** Locate saved quotation *(5 min)*
+- **1.2.2** Click "Convert to Invoice" *(2 min)*
+- **1.2.3** Review items and amounts *(5 min)*
+- **1.2.4** Select payment method (Cash/Card) *(2 min)*
+- **1.2.5** Process payment *(3 min)*
+- **1.2.6** Generate invoice number (INV-YYYY-XXXX) *(auto)*
+- **1.2.7** Update quotation status to "converted" *(auto)*
+- **1.2.8** Print invoice and receipt *(5 min)*
+
+#### **1.3 Product Release (Factory Staff)**
+- **1.3.1** View pending invoices list *(5 min)*
+- **1.3.2** Select invoice to process *(2 min)*
+- **1.3.3** Switch to mobile-optimized view *(2 min)*
+- **1.3.4** For each product: Scan barcode/search *(10 min)*
+- **1.3.5** Verify product details *(5 min)*
+- **1.3.6** Select storage location (shelf/row/column) *(5 min)*
+- **1.3.7** Enter quantity to release *(3 min)*
+- **1.3.8** Confirm stock availability *(auto)*
+- **1.3.9** System validates stock levels *(auto)*
+- **1.3.10** Deduct quantities from inventory *(auto)*
+- **1.3.11** Generate release summary *(5 min)*
+- **1.3.12** Customer signs for receipt *(3 min)*
+- **1.3.13** Update invoice status to "completed" *(auto)*
+
+---
+
+### **PHASE 2: Inventory Replenishment Flow**
+
+#### **2.1 Automatic Restock Request (System)**
+- **2.1.1** System monitors inventory levels continuously *(ongoing)*
+- **2.1.2** Detect when product quantity ≤ minStock *(auto)*
+- **2.1.3** Calculate recommended restock quantity *(auto)*
+- **2.1.4** Create restock request automatically *(auto)*
+- **2.1.5** Notify Inventory Manager *(auto)*
+- **2.1.6** Set status to "Pending" *(auto)*
+
+#### **2.2 Purchase Order Creation (Inventory Manager)**
+- **2.2.1** Navigate to Purchase Orders page *(2 min)*
+- **2.2.2** Review pending restock requests *(10 min)*
+- **2.2.3** Click "Create Purchase Order" *(2 min)*
+- **2.2.4** Select supplier from dropdown *(5 min)*
+- **2.2.5** Add products to PO (from restock requests) *(15 min)*
+- **2.2.6** For each product: Set quantity to order *(5 min)*
+- **2.2.7** Verify supplier price *(5 min)*
+- **2.2.8** Set expected delivery date *(3 min)*
+- **2.2.9** Review order summary (total, tax, grand total) *(5 min)*
+- **2.2.10** Save as draft *(2 min)*
+- **2.2.11** Submit for admin approval *(2 min)*
+- **2.2.12** Generate PO number (PO-YYYY-XXXX) *(auto)*
+
+#### **2.3 Purchase Order Approval (Admin)**
+- **2.3.1** Receive notification of pending PO *(auto)*
+- **2.3.2** Navigate to Admin Purchase Orders page *(2 min)*
+- **2.3.3** View list of pending POs *(5 min)*
+- **2.3.4** Click on PO to review details *(5 min)*
+- **2.3.5** Verify budget availability *(10 min)*
+- **2.3.6** Verify supplier credibility *(5 min)*
+- **2.3.7** Check quantities and pricing *(10 min)*
+- **2.3.8** Review business need *(5 min)*
+- **2.3.9** Make decision (Approve/Reject/Request Info) *(5 min)*
+- **2.3.10** If approved: Add digital signature *(3 min)*
+- **2.3.11** Add approval comments *(5 min)*
+- **2.3.12** Confirm approval *(2 min)*
+- **2.3.13** System sends email to supplier *(auto)*
+- **2.3.14** Generate PO PDF with approval signature *(auto)*
+- **2.3.15** Notify Inventory Manager *(auto)*
+
+#### **2.4 Waiting for Delivery (Inventory Manager)**
+- **2.4.1** Monitor PO status in dashboard *(ongoing)*
+- **2.4.2** Track expected delivery date *(ongoing)*
+- **2.4.3** Coordinate with supplier for delivery schedule *(15 min)*
+- **2.4.4** Prepare receiving area and staff *(30 min)*
+
+#### **2.5 Receiving Management (QR Code System)**
+- **2.5.1** Desktop: Select approved PO *(2 min)*
+- **2.5.2** Desktop: Click "Generate QR Code" *(2 min)*
+- **2.5.3** System generates unique QR code with token *(auto)*
+- **2.5.4** Display QR code on screen *(ongoing)*
+- **2.5.5** Mobile: Open camera/QR scanner *(2 min)*
+- **2.5.6** Mobile: Scan QR code *(2 min)*
+- **2.5.7** Mobile browser auto-opens receiving page *(auto)*
+- **2.5.8** System validates QR token *(auto)*
+- **2.5.9** PO details auto-load on mobile *(auto)*
+- **2.5.10** For each product: Select quality status *(15 min)*
+  - Good Condition: Enter quantity *(5 min)*
+  - Damaged: Enter quantity + notes + photos *(10 min)*
+  - Missing: Enter quantity + notes *(5 min)*
+- **2.5.11** Select storage location for good items *(10 min)*
+- **2.5.12** Review receiving summary *(5 min)*
+- **2.5.13** Add final notes *(5 min)*
+- **2.5.14** Upload delivery receipt photo *(3 min)*
+- **2.5.15** Digital signatures (receiver + supplier) *(5 min)*
+- **2.5.16** Click "Complete Receiving" *(2 min)*
+
+#### **2.6 Inventory Update & System Logs (System)**
+- **2.6.1** Process completed receiving record *(auto)*
+- **2.6.2** For good condition items: Add to inventory *(auto)*
+- **2.6.3** Create stock movement records (IN) *(auto)*
+- **2.6.4** Create stock movement records (DAMAGED tracking) *(auto)*
+- **2.6.5** Update PO status (completed/completed_with_issues) *(auto)*
+- **2.6.6** Update restock requests status *(auto)*
+- **2.6.7** Create damage reports *(auto)*
+- **2.6.8** Generate system logs (8 entries) *(auto)*
+- **2.6.9** Create audit trail entry *(auto)*
+- **2.6.10** Send notifications (Admin, Purchasing, Supplier) *(auto)*
+- **2.6.11** Generate reports (receiving, damage, stock movement) *(auto)*
+
+---
+
+### **PHASE 3: POS Transaction Management**
+
+#### **3.1 POS Transaction History Page**
+- **3.1.1** Navigate to POS → Transaction History *(2 min)*
+- **3.1.2** Filter transactions by date range *(3 min)*
+- **3.1.3** Search by invoice number or customer *(5 min)*
+- **3.1.4** View transaction details (items, amounts, status) *(5 min)*
+- **3.1.5** Check release status for each transaction *(3 min)*
+- **3.1.6** Export transaction list to CSV *(5 min)*
+- **3.1.7** Print individual invoices *(3 min)*
+- **3.1.8** View payment method breakdown *(2 min)*
+- **3.1.9** Monitor pending releases *(ongoing)*
+
+#### **3.2 POS New Sale Page**
+- **3.2.1** Navigate to POS → New Sale *(2 min)*
+- **3.2.2** Select product from catalog *(10 min)*
+- **3.2.3** Choose variant (size/unit) if multiple exist *(3 min)*
+- **3.2.4** Select quantity for each product *(5 min)*
+- **3.2.5** Choose storage location for multi-location products *(5 min)*
+- **3.2.6** Apply discounts or promotions *(3 min)*
+- **3.2.7** Calculate VAT and totals *(auto)*
+- **3.2.8** Enter customer information *(5 min)*
+- **3.2.9** Select payment method *(2 min)*
+- **3.2.10** Process payment *(3 min)*
+- **3.2.11** Generate invoice *(auto)*
+- **3.2.12** Print receipt *(3 min)*
+
+#### **3.3 POS Dashboard Analytics**
+- **3.3.1** View daily sales summary *(5 min)*
+- **3.3.2** Monitor transaction count *(ongoing)*
+- **3.3.3** Check pending quotations *(5 min)*
+- **3.3.4** View top-selling products *(3 min)*
+- **3.3.5** Track payment method usage *(2 min)*
+- **3.3.6** Monitor cashier performance *(10 min)*
+
+---
+
+### **PHASE 4: Analytics & Reporting**
+
+#### **4.1 Inventory Turnover Report Page**
+- **4.1.1** Navigate to Reports → Inventory Turnover *(2 min)*
+- **4.1.2** Select date range (start/end dates) *(3 min)*
+- **4.1.3** System fetches sales data from pos_transactions *(auto)*
+- **4.1.4** System fetches inventory data from Products *(auto)*
+- **4.1.5** Calculate monthly turnover rates *(auto)*
+- **4.1.6** Generate chart data (monthly trends) *(auto)*
+- **4.1.7** Calculate product-level turnover *(auto)*
+- **4.1.8** Generate performance analysis *(auto)*
+- **4.1.9** Display KPI cards (turnover rate, sales, inventory) *(auto)*
+- **4.1.10** Display area chart *(auto)*
+- **4.1.11** Display product turnover table *(auto)*
+- **4.1.12** Click "Generate Report" *(2 min)*
+- **4.1.13** System generates PDF automatically *(auto)*
+- **4.1.14** Show modal preview *(auto)*
+- **4.1.15** Download PDF *(auto)*
+
+#### **4.2 Stock Movement Report Page**
+- **4.2.1** Navigate to Reports → Stock Movement *(2 min)*
+- **4.2.2** Select date range and filters *(5 min)*
+- **4.2.3** System queries stock_movements collection *(auto)*
+- **4.2.4** Generate movement summary (IN vs OUT) *(auto)*
+- **4.2.5** Create chart visualizations *(auto)*
+- **4.2.6** Display movement table *(auto)*
+- **4.2.7** Export to Excel/PDF *(5 min)*
+
+#### **4.3 Analytics Dashboard**
+- **4.3.1** View real-time inventory levels *(5 min)*
+- **4.3.2** Monitor low stock alerts *(ongoing)*
+- **4.3.3** Track sales trends *(10 min)*
+- **4.3.4** Analyze supplier performance *(15 min)*
+- **4.3.5** Review purchase order metrics *(10 min)*
+- **4.3.6** Generate custom reports *(20 min)*
+- **4.3.7** Export dashboard data *(5 min)*
+
+---
+
+### **PHASE 5: Release Management**
+
+#### **5.1 Release Management Dashboard**
+- **5.1.1** Navigate to Inventory → Release Management *(2 min)*
+- **5.1.2** View pending releases list *(5 min)*
+- **5.1.3** Filter by date, status, or customer *(3 min)*
+- **5.1.4** Sort by priority or urgency *(2 min)*
+- **5.1.5** Check stock availability for each item *(5 min)*
+- **5.1.6** View release history *(5 min)*
+- **5.1.7** Monitor release progress *(ongoing)*
+
+#### **5.2 QR Code Generation**
+- **5.2.1** Select pending transaction *(2 min)*
+- **5.2.2** Click "Generate QR Code" button *(2 min)*
+- **5.2.3** System creates encrypted token *(auto)*
+- **5.2.4** Display QR code on screen *(ongoing)*
+- **5.2.5** Option to print QR code *(3 min)*
+- **5.2.6** Copy direct link for testing *(2 min)*
+- **5.2.7** Monitor QR code expiry *(ongoing)*
+
+#### **5.3 Mobile Release Processing**
+- **5.3.1** Scan QR code with mobile device *(2 min)*
+- **5.3.2** Mobile browser opens release page *(auto)*
+- **5.3.3** Authenticate user and validate token *(auto)*
+- **5.3.4** Load transaction details *(auto)*
+- **5.3.5** For each product: Verify details *(10 min)*
+- **5.3.6** Scan barcode or search product *(5 min)*
+- **5.3.7** Select storage location *(5 min)*
+- **5.3.8** Enter quantity to release *(3 min)*
+- **5.3.9** Add release notes *(3 min)*
+- **5.3.10** Capture customer signature *(3 min)*
+- **5.3.11** Upload photos if needed *(5 min)*
+- **5.3.12** Submit release *(2 min)*
+- **5.3.13** System processes inventory deduction *(auto)*
+- **5.3.14** Generate release confirmation *(auto)*
+
+#### **5.4 Release History & Tracking**
+- **5.4.1** View completed releases *(5 min)*
+- **5.4.2** Search by invoice number *(3 min)*
+- **5.4.3** Filter by date range *(3 min)*
+- **5.4.4** View release details and signatures *(5 min)*
+- **5.4.5** Export release reports *(5 min)*
+- **5.4.6** Track release performance metrics *(10 min)*
+
+---
+
+### **PHASE 6: Receiving Management**
+
+#### **6.1 Receiving Management Dashboard**
+- **6.1.1** Navigate to Inventory → Receiving Management *(2 min)*
+- **6.1.2** View approved POs ready for receiving *(5 min)*
+- **6.1.3** Check delivery schedules *(5 min)*
+- **6.1.4** Monitor overdue deliveries *(ongoing)*
+- **6.1.5** View receiving history *(5 min)*
+- **6.1.6** Filter by supplier or date *(3 min)*
+
+#### **6.2 QR Code Generation (Desktop)**
+- **6.2.1** Select approved PO *(2 min)*
+- **6.2.2** Click "Generate QR Code" *(2 min)*
+- **6.2.3** System generates unique token *(auto)*
+- **6.2.4** Display QR code on screen *(ongoing)*
+- **6.2.5** Show QR details (expiry, token) *(2 min)*
+- **6.2.6** Print QR code option *(3 min)*
+- **6.2.7** Monitor QR usage status *(ongoing)*
+
+#### **6.3 Mobile Receiving Processing**
+- **6.3.1** Open mobile camera/QR scanner *(2 min)*
+- **6.3.2** Scan QR code *(2 min)*
+- **6.3.3** Mobile browser opens receiving page *(auto)*
+- **6.3.4** System validates QR token *(auto)*
+- **6.3.5** Load PO details *(auto)*
+- **6.3.6** For each product: Assess quality *(15 min)*
+  - Good Condition: Enter quantity *(5 min)*
+  - Damaged: Enter quantity + details + photos *(10 min)*
+  - Missing: Enter quantity + notes *(5 min)*
+- **6.3.7** Select storage location for good items *(10 min)*
+- **6.3.8** Review receiving summary *(5 min)*
+- **6.3.9** Add final notes *(5 min)*
+- **6.3.10** Upload delivery receipt photo *(3 min)*
+- **6.3.11** Capture digital signatures *(5 min)*
+- **6.3.12** Submit receiving *(2 min)*
+
+#### **6.4 Quality Control & Damage Management**
+- **6.4.1** Review damage reports *(10 min)*
+- **6.4.2** Process supplier credit requests *(15 min)*
+- **6.4.3** Upload additional photos *(5 min)*
+- **6.4.4** Generate damage reports *(5 min)*
+- **6.4.5** Track supplier performance *(10 min)*
+- **6.4.6** Monitor quality trends *(15 min)*
+
+#### **6.5 Receiving Reports & Analytics**
+- **6.5.1** View receiving summary reports *(10 min)*
+- **6.5.2** Analyze quality metrics *(15 min)*
+- **6.5.3** Track supplier delivery performance *(10 min)*
+- **6.5.4** Generate receiving efficiency reports *(10 min)*
+- **6.5.5** Export receiving data *(5 min)*
+
+---
+
+### **PHASE 7: System Administration**
+
+#### **7.1 User Management**
+- **7.1.1** Navigate to Admin → User Management *(2 min)*
+- **7.1.2** Add new user account *(10 min)*
+- **7.1.3** Assign user roles (Admin/IM/Cashier) *(5 min)*
+- **7.1.4** Set user permissions *(5 min)*
+- **7.1.5** Configure user access levels *(5 min)*
+
+#### **7.2 System Monitoring**
+- **7.2.1** Review system logs daily *(15 min)*
+- **7.2.2** Monitor inventory alerts *(ongoing)*
+- **7.2.3** Check pending approvals *(10 min)*
+- **7.2.4** Review audit trails *(20 min)*
+- **7.2.5** Generate system health reports *(10 min)*
+
+---
+
+## � **GANTT CHART DEPENDENCIES**
+
+### **Critical Path Dependencies:**
+1. **Quotation Creation** → **Invoice Generation** → **Product Release**
+2. **Low Stock Detection** → **Restock Request** → **PO Creation** → **PO Approval** → **Receiving** → **Inventory Update**
+3. **All Transactions** → **Reports Generation**
+
+### **Parallel Activities:**
+- Multiple quotations can be created simultaneously
+- Multiple POs can be in approval workflow
+- Multiple releases can happen concurrently
+- Reports can be generated anytime
+
+### **Role-Based Activities:**
+- **POS Cashier**: 1.1, 1.2, 3.1-3.3 (Customer-facing)
+- **Factory Staff**: 1.3, 5.1-5.4 (Warehouse operations)
+- **Inventory Manager**: 2.2, 2.4, 2.5, 4.1-4.3, 5.1-5.4, 6.1-6.5 (Procurement & receiving)
+- **Admin**: 2.3, 7.1-7.2 (Approvals & oversight)
+- **System**: 2.1, 2.6 (Automated processes)
+
+### **Estimated Timeline:**
+- **Single Transaction**: 30-45 minutes (Quote → Invoice → Release)
+- **Full Replenishment Cycle**: 3-7 days (Request → PO → Delivery → Receiving)
+- **Monthly Reporting**: 30 minutes
+- **System Monitoring**: 15 minutes daily
+
+---
+
+## 🛠️ **TOOLS FOR CREATING GANTT CHART**
+
+You can use these activities in:
+- **Microsoft Project**
+- **Google Sheets** (with Gantt chart templates)
+- **Excel** (with Gantt chart add-ins)
+- **Asana** or **Trello** with timeline views
+- **Miro** or **Lucidchart** for visual planning
+
+The activities are already sequenced with dependencies, so you can directly import them into your Gantt chart tool!
 
 ### **PHASE 1: Customer Transaction**
 

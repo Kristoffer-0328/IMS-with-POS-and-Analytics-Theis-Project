@@ -9,11 +9,13 @@ import {
   Area,
   AreaChart,
 } from 'recharts';
-import { FiDownload, FiPrinter, FiLoader, FiFileText, FiX, FiInfo } from 'react-icons/fi';
+import { FiDownload, FiPrinter, FiLoader, FiFileText, FiX, FiInfo, FiChevronLeft, FiChevronRight, FiDatabase } from 'react-icons/fi';
+import { X, Printer, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { AiOutlineFilePdf } from 'react-icons/ai';
 import { ReportingService } from '../../../../services/firebase/ReportingService';
 import jsPDF from 'jspdf';
 import InfoModal from '../Dashboard/InfoModal';
+import { AnalyticsService } from '../../../../services/firebase/AnalyticsService';
 
 function InventoryTurnoverReport({
   yearFilter,
@@ -29,6 +31,8 @@ function InventoryTurnoverReport({
   const [reportContent, setReportContent] = useState(null);
   const [activeInfoModal, setActiveInfoModal] = useState(null);
 
+  const [currentPage, setCurrentPage] = useState(1);
+
   // Date range filters
   const [startDate, setStartDate] = useState(() => {
     const today = new Date();
@@ -40,11 +44,29 @@ function InventoryTurnoverReport({
     return today.toISOString().split('T')[0];
   });
 
+  // Add chart update key to force re-render
+  const [chartUpdateKey, setChartUpdateKey] = useState(0);
+
+  // Helper function to determine granularity based on date range
+  const getGranularity = (start, end) => {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const daysDiff = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+    return daysDiff <= 31 ? 'weekly' : 'monthly';
+  };
+
   // Helper function to get status based on turnover rate
   const getProductStatus = (turnoverRate) => {
-    if (turnoverRate >= 4) return { status: 'Fast-moving', emoji: '🟩' };
-    if (turnoverRate >= 2) return { status: 'Moderate', emoji: '🟧' };
-    return { status: 'Slow-moving', emoji: '🟥' };
+    const avgDays = Math.round(365 / turnoverRate);
+    if (turnoverRate >= 10) {
+      return { status: 'Very High', color: 'text-green-700 bg-green-50', avgDays };
+    } else if (turnoverRate >= 6) {
+      return { status: 'High', color: 'text-blue-700 bg-blue-50', avgDays };
+    } else if (turnoverRate >= 3) {
+      return { status: 'Medium', color: 'text-yellow-700 bg-yellow-50', avgDays };
+    } else {
+      return { status: 'Low', color: 'text-red-700 bg-red-50', avgDays };
+    }
   };
 
   // Helper function to get concise paragraph-style performance analysis
@@ -70,6 +92,15 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
     return 'NEEDS IMPROVEMENT';
   };
   
+
+  const getTurnoverColor = (rate) => {
+    switch(rate) {
+      case 'Fast-moving': return 'text-green-700 bg-green-50';
+      case 'Moderate': return 'text-yellow-700 bg-yellow-50';
+      case 'Slow-moving': return 'text-red-700 bg-red-50';
+      default: return 'text-gray-700 bg-gray-50';
+    }
+  };
 
   // Function to generate analysis report
   const generateAnalysisReport = () => {
@@ -108,226 +139,225 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
   };
 
   // Function to generate professional PDF
-  const generatePDF = (report) => {
+  const generatePDF = () => {
+    const reportPeriod = `${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}`;
+    const reportDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
     const pdf = new jsPDF();
     const pageWidth = pdf.internal.pageSize.width;
     const pageHeight = pdf.internal.pageSize.height;
     const margin = 15;
     const contentWidth = pageWidth - (margin * 2);
     let yPos = margin;
+    let currentPageNum = 1;
+
+    const inventoryData = data.productData;
+
+    const addFooter = (pageNum, totalPages) => {
+      const footerY = pageHeight - 15;
+      pdf.setDrawColor(0, 0, 0);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin, footerY, pageWidth - margin, footerY);
+      pdf.setFontSize(8);
+      pdf.setTextColor(100, 100, 100);
+      pdf.text('Glory Star Hardware - Construction Materials Corporation', pageWidth / 2, footerY + 5, { align: 'center' });
+      pdf.text(`Page ${pageNum} | Report generated on ${reportDate}`, pageWidth / 2, footerY + 9, { align: 'center' });
+    };
 
     // Header with company branding
-    pdf.setFontSize(20);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(0, 0, 0);
-    const companyName = 'Glory Star Hardware';
-    pdf.text(companyName, pageWidth / 2, yPos, { align: 'center' });
-    yPos += 7;
-
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(100, 100, 100);
-    pdf.text('Construction Materials Corporation', pageWidth / 2, yPos, { align: 'center' });
-    yPos += 10;
-
-    // Document title with underline
-    pdf.setFontSize(16);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(0, 0, 0);
-    pdf.text('INVENTORY TURNOVER ANALYSIS REPORT', pageWidth / 2, yPos, { align: 'center' });
-    pdf.setLineWidth(0.5);
-    pdf.line(margin, yPos + 2, pageWidth - margin, yPos + 2);
-    yPos += 12;
-
-    // Report metadata box
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setDrawColor(0, 0, 0);
-    pdf.setFillColor(245, 245, 245);
-    pdf.rect(margin, yPos, contentWidth, 15, 'F');
-    pdf.rect(margin, yPos, contentWidth, 15, 'S');
-
-    pdf.text(`Period: ${report.period}`, margin + 5, yPos + 6);
-    pdf.text(`Generated: ${report.generatedAt}`, margin + 5, yPos + 11);
-    yPos += 20;
-
-    // Key Metrics Section with boxes
-    pdf.setFontSize(12);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('KEY PERFORMANCE METRICS', margin, yPos);
-    yPos += 8;
-
-    const boxWidth = (contentWidth - 10) / 3;
-    const boxHeight = 25;
-
-    // Turnover Rate Box
-    pdf.setDrawColor(59, 130, 246);
-    pdf.setLineWidth(0.5);
-    pdf.rect(margin, yPos, boxWidth, boxHeight, 'S');
-    pdf.setFontSize(8);
-    pdf.setTextColor(100, 100, 100);
-    pdf.text('AVERAGE TURNOVER RATE', margin + boxWidth / 2, yPos + 6, { align: 'center' });
-    pdf.setFontSize(18);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(59, 130, 246);
-    pdf.text(`${report.metrics.turnoverRate}x`, margin + boxWidth / 2, yPos + 15, { align: 'center' });
-    pdf.setFontSize(7);
-    pdf.setTextColor(100, 100, 100);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(report.metrics.performanceLevel, margin + boxWidth / 2, yPos + 21, { align: 'center' });
-
-    // Total Sales Box
-    pdf.setDrawColor(34, 197, 94);
-    pdf.rect(margin + boxWidth + 5, yPos, boxWidth, boxHeight, 'S');
-    pdf.setFontSize(8);
-    pdf.text('TOTAL SALES', margin + boxWidth + 5 + boxWidth / 2, yPos + 6, { align: 'center' });
-    pdf.setFontSize(14);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(34, 197, 94);
-    pdf.text(`₱${report.metrics.totalSales}`, margin + boxWidth + 5 + boxWidth / 2, yPos + 15, { align: 'center' });
-    pdf.setFontSize(7);
-    pdf.setTextColor(100, 100, 100);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text('Period Total', margin + boxWidth + 5 + boxWidth / 2, yPos + 21, { align: 'center' });
-
-    // Average Inventory Box
-    pdf.setDrawColor(251, 146, 60);
-    pdf.rect(margin + (boxWidth + 5) * 2, yPos, boxWidth, boxHeight, 'S');
-    pdf.setFontSize(8);
-    pdf.text('AVERAGE INVENTORY', margin + (boxWidth + 5) * 2 + boxWidth / 2, yPos + 6, { align: 'center' });
-    pdf.setFontSize(14);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(251, 146, 60);
-    pdf.text(`₱${report.metrics.averageInventory}`, margin + (boxWidth + 5) * 2 + boxWidth / 2, yPos + 15, { align: 'center' });
-    pdf.setFontSize(7);
-    pdf.setTextColor(100, 100, 100);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text('Period Average', margin + (boxWidth + 5) * 2 + boxWidth / 2, yPos + 21, { align: 'center' });
-
-    yPos += boxHeight + 15;
-
-    // Performance Analysis Section
-    pdf.setFontSize(12);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(0, 0, 0);
-    pdf.text('PERFORMANCE ANALYSIS', margin, yPos);
-    yPos += 8;
-
-    pdf.setDrawColor(200, 200, 200);
-    pdf.setFillColor(250, 250, 250);
-    const analysisBoxHeight = 40;
-    pdf.rect(margin, yPos, contentWidth, analysisBoxHeight, 'FD');
-
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(50, 50, 50);
-    const analysisLines = pdf.splitTextToSize(report.analysis, contentWidth - 10);
-    let analysisY = yPos + 6;
-    analysisLines.forEach(line => {
-      if (analysisY > yPos + analysisBoxHeight - 4) return;
-      pdf.text(line, margin + 5, analysisY);
-      analysisY += 4;
-    });
-    yPos += analysisBoxHeight + 15;
-
-    // Product Turnover Breakdown
-    if (report.productData && report.productData.length > 0) {
-      if (yPos > pageHeight - 80) {
-        pdf.addPage();
-        yPos = margin;
+    const addLogoToPDF = async () => {
+      try {
+        // Fetch the logo image and convert to base64
+        const response = await fetch('/Glory_Star_Logo.png');
+        const blob = await response.blob();
+        const reader = new FileReader();
+        
+        return new Promise((resolve) => {
+          reader.onload = () => {
+            const base64 = reader.result;
+            const logoWidth = 80;
+            const logoHeight = 30;
+            const logoX = (pageWidth - logoWidth) / 2;
+            pdf.addImage(base64, 'PNG', logoX, yPos, logoWidth, logoHeight);
+            yPos += logoHeight + 4;
+            resolve();
+          };
+          reader.readAsDataURL(blob);
+        });
+      } catch (error) {
+        // Fallback to text if image fails
+        pdf.setFontSize(22);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(0, 0, 0);
+        pdf.text('Glory Star Hardware', pageWidth / 2, yPos, { align: 'center' });
+        yPos += 6;
+        return Promise.resolve();
       }
+    };
 
-      pdf.setFontSize(12);
+    // Make generatePDF async to handle logo loading
+    const generatePDFAsync = async () => {
+      await addLogoToPDF();
+
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 100, 100);
+      pdf.text('Construction Materials Corporation', pageWidth / 2, yPos, { align: 'center' });
+      yPos += 8;
+
+      // Document title with underline
+      pdf.setFontSize(16);
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(0, 0, 0);
-      pdf.text('PRODUCT TURNOVER BREAKDOWN', margin, yPos);
-      yPos += 8;
+      pdf.text('INVENTORY TURNOVER REPORT', pageWidth / 2, yPos, { align: 'center' });
+      pdf.setLineWidth(2);
+      pdf.setDrawColor(31, 41, 55); // Dark gray color like border-gray-800
+      pdf.line(margin, yPos + 2, pageWidth - margin, yPos + 2);
+      yPos += 12;
 
-      // Table setup
-      const colWidths = [45, 30, 25, 20, 30, 20, 25];
-      const headers = ['Product Name', 'Category', 'Sales (₱)', 'Qty', 'Avg Inv (₱)', 'Rate', 'Status'];
+      // Report metadata
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setDrawColor(200, 200, 200);
+      pdf.setFillColor(245, 245, 245);
+      pdf.rect(margin, yPos, contentWidth / 2 - 2, 12, 'FD');
+      pdf.rect(margin + contentWidth / 2 + 2, yPos, contentWidth / 2 - 2, 12, 'FD');
 
-      // Draw header
-      pdf.setFillColor(0, 0, 0);
-      pdf.rect(margin, yPos, contentWidth, 8, 'F');
-      pdf.setFontSize(8);
+      pdf.setTextColor(60, 60, 60);
+      pdf.text(`Report Period: ${reportPeriod}`, margin + 3, yPos + 5);
+      pdf.text(`Generated: ${reportDate}`, margin + contentWidth / 2 + 5, yPos + 5);
+      pdf.text(`Total Products: ${inventoryData.length} items`, margin + 3, yPos + 9);
+      pdf.text(`Report Type: Turnover Analysis`, margin + contentWidth / 2 + 5, yPos + 9);
+      yPos += 18;
+
+      // Report Summary
+      pdf.setFontSize(11);
       pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(255, 255, 255);
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('REPORT SUMMARY', margin, yPos);
+      yPos += 7;
 
-      let xPos = margin + 2;
-      headers.forEach((header, i) => {
-        pdf.text(header, xPos, yPos + 5.5);
-        xPos += colWidths[i];
-      });
-      yPos += 8;
+      pdf.setDrawColor(200, 200, 200);
+      pdf.setFillColor(250, 250, 250);
+      const summaryHeight = 22;
+      pdf.rect(margin, yPos, contentWidth, summaryHeight, 'FD');
+
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(50, 50, 50);
+
+      const col1X = margin + 5;
+      const col2X = margin + contentWidth / 2 + 5;
+      let summaryY = yPos + 6;
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Total Sales:', col1X, summaryY);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`P${totalSales.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`, col1X + 25, summaryY);
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Average Inventory:', col2X, summaryY);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`P${Math.round(averageInventory).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`, col2X + 35, summaryY);
+
+      summaryY += 6;
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Total Products:', col1X, summaryY);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`${inventoryData.length} items`, col1X + 25, summaryY);
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Total Qty Sold:', col2X, summaryY);
+      pdf.setFont('helvetica', 'normal');
+      const totalQty = inventoryData.reduce((sum, item) => sum + item.quantitySold, 0);
+      pdf.text(`${totalQty} units`, col2X + 35, summaryY);
+
+      yPos += summaryHeight + 12;
+
+      // Product Table
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('PRODUCT MOVEMENT DETAILS', margin, yPos);
+      yPos += 7;
+
+      // Table setup - adjusted widths for better fit
+      const colWidths = [40, 22, 24, 16, 26, 16, 18, 18];
+      const headers = ['Product Name', 'Category', 'Sales (P)', 'Qty Sold', 'Avg Inv (P)', 'Avg Days', 'Turnover', 'Status'];
+
+      const drawTableHeader = () => {
+        pdf.setFillColor(50, 50, 50);
+        pdf.rect(margin, yPos, contentWidth, 7, 'F');
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(255, 255, 255);
+
+        let xPos = margin + 2;
+        headers.forEach((header, i) => {
+          pdf.text(header, xPos, yPos + 4.5);
+          xPos += colWidths[i];
+        });
+        yPos += 7;
+      };
+
+      drawTableHeader();
 
       // Draw rows
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(8);
       pdf.setTextColor(0, 0, 0);
 
-      report.productData.forEach((product, index) => {
-        if (yPos > pageHeight - margin - 10) {
+      inventoryData.forEach((product, index) => {
+        // Check if we need a new page
+        if (yPos > pageHeight - 35) {
+          addFooter(currentPageNum, Math.ceil(inventoryData.length / 20));
           pdf.addPage();
+          currentPageNum++;
           yPos = margin;
-
-          // Redraw headers
-          pdf.setFillColor(0, 0, 0);
-          pdf.rect(margin, yPos, contentWidth, 8, 'F');
-          pdf.setFont('helvetica', 'bold');
-          pdf.setTextColor(255, 255, 255);
-          xPos = margin + 2;
-          headers.forEach((header, i) => {
-            pdf.text(header, xPos, yPos + 5.5);
-            xPos += colWidths[i];
-          });
-          yPos += 8;
-          pdf.setFont('helvetica', 'normal');
-          pdf.setTextColor(0, 0, 0);
+          drawTableHeader();
         }
 
         // Alternating row colors
         if (index % 2 === 0) {
           pdf.setFillColor(248, 250, 252);
-          pdf.rect(margin, yPos, contentWidth, 7, 'F');
+          pdf.rect(margin, yPos, contentWidth, 6, 'F');
         }
 
-        const { status } = getProductStatus(product.turnoverRate);
+        const { status, avgDays } = getProductStatus(product.turnoverRate);
 
-        xPos = margin + 2;
+        let xPos = margin + 2;
         const rowData = [
           product.productName.length > 20 ? product.productName.substring(0, 18) + '..' : product.productName,
           product.category.length > 12 ? product.category.substring(0, 10) + '..' : product.category,
-          `₱${product.sales.toLocaleString()}`,
+          product.sales.toLocaleString('en-PH'),
           product.quantitySold.toString(),
-          `₱${product.averageInventory.toLocaleString()}`,
+          product.averageInventory.toLocaleString('en-PH'),
+          `${avgDays}d`,
           `${product.turnoverRate.toFixed(2)}x`,
           status
         ];
 
         rowData.forEach((data, i) => {
-          pdf.text(data, xPos, yPos + 5);
+          pdf.text(data, xPos, yPos + 4);
           xPos += colWidths[i];
         });
-        yPos += 7;
+        yPos += 6;
       });
-    }
 
-    // Footer
-    yPos = pageHeight - 15;
-    pdf.setDrawColor(0, 0, 0);
-    pdf.setLineWidth(0.5);
-    pdf.line(margin, yPos, pageWidth - margin, yPos);
-    pdf.setFontSize(8);
-    pdf.setTextColor(100, 100, 100);
-    pdf.text('Glory Star Hardware - Construction Materials Corporation', pageWidth / 2, yPos + 5, { align: 'center' });
-    pdf.text(`Report generated on ${report.generatedAt}`, pageWidth / 2, yPos + 9, { align: 'center' });
+      // Add footer to last page
+      addFooter(currentPageNum, Math.ceil(inventoryData.length / 20));
 
-    return pdf;
+      return pdf;
+    };
+
+    return generatePDFAsync();
   };
 
+  const handlePrint = () => {
+    window.print();
+  };
   // Function to handle report generation and direct download
-  const handleGenerateReport = () => {
+  const handleGenerateReport = async () => {
     console.log('Generate Report button clicked');
     console.log('Data available:', !!data);
     console.log('Data object:', data);
@@ -353,7 +383,7 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
 
       // Automatically download PDF
       console.log('Generating PDF...');
-      const pdf = generatePDF(report);
+      const pdf = await generatePDF();
       const start = startDate.replace(/-/g, '');
       const end = endDate.replace(/-/g, '');
       const filename = `Inventory_Turnover_Report_${start}_${end}`;
@@ -372,48 +402,60 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       console.error('Error generating report:', error);
       alert('An error occurred while generating the report. Please check the console for details.');
     }
-  };  // Function to download as PDF
-  const handleDownloadPDF = () => {
-    console.log('Download PDF button clicked');
-    console.log('reportContent available:', !!reportContent);
-    console.log('reportContent:', reportContent);
-
-    if (!reportContent) {
-      console.error('No report content available for PDF download');
-      alert('No report content available. Please generate the report first.');
-      return;
-    }
-
+  };  // Function to generate test data for demonstration
+  const handleGenerateTestData = async () => {
     try {
-      console.log('Generating PDF...');
-      const pdf = generatePDF(reportContent);
-      console.log('PDF generated:', pdf);
-
-      const start = startDate.replace(/-/g, '');
-      const end = endDate.replace(/-/g, '');
-      const filename = `Inventory_Turnover_Report_${start}_${end}.pdf`;
-      console.log('Saving PDF with filename:', filename);
-
-      pdf.save(filename);
-      console.log('PDF download initiated');
+      setLoading(true);
+      console.log('Generating test analytics data...');
+      
+      // Generate test inventory snapshots
+      const inventorySnapshots = await AnalyticsService.createTestInventorySnapshots();
+      console.log('Created inventory snapshots:', inventorySnapshots);
+      
+      // Generate test sales aggregations
+      const salesAggregations = await AnalyticsService.createTestSalesAggregations();
+      console.log('Created sales aggregations:', salesAggregations);
+      
+      alert('Test data generated successfully! You can now view the inventory turnover report.');
+      
+      // Refresh the data
+      const granularity = getGranularity(startDate, endDate);
+      const result = await ReportingService.getInventoryTurnover(
+        startDate,
+        endDate,
+        granularity
+      );
+      console.log('Refreshed data after test generation:', result);
+      setData(result);
+      // Force chart re-render
+      setChartUpdateKey(prev => prev + 1);
+      
     } catch (error) {
-      console.error('Error downloading PDF:', error);
-      alert('An error occurred while downloading the PDF. Please check the console for details.');
+      console.error('Error generating test data:', error);
+      alert('Error generating test data: ' + error.message);
+    } finally {
+      setLoading(false);
     }
   };
-
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
         setError(null);
         
+        console.log('Fetching turnover data for:', { startDate, endDate });
+        
+        const granularity = getGranularity(startDate, endDate);
+        
         const result = await ReportingService.getInventoryTurnover(
           startDate,
-          endDate
+          endDate,
+          granularity
         );
-
+        
         setData(result);
+        // Force chart re-render by updating the key
+        setChartUpdateKey(prev => prev + 1);
       } catch (err) {
         console.error('Error fetching turnover data:', err);
         setError('Failed to load report data. Please try again.');
@@ -425,12 +467,23 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
     fetchData();
   }, [startDate, endDate]);
 
+  const itemsPerPage = 8;
+  const totalPages = data && data.productData ? Math.ceil(data.productData.length / itemsPerPage) : 1;
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentItems = data && data.productData ? data.productData.slice(startIndex, endIndex) : [];
+
+  const totalSales = data && data.productData ? data.productData.reduce((sum, item) => sum + item.sales, 0) : 0;
+  const averageInventory = data && data.productData ? data.productData.reduce((sum, item) => sum + item.averageInventory, 0) / data.productData.length : 0;
+
   // Custom tooltip for the chart
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
+      const granularity = data?.granularity || 'monthly';
+      const periodType = granularity === 'weekly' ? 'Week' : 'Month';
       return (
         <div className="bg-white p-3 shadow-lg rounded-lg border border-gray-100">
-          <p className="font-medium text-sm">{label}</p>
+          <p className="font-medium text-sm">{periodType}: {label}</p>
           <p className="text-sm text-blue-600">
             <span className="font-semibold">{payload[0].value.toFixed(2)}</span>
             x turnover rate
@@ -453,6 +506,11 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
             <li><span className="font-medium">Good (2-3x):</span> Healthy inventory movement</li>
             <li><span className="font-medium">Moderate (1-2x):</span> Room for improvement</li>
             <li><span className="font-medium">&lt;1x:</span> Potential overstocking issues</li>
+          </ul>
+          <p>The chart automatically adjusts its granularity based on your selected date range:</p>
+          <ul className="list-disc pl-5 space-y-2">
+            <li><span className="font-medium">Short periods (≤31 days):</span> Shows weekly data points</li>
+            <li><span className="font-medium">Long periods (&gt;31 days):</span> Shows monthly data points</li>
           </ul>
           <p>The orange reference line at 3x marks the threshold for excellent performance.</p>
         </div>
@@ -649,6 +707,13 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       {/* Generate Report Button */}
       <div className="flex justify-end gap-3 mb-6">
         <button 
+          onClick={handleGenerateTestData}
+          className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors flex items-center gap-2"
+        >
+          <FiDatabase size={16} />
+          <span>Generate Test Data</span>
+        </button>
+        <button 
           onClick={handleGenerateReport}
           className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
         >
@@ -660,7 +725,9 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       {/* Chart with Info Button */}
       <div className="bg-white rounded-lg shadow-sm mb-6 p-6 border border-gray-100">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-gray-800 font-semibold">Inventory Turnover</h3>
+          <h3 className="text-gray-800 font-semibold">
+            Inventory Turnover {data?.granularity === 'weekly' ? '(Weekly)' : '(Monthly)'}
+          </h3>
           <button
             onClick={() => setActiveInfoModal('turnoverRate')}
             className="p-1 hover:bg-gray-100 rounded-full transition-colors"
@@ -673,6 +740,7 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
+              key={`${startDate}-${endDate}-${chartUpdateKey}`} // Force re-render when date range or data changes
               data={data.chartData}
               margin={{ top: 20, right: 20, left: 10, bottom: 20 }}>
               <defs>
@@ -691,6 +759,25 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
                 axisLine={false}
                 tickLine={false}
                 tick={{ fill: '#888', fontSize: 11 }}
+                tickFormatter={tick => {
+                  // Format '20251001' as 'Oct 01' for weekly, 'Oct' or 'Oct 2025' for monthly
+                  if (!tick) return '';
+                  if (data?.granularity === 'weekly') {
+                    // Show 'Oct 01' (month short + day)
+                    const year = tick.slice(0, 4);
+                    const month = tick.slice(4, 6);
+                    const day = tick.slice(6, 8);
+                    const date = new Date(`${year}-${month}-${day}`);
+                    return date.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+                  } else if (data?.granularity === 'monthly') {
+                    // Show 'Oct 2025'
+                    const year = tick.slice(0, 4);
+                    const month = tick.slice(4, 6);
+                    const date = new Date(`${year}-${month}-01`);
+                    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                  }
+                  return tick;
+                }}
               />
               <YAxis
                 axisLine={false}
@@ -753,7 +840,7 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
             <tbody className="bg-white divide-y divide-gray-100">
               {data.productData && data.productData.length > 0 ? (
                 data.productData.map((product, index) => {
-                  const { status, emoji } = getProductStatus(product.turnoverRate);
+                  const { status, color } = getProductStatus(product.turnoverRate);
                   return (
                     <tr key={index} className="hover:bg-gray-50">
                       <td className="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -775,9 +862,8 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
                         {product.turnoverRate.toFixed(2)}x
                       </td>
                       <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
-                        <span className="flex items-center gap-2">
-                          <span>{emoji}</span>
-                          <span>{status}</span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${color}`}>
+                          {status}
                         </span>
                       </td>
                     </tr>
@@ -806,268 +892,219 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
         content={activeInfoModal ? chartInfo[activeInfoModal].content : ''}
       />
 
-      {/* Report Modal */}
-     {/* Report Modal - Enhanced Formal Document Style */}
-      {showReportModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-6xl max-h-[95vh] flex flex-col shadow-2xl">
-            {/* Elegant Header */}
-            <div className="relative bg-gradient-to-br from-slate-800 via-slate-700 to-slate-900 text-white px-8 py-8 rounded-t-xl">
-              <div className="text-center space-y-3">
-                <div className="inline-block">
-                  <h1 className="text-4xl font-bold tracking-tight mb-1">Glory Star Hardware</h1>
-                  <div className="h-px bg-gradient-to-r from-transparent via-blue-400 to-transparent"></div>
-                </div>
-                <p className="text-slate-300 text-sm font-medium tracking-wide">Construction Materials Corporation</p>
-                
-                <div className="mt-6 pt-6 border-t border-slate-600">
-                  <h2 className="text-2xl font-bold tracking-wide">INVENTORY TURNOVER ANALYSIS</h2>
-                  <p className="text-slate-300 text-sm mt-2">Official Report Document</p>
-                </div>
-              </div>
-              
-              <button
-                onClick={() => setShowReportModal(false)}
-                className="absolute top-6 right-6 p-2 hover:bg-white/10 rounded-full transition-all duration-200"
-              >
-                <FiX size={24} />
-              </button>
-            </div>
+{showReportModal && (
+<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+<div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+{/* Modal Header */}
+<div className="bg-gray-800 text-white px-6 py-4 flex items-center justify-between print:hidden">
+<h2 className="text-xl font-semibold">Inventory Turnover Report</h2>
+<div className="flex items-center gap-2">
+<button
+onClick={async () => { const pdf = await generatePDF(); pdf.save(`Inventory_Report_${new Date().getTime()}.pdf`); }}
+className="p-2 hover:bg-gray-700 rounded transition-colors"
+title="Download PDF"
+>
+<Download size={20} />
+</button>
+<button
+onClick={handlePrint}
+className="p-2 hover:bg-gray-700 rounded transition-colors"
+title="Print Report"
+>
+<Printer size={20} />
+</button>
+<button
+onClick={() => setShowReportModal(false)}
+className="p-2 hover:bg-gray-700 rounded transition-colors"
+>
+<X size={20} />
+</button>
+</div>
+</div>
 
-            {/* Report Metadata Bar */}
-            <div className="bg-slate-50 border-b-2 border-slate-200 px-8 py-4">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-6">
-                  <div>
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Report Period</span>
-                    <p className="text-sm font-bold text-slate-800 mt-0.5">{reportContent.period}</p>
-                  </div>
-                  <div className="h-8 w-px bg-slate-300"></div>
-                  <div>
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Generated On</span>
-                    <p className="text-sm font-bold text-slate-800 mt-0.5">{reportContent.generatedAt}</p>
-                  </div>
-                </div>
-                <div className={`px-4 py-2 rounded-lg font-bold text-sm ${
-                  reportContent.metrics.performanceLevel === 'EXCELLENT' ? 'bg-green-100 text-green-700' :
-                  reportContent.metrics.performanceLevel === 'GOOD' ? 'bg-blue-100 text-blue-700' :
-                  reportContent.metrics.performanceLevel === 'MODERATE' ? 'bg-yellow-100 text-yellow-700' :
-                  'bg-red-100 text-red-700'
-                }`}>
-                  {reportContent.metrics.performanceLevel}
-                </div>
-              </div>
-            </div>
+{/* Modal Body - Scrollable */}
+<div className="flex-1 overflow-y-auto p-8 bg-white max-h-[60vh]">
+{/* Report Document */}
+<div className="max-w-4xl mx-auto bg-white">
+{/* Document Header */}
+<div className="border-b-4 border-gray-800 pb-6 mb-6">
+<h1 className="text-3xl font-bold text-gray-900 text-center mb-1">
+Glory Star Hardware
+</h1>
+<p className="text-center text-gray-600 text-sm mb-3">
+Construction Materials Corporation
+</p>
+<h2 className="text-2xl font-bold text-gray-900 text-center">
+INVENTORY TURNOVER REPORT
+</h2>
+</div>
 
-            {/* Scrollable Report Content */}
-            <div className="flex-1 overflow-y-auto bg-gradient-to-b from-white to-slate-50">
-              <div className="p-8 space-y-8">
-                
-                {/* Executive Summary Section */}
-                <section>
-                  <div className="flex items-center gap-3 mb-5">
-                    <div className="h-1 w-12 bg-blue-600 rounded"></div>
-                    <h3 className="text-xl font-bold text-slate-800 uppercase tracking-wide">Executive Summary</h3>
-                  </div>
-                  
-                  {/* Key Metrics Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                    {/* Turnover Rate Card */}
-                    <div className="relative overflow-hidden bg-white rounded-xl shadow-lg border-2 border-blue-200 hover:shadow-xl transition-shadow">
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-bl-full"></div>
-                      <div className="relative p-6">
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="text-xs font-bold text-blue-600 uppercase tracking-widest">Turnover Rate</span>
-                          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <span className="text-xl">🔄</span>
-                          </div>
-                        </div>
-                        <p className="text-4xl font-bold text-blue-600 mb-1">{reportContent.metrics.turnoverRate}x</p>
-                        <p className="text-xs text-slate-500 font-medium">Average Rate</p>
-                      </div>
-                    </div>
+{/* Report Information */}
+<div className="mb-8 bg-gray-50 p-6 rounded-lg border border-gray-200">
+<div className="grid grid-cols-2 gap-4 text-sm mb-4">
+<div>
+<p className="text-gray-600">Report Period:</p>
+<p className="font-semibold text-gray-900">{new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}</p>
+</div>
+<div>
+<p className="text-gray-600">Generated:</p>
+<p className="font-semibold text-gray-900">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+</div>
+</div>
 
-                    {/* Total Sales Card */}
-                    <div className="relative overflow-hidden bg-white rounded-xl shadow-lg border-2 border-green-200 hover:shadow-xl transition-shadow">
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/5 rounded-bl-full"></div>
-                      <div className="relative p-6">
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="text-xs font-bold text-green-600 uppercase tracking-widest">Total Sales</span>
-                          <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                            <span className="text-xl">💰</span>
-                          </div>
-                        </div>
-                        <p className="text-3xl font-bold text-green-600 mb-1">₱{reportContent.metrics.totalSales}</p>
-                        <p className="text-xs text-slate-500 font-medium">Period Revenue</p>
-                      </div>
-                    </div>
+<h3 className="text-base font-semibold text-gray-800 mb-3 mt-4">REPORT SUMMARY</h3>
+<div className="grid grid-cols-2 gap-4 text-sm bg-white p-4 rounded border border-gray-200">
+<div>
+<p className="text-gray-600">Total Products:</p>
+<p className="font-semibold text-gray-900">{data.productData.length} items</p>
+</div>
+<div>
+<p className="text-gray-600">Report Type:</p>
+<p className="font-semibold text-gray-900">Inventory Turnover Analysis</p>
+</div>
+<div>
+<p className="text-gray-600">Total Sales:</p>
+<p className="font-semibold text-gray-900">₱{totalSales.toLocaleString()}</p>
+</div>
+<div>
+<p className="text-gray-600">Average Inventory:</p>
+<p className="font-semibold text-gray-900">₱{Math.round(averageInventory).toLocaleString()}</p>
+</div>
+</div>
+</div>
 
-                    {/* Average Inventory Card */}
-                    <div className="relative overflow-hidden bg-white rounded-xl shadow-lg border-2 border-orange-200 hover:shadow-xl transition-shadow">
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/5 rounded-bl-full"></div>
-                      <div className="relative p-6">
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="text-xs font-bold text-orange-600 uppercase tracking-widest">Avg Inventory</span>
-                          <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                            <span className="text-xl">📦</span>
-                          </div>
-                        </div>
-                        <p className="text-3xl font-bold text-orange-600 mb-1">₱{reportContent.metrics.averageInventory}</p>
-                        <p className="text-xs text-slate-500 font-medium">Average Value</p>
-                      </div>
-                    </div>
-                  </div>
-                </section>
+{/* Inventory Table */}
+<div className="mb-8">
+<h2 className="text-lg font-semibold text-gray-800 mb-4">PRODUCT MOVEMENT DETAILS</h2>
+<div className="overflow-x-auto border border-gray-300 rounded-lg">
+<table className="w-full text-sm">
+<thead className="bg-gray-800 text-white">
+<tr>
+<th className="px-3 py-3 text-left font-semibold">Product Name</th>
+<th className="px-3 py-3 text-left font-semibold">Category</th>
+<th className="px-3 py-3 text-right font-semibold">Sales</th>
+<th className="px-3 py-3 text-center font-semibold">Qty Sold</th>
+<th className="px-3 py-3 text-right font-semibold">Avg Inventory</th>
+<th className="px-3 py-3 text-center font-semibold">Avg Days</th>
+<th className="px-3 py-3 text-center font-semibold">Turnover Rate</th>
+<th className="px-3 py-3 text-center font-semibold">Status</th>
+</tr>
+</thead>
+<tbody className="divide-y divide-gray-200">
+{currentItems.map((item, index) => {
+const { status, color, avgDays } = getProductStatus(item.turnoverRate);
+return (
+<tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+<td className="px-3 py-3 font-medium text-gray-900">{item.productName}</td>
+<td className="px-3 py-3 text-gray-700">{item.category}</td>
+<td className="px-3 py-3 text-right text-gray-900">₱{item.sales.toLocaleString()}</td>
+<td className="px-3 py-3 text-center text-gray-900">{item.quantitySold}</td>
+<td className="px-3 py-3 text-right text-gray-900">₱{item.averageInventory.toLocaleString()}</td>
+<td className="px-3 py-3 text-center text-gray-700">{avgDays}d</td>
+<td className="px-3 py-3 text-center font-semibold text-gray-900">{item.turnoverRate.toFixed(2)}x</td>
+<td className="px-3 py-3 text-center">
+<span className={`px-2 py-1 rounded-full text-xs font-semibold ${color}`}>
+{status}
+</span>
+</td>
+</tr>
+);
+})}
+</tbody>
+</table>
+</div>
+</div>
 
-                {/* Performance Analysis Section */}
-                <section>
-                  <div className="flex items-center gap-3 mb-5">
-                    <div className="h-1 w-12 bg-blue-600 rounded"></div>
-                    <h3 className="text-xl font-bold text-slate-800 uppercase tracking-wide">Performance Analysis</h3>
-                  </div>
-                  <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
-                    <div className="prose prose-slate max-w-none">
-                      <p className="text-slate-700 leading-relaxed text-justify">{reportContent.analysis}</p>
-                    </div>
-                  </div>
-                </section>
+{/* Document Footer */}
+<div className="border-t-2 border-gray-300 pt-4 mt-8">
+<div className="text-center text-sm text-gray-600">
+<p className="font-semibold text-gray-900">Glory Star Hardware - Construction Materials Corporation</p>
+<p className="text-xs mt-1">Report generated on {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+</div>
+</div>
+</div>
+</div>
 
-                {/* Product Turnover Analysis - Main Focus */}
-                {reportContent.productData && reportContent.productData.length > 0 && (
-                  <section>
-                    <div className="flex items-center gap-3 mb-5">
-                      <div className="h-1 w-12 bg-blue-600 rounded"></div>
-                      <h3 className="text-xl font-bold text-slate-800 uppercase tracking-wide">Product Turnover Analysis</h3>
-                    </div>
-                    
-                    <div className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-slate-200">
-                          <thead>
-                            <tr className="bg-gradient-to-r from-slate-800 to-slate-700">
-                              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
-                                Product Name
-                              </th>
-                              <th className="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
-                                Category
-                              </th>
-                              <th className="px-6 py-4 text-right text-xs font-bold text-white uppercase tracking-wider">
-                                Sales Amount
-                              </th>
-                              <th className="px-6 py-4 text-center text-xs font-bold text-white uppercase tracking-wider">
-                                Qty Sold
-                              </th>
-                              <th className="px-6 py-4 text-right text-xs font-bold text-white uppercase tracking-wider">
-                                Avg Inventory
-                              </th>
-                              <th className="px-6 py-4 text-center text-xs font-bold text-white uppercase tracking-wider">
-                                Turnover Rate
-                              </th>
-                              <th className="px-6 py-4 text-center text-xs font-bold text-white uppercase tracking-wider">
-                                Status
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {reportContent.productData.map((product, index) => {
-                              const { status, emoji } = getProductStatus(product.turnoverRate);
-                              return (
-                                <tr 
-                                  key={index} 
-                                  className={`${
-                                    index % 2 === 0 ? 'bg-white' : 'bg-slate-50'
-                                  } hover:bg-blue-50 transition-colors`}
-                                >
-                                  <td className="px-6 py-4 whitespace-nowrap">
-                                    <div className="text-sm font-semibold text-slate-900">
-                                      {product.productName}
-                                    </div>
-                                  </td>
-                                  <td className="px-6 py-4 whitespace-nowrap">
-                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
-                                      {product.category}
-                                    </span>
-                                  </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-right">
-                                    <span className="text-sm font-bold text-green-600">
-                                      ₱{product.sales.toLocaleString()}
-                                    </span>
-                                  </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                                    <span className="text-sm font-medium text-slate-700">
-                                      {product.quantitySold}
-                                    </span>
-                                  </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-right">
-                                    <span className="text-sm font-bold text-orange-600">
-                                      ₱{product.averageInventory.toLocaleString()}
-                                    </span>
-                                  </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                                    <span className="inline-flex items-center px-3 py-1 rounded-lg text-sm font-bold bg-blue-100 text-blue-700">
-                                      {product.turnoverRate.toFixed(2)}x
-                                    </span>
-                                  </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                                    <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold text-xs ${
-                                      status === 'Fast-moving' ? 'bg-green-100 text-green-700 border border-green-200' :
-                                      status === 'Moderate' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
-                                      'bg-red-100 text-red-700 border border-red-200'
-                                    }`}>
-                                      <span className="text-base">{emoji}</span>
-                                      <span>{status}</span>
-                                    </span>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </section>
-                )}
+{/* Pagination Controls */}
+<div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex items-center justify-between print:hidden">
+<button
+onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+disabled={currentPage === 1}
+className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+>
+<ChevronLeft size={18} />
+Previous
+</button>
 
-                {/* Report Footer Note */}
-                <div className="mt-8 pt-6 border-t-2 border-slate-200">
-                  <p className="text-xs text-slate-500 text-center">
-                    This report is generated automatically based on sales and inventory data. For inquiries, please contact the management team.
-                  </p>
-                </div>
-              </div>
-            </div>
+<span className="text-sm text-gray-600">
+Page {currentPage} of {totalPages} ({data.productData.length} total items)
+</span>
 
-            {/* Enhanced Footer with Actions */}
-            <div className="border-t-2 border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100 px-8 py-5 rounded-b-xl">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2 text-slate-600">
-                  <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
-                  <span className="text-xs font-semibold">Glory Star Hardware - Official Document</span>
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setShowReportModal(false)}
-                    className="px-6 py-2.5 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-all duration-200 flex items-center gap-2 font-semibold text-sm shadow-sm"
-                  >
-                    <FiX size={16} />
-                    <span>Close</span>
-                  </button>
-                  <button
-                    onClick={handleDownloadPDF}
-                    className="px-6 py-2.5 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-200 flex items-center gap-2 font-semibold text-sm shadow-lg hover:shadow-xl"
-                  >
-                    <AiOutlineFilePdf size={18} />
-                    <span>Download PDF</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+<button
+onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+disabled={currentPage === totalPages}
+className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+>
+Next
+<ChevronRight size={18} />
+</button>
+</div>
 
-    </div>
+{/* Enhanced Footer with Actions */}
+<div className="border-t-2 border-slate-200 bg-gradient-to-r from-slate-50 to-slate-100 px-8 py-5 rounded-b-xl">
+<div className="flex justify-between items-center">
+<div className="flex items-center gap-2 text-slate-600">
+<div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+<span className="text-xs font-semibold">Glory Star Hardware - Official Document</span>
+</div>
+<div className="flex gap-3">
+<button
+onClick={() => setShowReportModal(false)}
+className="px-6 py-2.5 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-all duration-200 flex items-center gap-2 font-semibold text-sm shadow-sm"
+>
+<FiX size={16} />
+<span>Close</span>
+</button>
+<button
+onClick={async () => { const pdf = await generatePDF(); pdf.save(`Inventory_Report_${new Date().getTime()}.pdf`); }}
+className="px-6 py-2.5 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 transition-all duration-200 flex items-center gap-2 font-semibold text-sm shadow-lg hover:shadow-xl"
+>
+<AiOutlineFilePdf size={18} />
+<span>Download PDF</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+)}    </div>
   );
 }
+
+<style jsx>{`
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print\\:hidden {
+    display: none !important;
+  }
+  .fixed.inset-0 {
+    position: static;
+  }
+  .bg-black.bg-opacity-50 {
+    background: white;
+  }
+  .rounded-lg.shadow-2xl {
+    box-shadow: none;
+  }
+  .max-h-\\[90vh\\] {
+    max-height: none;
+  }
+  .overflow-y-auto {
+    overflow: visible;
+  }
+}
+`}</style>
 
 export default InventoryTurnoverReport; 

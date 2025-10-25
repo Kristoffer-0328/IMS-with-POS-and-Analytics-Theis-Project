@@ -5,12 +5,15 @@ import app from '../../FirebaseConfig';
 const db = getFirestore(app);
 
 export const ReportingService = {
-  async getInventoryTurnover(startDate, endDate) {
+  async getInventoryTurnover(startDate, endDate, granularity = 'monthly') {
     try {
+      console.log('ReportingService.getInventoryTurnover called with:', { startDate, endDate, granularity });
 
       // Ensure dates are in YYYYMMDD format
       const start = moment(startDate).format('YYYYMMDD');
       const end = moment(endDate).format('YYYYMMDD');
+      
+      console.log('Converted date range:', { start, end });
 
       // Get inventory snapshots for the period
       const snapshotsRef = collection(db, 'inventory_snapshots');
@@ -36,6 +39,9 @@ export const ReportingService = {
         getDocs(salesQuery)
       ]);
 
+      console.log('Fetched snapshots:', snapshotsSnapshot.docs.length);
+      console.log('Fetched sales:', salesSnapshot.docs.length);
+
       
 
       // Process snapshots
@@ -50,8 +56,13 @@ export const ReportingService = {
         ...doc.data()
       }));
 
-      // Calculate monthly metrics within the date range
-      const monthlyData = [];
+      console.log('Sample snapshot:', snapshots[0]);
+      console.log('Sample sale:', sales[0]);
+      console.log('Total snapshots processed:', snapshots.length);
+      console.log('Total sales processed:', sales.length);
+
+      // Calculate metrics based on granularity (weekly or monthly)
+      const periodData = [];
       let totalSales = 0;
       let totalInventoryValue = 0;
       let inventoryCount = 0;
@@ -59,34 +70,83 @@ export const ReportingService = {
       // Product-level data aggregation
       const productMap = new Map();
 
-      // Group by month
+      // Determine period grouping
       const startMoment = moment(startDate);
       const endMoment = moment(endDate);
-      const monthsDiff = endMoment.diff(startMoment, 'months') + 1;
+      
+      let periods = [];
+      
+      if (granularity === 'weekly') {
+        // For weekly, start the first period at the filter's start date, not the start of the week
+        let periodStartMoment = startMoment.clone();
+        while (periodStartMoment.isSameOrBefore(endMoment, 'day')) {
+          // End of this period is either 6 days after start or the filter's end date, whichever is earlier
+          let periodEndMoment = periodStartMoment.clone().add(6, 'days');
+          if (periodEndMoment.isAfter(endMoment, 'day')) {
+            periodEndMoment = endMoment.clone();
+          }
+          const periodStart = periodStartMoment.format('YYYYMMDD');
+          const periodEnd = periodEndMoment.format('YYYYMMDD');
+          const periodLabel = `Week of ${periodStartMoment.format('MMM DD')}`;
+          periods.push({ periodStart, periodEnd, periodLabel });
+          // Next period starts the day after this one ends
+          periodStartMoment = periodEndMoment.clone().add(1, 'day');
+        }
+      } else {
+        // For monthly, use the original logic
+        const monthsDiff = endMoment.diff(startMoment, 'months') + 1;
+        
+        for (let i = 0; i < monthsDiff; i++) {
+          const currentMonth = startMoment.clone().add(i, 'months');
+          const periodStart = currentMonth.startOf('month').format('YYYYMMDD');
+          const periodEnd = currentMonth.endOf('month').format('YYYYMMDD');
+          const periodLabel = currentMonth.format('MMMM YYYY');
+          
+          periods.push({ periodStart, periodEnd, periodLabel });
+        }
+      }
 
-      for (let i = 0; i < monthsDiff; i++) {
-        const currentMonth = startMoment.clone().add(i, 'months');
-        const monthStart = currentMonth.startOf('month').format('YYYYMMDD');
-        const monthEnd = currentMonth.endOf('month').format('YYYYMMDD');
+      for (const period of periods) {
+        const { periodStart, periodEnd, periodLabel } = period;
 
-        // Get snapshots for this month
-        const monthSnapshots = snapshots.filter(s => 
-          s.date >= monthStart && s.date <= monthEnd
+        // Get snapshots for this period
+        const periodSnapshots = snapshots.filter(s => 
+          s.date >= periodStart && s.date <= periodEnd
         );
 
-        // Get sales for this month
-        const monthSales = sales.filter(s => 
-          s.date >= monthStart && s.date <= monthEnd
+        // Get sales for this period
+        const periodSales = sales.filter(s => 
+          s.date >= periodStart && s.date <= periodEnd
         );
 
-        const avgInventory = monthSnapshots.reduce((sum, s) => sum + (s.totalValue || 0), 0) / 
-          (monthSnapshots.length || 1);
+        const avgInventory = periodSnapshots.reduce((sum, s) => sum + (s.totalValue || 0), 0) / 
+          (periodSnapshots.length || 1);
 
-        const monthlySales = monthSales.reduce((sum, s) => sum + (s.total_sales || 0), 0);
+        const periodTotalSales = periodSales.reduce((sum, s) => sum + (s.total_sales || 0), 0);
 
         // Aggregate product-level data
-        monthSales.forEach(sale => {
-          if (sale.products && Array.isArray(sale.products)) {
+        periodSales.forEach(sale => {
+          console.log('Processing sale:', sale.date, 'products_sold:', !!sale.products_sold);
+          if (sale.products_sold && typeof sale.products_sold === 'object') {
+            // Handle the products_sold structure from AnalyticsService
+            Object.values(sale.products_sold).forEach(product => {
+              console.log('Processing product:', product.name, 'sales:', product.total_value);
+              const key = product.name || 'Unknown Product';
+              if (!productMap.has(key)) {
+                productMap.set(key, {
+                  productName: product.name || 'Unknown Product',
+                  category: product.category || 'Uncategorized',
+                  totalSales: 0,
+                  totalQuantity: 0,
+                  inventoryValues: []
+                });
+              }
+              const prodData = productMap.get(key);
+              prodData.totalSales += product.total_value || 0;
+              prodData.totalQuantity += product.quantity_sold || 0;
+            });
+          } else if (sale.products && Array.isArray(sale.products)) {
+            // Handle direct products array structure
             sale.products.forEach(product => {
               const key = product.productId || product.name;
               if (!productMap.has(key)) {
@@ -106,27 +166,38 @@ export const ReportingService = {
         });
 
         // Aggregate inventory per product
-        monthSnapshots.forEach(snapshot => {
-          if (snapshot.products && Array.isArray(snapshot.products)) {
-            snapshot.products.forEach(product => {
-              const key = product.productId || product.name;
-              if (productMap.has(key)) {
-                productMap.get(key).inventoryValues.push(product.value || 0);
-              }
-            });
+        periodSnapshots.forEach(snapshot => {
+          if (snapshot.products) {
+            // Handle both array and object structures
+            if (Array.isArray(snapshot.products)) {
+              snapshot.products.forEach(product => {
+                const key = product.productId || product.name;
+                if (productMap.has(key)) {
+                  productMap.get(key).inventoryValues.push(product.value || 0);
+                }
+              });
+            } else if (typeof snapshot.products === 'object') {
+              // Handle object structure from AnalyticsService
+              Object.values(snapshot.products).forEach(product => {
+                const key = product.name || 'Unknown Product';
+                if (productMap.has(key)) {
+                  productMap.get(key).inventoryValues.push(product.value || 0);
+                }
+              });
+            }
           }
         });
 
-        monthlyData.push({
-          month: currentMonth.format('MMMM YYYY'),
-          sales: monthlySales,
+        periodData.push({
+          period: periodLabel,
+          sales: periodTotalSales,
           avgInventory: avgInventory,
-          turnoverRate: avgInventory === 0 ? 0 : (monthlySales / avgInventory)
+          turnoverRate: avgInventory === 0 ? 0 : (periodTotalSales / avgInventory)
         });
 
-        totalSales += monthlySales;
+        totalSales += periodTotalSales;
         totalInventoryValue += avgInventory;
-        if (monthSnapshots.length > 0) inventoryCount++;
+        if (periodSnapshots.length > 0) inventoryCount++;
       }
 
       const averageInventory = totalInventoryValue / (inventoryCount || 1);
@@ -149,22 +220,37 @@ export const ReportingService = {
         };
       });
 
+      console.log('Product map size:', productMap.size);
+      console.log('Product map entries:', Array.from(productMap.entries()));
+
       const result = {
         averageTurnoverRate,
         totalSales,
         averageInventory,
-        chartData: monthlyData.map(data => ({
-          name: moment(data.month, 'MMMM YYYY').format('MMM YYYY'),
+        chartData: periodData.map((data, idx) => ({
+          // Use the real period start date for the x-axis
+          name: periods[idx].periodStart, // e.g. '20251001'
+          label: periods[idx].periodLabel, // e.g. 'Week of Oct 01'
           value: data.turnoverRate
         })),
-        monthlyData: monthlyData.map(data => ({
-          month: data.month,
+        monthlyData: periodData.map(data => ({
+          period: data.period,
           sales: data.sales.toLocaleString(),
           avgInventory: data.avgInventory.toLocaleString(),
           turnoverRate: data.turnoverRate.toFixed(2)
         })),
-        productData: productData
+        productData: productData,
+        granularity: granularity
       };
+
+      console.log('Final result:', {
+        averageTurnoverRate,
+        totalSales,
+        averageInventory,
+        productDataCount: productData.length,
+        chartDataCount: result.chartData.length,
+        granularity: result.granularity
+      });
 
       return result;
     } catch (error) {

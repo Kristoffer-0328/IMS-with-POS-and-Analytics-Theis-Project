@@ -77,7 +77,7 @@ export const generateInvoiceHtml = (data) => {
                     flex: 1;
                 }
                 .logo-img { 
-                    width: 120px; 
+                    width: 150px; 
                     height: auto; 
                     margin-bottom: 15px; 
                 }
@@ -316,7 +316,7 @@ export const generateInvoiceHtml = (data) => {
                 <div class="invoice-header">
                     <div class="company-info">
                         <img src="/Glory_Star_Logo.png" alt="Glory Star Hardware" class="logo-img" />
-                        <div class="company-name">Glory Star Hardware</div>
+                     
                         <div class="company-details">
                             123 Main Street<br>
                             Antipolo City, Philippines<br>

@@ -343,21 +343,8 @@ const ShelfViewModal = ({
             </div>
           )}
           
-          {/* Debug Info - Remove after fixing */}
-          {products.length > 0 && (
-            <details className="mt-4 text-left bg-gray-100 p-3 rounded">
-              <summary className="cursor-pointer text-sm font-medium text-gray-700">🔍 Debug: Show Products Data</summary>
-              <div className="mt-2 text-xs space-y-1 max-h-40 overflow-y-auto">
-                {products.map((p, i) => (
-                  <div key={i} className="bg-white p-2 rounded mb-1">
-                    <div><strong>Name:</strong> {p.name}</div>
-                    <div><strong>Location:</strong> {p.shelfName} - {p.rowName} - Col {p.columnIndex}</div>
-                    <div><strong>LocationKey:</strong> {p.locationKey}</div>
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
+       
+     
         </div>
         
         {/* Layout: Display all shelves in grid */}

@@ -36,6 +36,7 @@ const ReleaseManagement = () => {
   const [statusFilter, setStatusFilter] = useState('all'); // all, pending, released, cancelled
   const [selectedRelease, setSelectedRelease] = useState(null);
   const [showQRModal, setShowQRModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [customCancelReason, setCustomCancelReason] = useState('');
@@ -104,11 +105,15 @@ const ReleaseManagement = () => {
     setShowQRModal(true);
   };
 
+  // Handle showing details modal
+  const handleShowDetails = (release) => {
+    setSelectedRelease(release);
+    setShowDetailsModal(true);
+  };
+
   // Handle showing cancel modal
   const handleShowCancel = (release) => {
     setSelectedRelease(release);
-    setCancelReason('');
-    setCustomCancelReason('');
     setShowCancelModal(true);
   };
 
@@ -392,6 +397,13 @@ const ReleaseManagement = () => {
                           <div>Cancelled by: {release.cancelledByName}</div>
                           <div>Reason: {release.cancelReason}</div>
                         </div>
+                      ) : release.releaseStatus === 'released' ? (
+                        <button
+                          onClick={() => handleShowDetails(release)}
+                          className="text-blue-600 hover:text-blue-900 font-medium"
+                        >
+                          View Details
+                        </button>
                       ) : (
                         <div className="text-xs text-gray-500">
                           Released by: {release.releasedByName}
@@ -480,28 +492,9 @@ const ReleaseManagement = () => {
                     level="H"
                   />
                 </div>
-                
-                <p className="text-xs text-gray-500 mt-4 text-center max-w-md">
-                  Scan this QR code with your mobile device to open the release processing screen where you can verify items and update inventory.
-                </p>
-                
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowQRModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={() => handleMarkAsReleased(selectedRelease.id)}
-                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                >
-                  Mark as Released
-                </button>
-              </div>
+              
             </div>
           </div>
         </div>
@@ -592,6 +585,199 @@ const ReleaseManagement = () => {
                 >
                   Cancel Release
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Details Modal */}
+      {showDetailsModal && selectedRelease && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold text-gray-900">Transaction Details</h3>
+                <button
+                  onClick={() => setShowDetailsModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <FiXCircle size={24} />
+                </button>
+              </div>
+
+              {/* Transaction Header Info */}
+              <div className="mb-6 grid grid-cols-2 gap-6">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-800 mb-3">Transaction Information</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Transaction ID:</span>
+                      <span className="font-medium">{selectedRelease.transactionId}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Date & Time:</span>
+                      <span className="font-medium">
+                        {selectedRelease.createdAt.toLocaleDateString()} {selectedRelease.createdAt.toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Cashier:</span>
+                      <span className="font-medium">{selectedRelease.cashierName || 'Unknown'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Status:</span>
+                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                        Released
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-800 mb-3">Customer Information</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Name:</span>
+                      <span className="font-medium">{selectedRelease.customerInfo?.name || 'Walk-in Customer'}</span>
+                    </div>
+                    {selectedRelease.customerInfo?.phone && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Phone:</span>
+                        <span className="font-medium">{selectedRelease.customerInfo.phone}</span>
+                      </div>
+                    )}
+                    {selectedRelease.customerInfo?.email && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Email:</span>
+                        <span className="font-medium">{selectedRelease.customerInfo.email}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Payment Method:</span>
+                      <span className="font-medium">{selectedRelease.paymentMethod || 'Cash'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Release Information */}
+              <div className="mb-6 bg-green-50 rounded-lg p-4">
+                <h4 className="font-semibold text-green-800 mb-3">Release Information</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-green-700">Released By:</span>
+                    <p className="font-medium text-green-900">{selectedRelease.releasedByName || 'Unknown'}</p>
+                  </div>
+                  <div>
+                    <span className="text-green-700">Released At:</span>
+                    <p className="font-medium text-green-900">
+                      {selectedRelease.releasedAt ? 
+                        `${selectedRelease.releasedAt.toLocaleDateString()} ${selectedRelease.releasedAt.toLocaleTimeString()}` 
+                        : 'N/A'
+                      }
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Items List */}
+              <div className="mb-6">
+                <h4 className="font-semibold text-gray-800 mb-3">Items Released</h4>
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Image</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Product</th>
+                        <th className="px-4 py-3 text-center font-medium text-gray-700">Quantity</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-700">Unit Price</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-700">Total</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-700">Location</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {selectedRelease.items?.map((item, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
+                              {item.image || item.productImage ? (
+                                <img
+                                  src={item.image || item.productImage}
+                                  alt={item.variantName || item.productName}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.target.style.display = 'none';
+                                    e.target.nextSibling.style.display = 'flex';
+                                  }}
+                                />
+                              ) : null}
+                              <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">
+                                <FiPackage size={20} />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div>
+                              <div className="font-medium text-gray-900">{item.variantName || item.productName}</div>
+                              {item.category && (
+                                <div className="text-xs text-gray-500">{item.category}</div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-center">{item.quantity} {item.unit || 'pcs'}</td>
+                          <td className="px-4 py-3 text-right">₱{item.unitPrice?.toLocaleString() || '0.00'}</td>
+                          <td className="px-4 py-3 text-right font-medium">₱{item.totalPrice?.toLocaleString() || '0.00'}</td>
+                          <td className="px-4 py-3">
+                            <div className="text-xs text-gray-600">
+                              {item.storageLocation && (
+                                <div>Unit: {item.storageLocation}</div>
+                              )}
+                              {item.shelfName && (
+                                <div>Shelf: {item.shelfName}</div>
+                              )}
+                              {item.rowName && (
+                                <div>Row: {item.rowName}</div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Totals */}
+              <div className="flex justify-end">
+                <div className="bg-gray-50 rounded-lg p-4 w-80">
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Subtotal:</span>
+                      <span>₱{selectedRelease.subTotal?.toLocaleString() || '0.00'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Tax (12%):</span>
+                      <span>₱{selectedRelease.tax?.toLocaleString() || '0.00'}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-lg pt-2 border-t border-gray-300">
+                      <span className="text-gray-900">Total:</span>
+                      <span className="text-gray-900">₱{selectedRelease.total?.toLocaleString() || '0.00'}</span>
+                    </div>
+                    {selectedRelease.amountPaid && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Amount Paid:</span>
+                        <span>₱{selectedRelease.amountPaid.toLocaleString()}</span>
+                      </div>
+                    )}
+                    {selectedRelease.change && selectedRelease.change > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Change:</span>
+                        <span>₱{selectedRelease.change.toLocaleString()}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

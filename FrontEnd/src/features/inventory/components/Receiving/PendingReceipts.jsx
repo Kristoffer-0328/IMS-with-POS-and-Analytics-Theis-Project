@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiEye, FiCheckCircle, FiXCircle } from 'react-icons/fi';
+import { FiEye, FiCheckCircle, FiXCircle, FiSearch, FiFilter, FiPackage, FiClock } from 'react-icons/fi';
 import { usePurchaseOrderServices } from '../../../../services/firebase/PurchaseOrderServices';
 import { AnalyticsService } from '../../../../services/firebase/AnalyticsService';
 import { useAuth } from '../../../auth/services/FirebaseAuth';
@@ -19,6 +19,8 @@ const PendingReceipts = () => {
   const [showQRModal, setShowQRModal] = useState(false);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [qrUrl, setQrUrl] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all'); // all, pending, receiving_in_progress, partial, completed, received
   
   const poServices = usePurchaseOrderServices();
   const { currentUser } = useAuth();
@@ -26,9 +28,9 @@ const PendingReceipts = () => {
   useEffect(() => {
     const fetchAllPOs = async () => {
       try {
-        // Get all approved POs (both pending and completed receiving)
+        // Get all approved POs (pending, receiving in progress, and completed receiving)
         const unsubscribe = poServices.listenToPurchaseOrders((pos) => {
-          const approved = pos.filter(po => po.status === 'approved' || po.status === 'received');
+          const approved = pos.filter(po => po.status === 'approved' || po.status === 'received' || po.status === 'receiving_in_progress');
           setAllPOs(approved);
           setLoading(false);
         });
@@ -98,33 +100,56 @@ const PendingReceipts = () => {
     setShowRejectModal(true);
   };
 
+  const openQRForPO = (po) => {
+    setSelectedPO(po);
+    // Generate QR URL for mobile receiving with PO ID
+    const baseUrl = window.location.origin;
+    const qrUrl = `${baseUrl}/receiving_mobile?poId=${po.id}`;
+    setQrUrl(qrUrl);
+    setShowQRModal(true);
+  };
+
+  // Filter POs
+  const filteredPOs = allPOs.filter(po => {
+    const matchesSearch = searchQuery === '' || 
+      po.poNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      po.supplierName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      po.createdBy?.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const poStatus = po.status;
+    const matchesStatus = statusFilter === 'all' || poStatus === statusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
+
   const renderStatus = (status) => {
     const statusConfig = {
-      pending: { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+      approved: { bg: 'bg-yellow-100', text: 'text-yellow-800' },
       receiving_in_progress: { bg: 'bg-orange-100', text: 'text-orange-800' },
       partial: { bg: 'bg-blue-100', text: 'text-blue-800' },
       completed: { bg: 'bg-green-100', text: 'text-green-800' },
       received: { bg: 'bg-green-100', text: 'text-green-800' },
     };
 
-    const config = statusConfig[status] || statusConfig.pending;
+    const config = statusConfig[status] || statusConfig.approved;
     return (
       <span className={`px-3 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
         {status === 'received' ? 'RECEIVED' :
          status === 'receiving_in_progress' ? 'RECEIVING' :
+         status === 'approved' ? 'PENDING' :
          status.toUpperCase()}
       </span>
     );
   };
 
-  const openQRForPO = (po) => {
-    setSelectedPO(po);
-    const base = `${window.location.protocol}//${window.location.host}`;
-    const url = `${base}/receiving_mobile?poId=${encodeURIComponent(po.id)}`;
-
-
-    setQrUrl(url);
-    setShowQRModal(true);
+  // Calculate statistics
+  const stats = {
+    total: allPOs.length,
+    pending: allPOs.filter(po => po.status === 'approved').length,
+    receiving: allPOs.filter(po => po.status === 'receiving_in_progress').length,
+    partial: allPOs.filter(po => po.receivingStatus === 'partial').length,
+    completed: allPOs.filter(po => po.status === 'received' || po.receivingStatus === 'completed').length,
+    totalItems: allPOs.reduce((sum, po) => sum + (po.items?.length || 0), 0)
   };
 
   if (loading) {
@@ -142,6 +167,105 @@ const PendingReceipts = () => {
           <h2 className="text-xl font-semibold text-gray-900">All Receipts</h2>
           <p className="text-sm text-gray-500 mt-1">Manage pending receipts and view completed transactions</p>
         </div>
+
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 p-6 border-b border-gray-200">
+          <div className="bg-white rounded-lg p-4 border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Total POs</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+              </div>
+              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                <FiPackage className="text-blue-600" size={24} />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg p-4 border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Pending</p>
+                <p className="text-2xl font-bold text-yellow-600">{stats.pending}</p>
+              </div>
+              <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
+                <FiClock className="text-yellow-600" size={24} />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg p-4 border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Receiving</p>
+                <p className="text-2xl font-bold text-orange-600">{stats.receiving}</p>
+              </div>
+              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                <FiEye className="text-orange-600" size={24} />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg p-4 border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Completed</p>
+                <p className="text-2xl font-bold text-green-600">{stats.completed}</p>
+              </div>
+              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                <FiCheckCircle className="text-green-600" size={24} />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg p-4 border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Total Items</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalItems}</p>
+              </div>
+              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                <FiFilter className="text-purple-600" size={24} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="bg-white rounded-lg p-4 border-b border-gray-200">
+          <div className="flex flex-col sm:flex-row gap-4">
+            {/* Search */}
+            <div className="flex-1">
+              <div className="relative">
+                <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by PO number, supplier, or creator..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                />
+              </div>
+            </div>
+
+            {/* Status Filter */}
+            <div className="sm:w-48">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              >
+                <option value="all">All Status</option>
+                <option value="approved">Pending</option>
+                <option value="receiving_in_progress">Receiving</option>
+                <option value="partial">Partial</option>
+                <option value="completed">Completed</option>
+                <option value="received">Received</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -167,14 +291,14 @@ const PendingReceipts = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {allPOs.length === 0 ? (
+              {filteredPOs.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
                     No receipts found
                   </td>
                 </tr>
               ) : (
-                allPOs.map((po) => (
+                filteredPOs.map((po) => (
                   <tr key={po.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {po.poNumber}
@@ -189,7 +313,7 @@ const PendingReceipts = () => {
                       {po.items?.length || 0}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {renderStatus(po.status === 'received' ? 'received' : (po.receivingStatus || 'pending'))}
+                      {renderStatus(po.status)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center gap-2">
@@ -222,34 +346,82 @@ const PendingReceipts = () => {
 
       {/* QR Modal */}
       {showQRModal && selectedPO && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowQRModal(false)} />
-          <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-sm z-10">
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Scan to Receive</h3>
-            <p className="text-sm text-gray-500 mb-4">Scan this QR code with your mobile device to open the receiving screen.</p>
-            <div className="flex justify-center mb-4">
-              <QRCodeSVG value={qrUrl} size={220} />
-            </div>
-            <div className="bg-gray-50 rounded-md p-2 text-xs text-gray-600 break-all select-all mb-4">
-              {qrUrl}
-            </div>
-            <div className="mb-4">
-              <a 
-                href={qrUrl} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-blue-500 hover:text-blue-700 text-sm underline"
-              >
-                🔗 Test this link directly
-              </a>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowQRModal(false)}
-                className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
-              >
-                Close
-              </button>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold text-gray-900">Receive Items - QR Code</h3>
+                <button
+                  onClick={() => setShowQRModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <FiXCircle size={24} />
+                </button>
+              </div>
+
+              {/* PO Info */}
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium text-gray-700">PO Number:</span>
+                    <p className="text-gray-900">{selectedPO.poNumber}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Supplier:</span>
+                    <p className="text-gray-900">{selectedPO.supplierName}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Delivery Date:</span>
+                    <p className="text-gray-900">
+                      {selectedPO.deliveryDate ? new Date(selectedPO.deliveryDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Not specified'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Total Items:</span>
+                    <p className="text-gray-900">{selectedPO.items?.length || 0}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Items List */}
+              <div className="mb-6">
+                <h4 className="font-medium text-gray-700 mb-3">Items to Receive:</h4>
+                <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-2 text-left">Product</th>
+                        <th className="px-4 py-2 text-center">Expected Qty</th>
+                        <th className="px-4 py-2 text-right">Total Value</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {selectedPO.items?.map((item, index) => (
+                        <tr key={index}>
+                          <td className="px-4 py-2">{item.productName}</td>
+                          <td className="px-4 py-2 text-center">{item.quantity}</td>
+                          <td className="px-4 py-2 text-right">₱{(item.unitPrice * item.quantity).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* QR Code */}
+              <div className="flex flex-col items-center mb-6">
+                <p className="text-sm text-gray-600 mb-4">Scan this QR code to process receiving on mobile</p>
+                <div className="p-6 bg-white border-4 border-orange-500 rounded-lg">
+                  <QRCodeSVG
+                    value={qrUrl}
+                    size={256}
+                    level="H"
+                  />
+                </div>
+           
+              </div>
+
+           
             </div>
           </div>
         </div>

@@ -1015,6 +1015,14 @@ export default function Pos_NewSale() {
           paymentMethod
         });
 
+        // Create/update daily analytics records
+        try {
+          await AnalyticsService.checkAndCreateDailyRecords();
+        } catch (analyticsError) {
+          console.error('Error updating analytics records:', analyticsError);
+          // Don't fail transaction if analytics fails
+        }
+
         // Generate and print receipt
         try {
           // Show receipt modal for preview before printing

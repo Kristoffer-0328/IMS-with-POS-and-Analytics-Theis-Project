@@ -604,6 +604,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                                     <option value="box">Box</option>
                                     <option value="set">Set</option>
                                     <option value="pack">Pack</option>
+                                    <option value="roll">Sheet</option>
                                 </optgroup>
                                 <optgroup label="Weight">
                                     <option value="kg">Kilogram (kg)</option>
