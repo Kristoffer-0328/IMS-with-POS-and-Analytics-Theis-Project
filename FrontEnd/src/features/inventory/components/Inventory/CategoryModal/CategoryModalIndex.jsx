@@ -1,17 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { getFirestore, collection, getDocs, doc, setDoc, query, where } from 'firebase/firestore';
+import { getFirestore, collection, getDocs } from 'firebase/firestore';
 import NewProductForm from './NewProductForm';
-import NewVariantForm from './NewVariantForm';
-import ProductList from './ProductList';
 import app from '../../../../../FirebaseConfig';
 import { useServices } from '../../../../../services/firebase/ProductServices';
 
-const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
+const CategoryModalIndex = ({ CategoryOpen, CategoryClose, onOpenViewProductModal, supplier }) => {
     const { linkProductToSupplier } = useServices();
     const [storageLocations, setStorageLocations] = useState([]);
     const [selectedStorageLocation, setSelectedStorageLocation] = useState(null);
     const [showAddProductModal, setShowAddProductModal] = useState(false);
-    const [activeForm, setActiveForm] = useState(null); // 'product' or 'variant'
     const [unitCapacities, setUnitCapacities] = useState({});
     const [loading, setLoading] = useState(false);
     const db = getFirestore(app);
@@ -128,22 +125,18 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
     const handleStorageLocationClick = (storageLocation) => {
         setSelectedStorageLocation(storageLocation);
         setShowAddProductModal(true);
-        if (supplier) {
-            setActiveForm('product'); // Automatically go to product form when supplier is provided
-        }
+        setActiveForm('product'); // Directly go to product form
     };
 
     const handleClose = () => {
         setShowAddProductModal(false);
         setSelectedStorageLocation(null);
-        setActiveForm(null);
         CategoryClose();
     };
 
     const handleBack = () => {
         setShowAddProductModal(false);
         setSelectedStorageLocation(null);
-        setActiveForm(null);
     };
 
 
@@ -257,51 +250,12 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
                     </>
                 ) : (
                     <div className="mt-8">
-                        {!activeForm ? (
-                            <>
-                                <div className="text-center mb-8">
-                                    <h3 className="text-xl font-semibold text-gray-800">
-                                        {supplier ? 'Add Product to Supplier' : 'Add New Item'}
-                                        <span className="block text-blue-600 text-sm mt-1">{selectedStorageLocation?.name}</span>
-                                    </h3>
-                                </div>
-                                <div className="space-y-4">
-                                    <button
-                                        onClick={() => setActiveForm('product')}
-                                        className="w-full p-6 text-left border border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 group"
-                                    >
-                                        <span className="text-lg font-medium text-gray-800 group-hover:text-blue-600">New Product</span>
-                                        <p className="text-sm text-gray-500 mt-1">Add a completely new product to inventory</p>
-                                    </button>
-                                    {!supplier && (
-                                        <button
-                                            onClick={() => setActiveForm('variant')}
-                                            className="w-full p-6 text-left border border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 group"
-                                        >
-                                            <span className="text-lg font-medium text-gray-800 group-hover:text-blue-600">Add Variant</span>
-                                            <p className="text-sm text-gray-500 mt-1">Add a variation to existing product</p>
-                                        </button>
-                                    )}
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                {activeForm === 'product' ? (
-                                    <NewProductForm
-                                        selectedCategory={selectedStorageLocation}
-                                        onClose={handleClose}
-                                        onBack={handleBack}
-                                        supplier={supplier}
-                                        
-                                    />
-                                ) : (
-                                    <NewVariantForm
-                                        selectedCategory={selectedStorageLocation}
-                                        onBack={handleBack}
-                                    />
-                                )}
-                            </>
-                        )}
+                        <NewProductForm
+                            selectedCategory={selectedStorageLocation}
+                            onClose={handleClose}
+                            onBack={handleBack}
+                            supplier={supplier}
+                        />
                     </div>
                 )}
             </div>

@@ -9,14 +9,13 @@ import ShelfViewModal from '../ShelfViewModal';
 import { uploadImage } from '../../../../../services/cloudinary/CloudinaryService';
 import { getStorageUnitData } from '../../../config/StorageUnitsConfig';
 
-const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
+const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) => {
     const { linkProductToSupplier } = useServices();
     const [productName, setProductName] = useState('');
     const [quantity, setQuantity] = useState('');
     const [unitPrice, setUnitPrice] = useState('');
     const [location, setLocation] = useState(''); // Will be set when storage location is selected
 
-    const [restockLevel, setRestockLevel] = useState('');
     const [productImage, setProductImage] = useState(null);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isUploading, setIsUploading] = useState(false);
@@ -37,9 +36,12 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
     const [size, setSize] = useState('');
     const [supplierName, setSupplierName] = useState('');
     const [supplierCode, setSupplierCode] = useState('');
-    const [selectedSupplier, setSelectedSupplier] = useState(null);
+    const [selectedSuppliers, setSelectedSuppliers] = useState([]);
     const [supplierPrice, setSupplierPrice] = useState('');
     const [dateStocked, setDateStocked] = useState(new Date().toISOString().split('T`')[0]);
+    
+    // Safety stock for ROP calculation
+    const [safetyStock, setSafetyStock] = useState('');
     
     // Storage location modal states
     const [isStorageModalOpen, setIsStorageModalOpen] = useState(false);
@@ -134,18 +136,29 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
             // Automatically use the supplier's information
             setSupplierName(supplier.name);
             setSupplierCode(supplier.primaryCode || supplier.code);
-            setSelectedSupplier(supplier);
+            setSelectedSuppliers([supplier]);
         }
     }, [supplier]);
 
     // Handle supplier selection from SupplierSelector
     const handleSupplierSelect = (supplierData) => {    
-        if (supplierData) {
-            setSelectedSupplier(supplierData);
+        if (Array.isArray(supplierData)) {
+            setSelectedSuppliers(supplierData);
+            if (supplierData.length > 0) {
+                // Use the first supplier's info for the form fields
+                const firstSupplier = supplierData[0];
+                setSupplierName(firstSupplier.name);
+                setSupplierCode(firstSupplier.primaryCode || firstSupplier.code);
+            } else {
+                setSupplierName('');
+                setSupplierCode('');
+            }
+        } else if (supplierData) {
+            setSelectedSuppliers([supplierData]);
             setSupplierName(supplierData.name);
             setSupplierCode(supplierData.primaryCode || supplierData.code);
         } else {
-            setSelectedSupplier(null);
+            setSelectedSuppliers([]);
             setSupplierName('');
             setSupplierCode('');
         }
@@ -300,7 +313,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
 
         try {
             const db = getFirestore(app);
-            const currentSupplier = supplier || selectedSupplier;
+            const currentSuppliers = supplier ? [supplier] : selectedSuppliers;
             
             // If multiple locations, create separate product documents for each location
             // All will share the same base product ID but have different storage info
@@ -325,19 +338,16 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                     size: size?.trim() || 'default',
                     specifications: specifications?.trim() || '',
                     maximumStockLevel: Number(maximumStockLevel) || 0,
-                    restockLevel: Number(restockLevel) || 0,
+                    safetyStock: Number(safetyStock) || 0,
                     dateStocked: dateStocked || new Date().toISOString().split('T')[0],
                     imageUrl: productImage || null,
                     categoryValues: categoryValues || {},
-                    supplier: supplier ? {
-                        name: supplier.name,
-                        code: supplier.primaryCode || supplier.code,
-                        primaryCode: supplier.primaryCode || supplier.code
-                    } : {
-                        name: supplierName?.trim() || 'Unknown',
-                        code: supplierCode?.trim() || '',
-                        primaryCode: supplierCode?.trim() || ''
-                    },
+                    suppliers: currentSuppliers.map(s => ({
+                        id: s.id,
+                        name: s.name,
+                        code: s.primaryCode || s.code,
+                        primaryCode: s.primaryCode || s.code
+                    })),
                     customFields: additionalFields.reduce((acc, field) => ({
                         ...acc,
                         [field.name]: field.value || ''
@@ -348,10 +358,36 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                     totalQuantityAllLocations: totalQty // Store total quantity across all locations
                 };
 
-                // Generate unique ID for this location's product document
+                // Calculate EOQ and ROP
+                const defaultDemand = 10; // Default demand when no historical data
+                const purchaseCost = Number(supplierPrice) || Number(unitPrice) || 1;
+                const currentDate = new Date();
+                const createdDate = new Date(productData.createdAt);
+                const holdingPeriodDays = Math.max(1, Math.ceil((currentDate - createdDate) / (1000 * 60 * 60 * 24))); // At least 1 day
+                const holdingCost = purchaseCost / holdingPeriodDays; // Holding cost per day
+
+                // EOQ = sqrt(2 * demand * purchase_cost / holding_cost)
+                const eoq = Math.ceil(Math.sqrt(2 * defaultDemand * purchaseCost / holdingCost));
+
+                // Get lead time from supplier (assume first supplier has leadTime in days)
+                const leadTime = currentSuppliers.length > 0 ? (currentSuppliers[0].leadTime || 7) : 7; // Default 7 days
+                const avgDemand = defaultDemand;
+                const safetyStockQty = Number(safetyStock) || 0;
+
+                // ROP = (AVG demand * Lead time) + safety stock
+                const rop = Math.ceil((avgDemand * leadTime) + safetyStockQty);
+
+                // Add calculations to product data
+                productData.eoq = eoq;
+                productData.rop = rop;
+                productData.calculatedDemand = defaultDemand;
+                productData.leadTime = leadTime;
+
+                // Use ROP as the restock level (calculated reorder point)
+                productData.restockLevel = rop;
                 const locationSuffix = `${location.shelf}-${location.row}-${location.column}`;
-                const baseProductId = currentSupplier 
-                    ? ProductFactory.generateSupplierProductId(productData.name, selectedCategory.name, currentSupplier.primaryCode || currentSupplier.code)
+                const baseProductId = currentSuppliers.length > 0 
+                    ? ProductFactory.generateSupplierProductId(productData.name, selectedCategory.name, currentSuppliers[0].primaryCode || currentSuppliers[0].code)
                     : ProductFactory.generateProductId(productData.name, selectedCategory.name, productData.brand);
                 
                 const productId = selectedStorageLocations.length > 1 
@@ -375,15 +411,14 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                 await setDoc(productRef, cleanProduct);
 
 
-                // If supplier is provided, automatically link the product
-                if (currentSupplier) {
+                // If suppliers are provided, automatically link the product to each supplier
+                for (const currentSupplier of currentSuppliers) {
                     try {
                         const linkResult = await linkProductToSupplier(productId, currentSupplier.id, {
                             supplierPrice: Number(supplierPrice) || 0,
                             supplierSKU: productId,
                             lastUpdated: new Date().toISOString()
                         });
-
                     } catch (error) {
                         console.error('Error linking product to supplier:', error);
                     }
@@ -536,12 +571,15 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                         </div>
 
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-700">Size/Dimension</label>
+                            <label className="block text-sm font-medium text-gray-700">
+                                Variant Type
+                                <span className="text-xs text-gray-500 ml-1">(e.g., #4, #5 for CHB; Blue, Gray for paint)</span>
+                            </label>
                             <input
                                 type="text"
                                 value={size}
                                 onChange={(e) => setSize(e.target.value)}
-                                placeholder="Enter size or dimension"
+                                placeholder="Enter variant type (size, color, etc.)"
                                 className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                             />
                         </div>
@@ -664,17 +702,6 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                         </div>
 
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-700">Restock Level</label>
-                            <input
-                                type="number"
-                                value={restockLevel}
-                                onChange={(e) => setRestockLevel(e.target.value)}
-                                placeholder="Minimum quantity"
-                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                            />
-                        </div>
-
-                        <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-700">Maximum Stock Level</label>
                             <input
                                 type="number"
@@ -683,6 +710,21 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                                 placeholder="Maximum quantity"
                                 className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                             />
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                                Safety Stock
+                                <span className="text-xs text-gray-500 ml-1">(Used for reorder calculations)</span>
+                            </label>
+                            <input
+                                type="number"
+                                value={safetyStock}
+                                onChange={(e) => setSafetyStock(e.target.value)}
+                                placeholder="Buffer stock quantity"
+                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                            />
+                            <p className="text-xs text-gray-500">Safety stock helps prevent stockouts during supply delays</p>
                         </div>
 
                         <div className="space-y-3">
@@ -784,6 +826,25 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                                     <p className="text-xs text-gray-500 mt-1">Click the button above to select locations</p>
                                 </div>
                             )}
+                        </div>
+                    </div>
+
+                    {/* Scientific Calculations Info */}
+                    <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-lg p-4 border border-green-200">
+                        <div className="flex items-start gap-3">
+                            <div className="p-2 bg-green-100 rounded-lg">
+                                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="text-sm font-semibold text-green-800 mb-2">Scientific Inventory Management</h4>
+                                <div className="text-xs text-green-700 space-y-1">
+                                    <p><strong>EOQ (Economic Order Quantity):</strong> Calculated automatically for optimal order sizing</p>
+                                    <p><strong>ROP (ReOrder Point):</strong> Automatically set as restock level using safety stock + lead time</p>
+                                    <p><strong>Benefits:</strong> Prevents stockouts, minimizes holding costs, optimizes cash flow</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -967,13 +1028,18 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier }) => {
                         <div className="bg-gray-50 p-4 rounded-lg">
                             <SupplierSelector 
                                 onSelect={handleSupplierSelect}
-                                selectedSupplierId={selectedSupplier?.id}
+                                selectedSupplierIds={selectedSuppliers.map(s => s.id)}
                             />
-                            {selectedSupplier && (
-                                <div className="mt-3 p-3 bg-white rounded border">
-                                    <p className="text-sm text-gray-600">
-                                        <span className="font-medium">Selected:</span> {selectedSupplier.name} ({selectedSupplier.primaryCode || selectedSupplier.code})
-                                    </p>
+                            {selectedSuppliers.length > 0 && (
+                                <div className="mt-3 space-y-2">
+                                    <p className="text-sm font-medium text-gray-700">Selected Suppliers:</p>
+                                    {selectedSuppliers.map((supplier) => (
+                                        <div key={supplier.id} className="p-3 bg-white rounded border">
+                                            <p className="text-sm text-gray-600">
+                                                {supplier.name} ({supplier.primaryCode || supplier.code})
+                                            </p>
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                         </div>

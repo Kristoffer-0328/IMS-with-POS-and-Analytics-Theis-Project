@@ -75,62 +75,9 @@ const InventoryFilters = ({
 
   return (
     <div className="flex flex-col sm:flex-row gap-3 mt-4 md:mt-0">
-      <div className="flex items-center gap-2">
-        <span className="text-gray-600 text-sm whitespace-nowrap">Chart:</span>
-        <div className="relative">
-          <select
-            className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 min-w-[120px]"
-            value={selectedChart}
-            onChange={(e) => {
-              const newValue = e.target.value;
-              setSelectedChart(newValue);
-               // Debug log for chart change
-            }}
-          >
-            <option value="Stock Level">Stock Level</option>
-            <option value="Stock Trend">Stock Trend</option>
-          </select>
-        </div>
-      </div>
+    
 
-      {/* Conditional Filter Rendering */}
-      <div className="flex items-center gap-2">
-        <span className="text-gray-600 text-sm whitespace-nowrap">Filter By:</span>
-        <div className="relative">
-          {/* Show current filter for Stock Level */}
-          {selectedChart === 'Stock Level' && (
-            <select
-              className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 min-w-[120px]"
-              value={currentFilter}
-              onChange={(e) => setCurrentFilter(e.target.value)}
-            >
-              <option value="all">All Items</option>
-              <option value="low-stock">Low Stock</option>
-              <option value="expiring-soon">Expiring Soon</option>
-            </select>
-          )}
-
-          {/* Show months filter for Stock Trend */}
-          {selectedChart === 'Stock Trend' && (
-            <select
-              className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 px-4 pr-8 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 min-w-[120px]"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-            >
-              <option value="all">Select Month</option>
-              {months.map((month) => (
-                <option key={month} value={month}>
-                  {month}
-                </option>
-              ))}
-            </select>
-          )}
-          
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-            <FiFilter size={14} />
-          </div>
-        </div>
-      </div>
+     
 
       <div className="flex items-center gap-2">
         <span className="text-gray-600 text-sm whitespace-nowrap">Category:</span>

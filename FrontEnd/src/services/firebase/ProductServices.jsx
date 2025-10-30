@@ -124,11 +124,33 @@ export const ServicesProvider = ({ children }) => {
     }
   }, []);
 
+  const listenToSupplierProducts = useCallback((supplierId, onUpdate) => {
+    if (!supplierId) return () => {};
+    
+    const supplierProductsRef = collection(db, 'supplier_products', supplierId, 'products');
+    const unsubscribe = onSnapshot(
+      supplierProductsRef,
+      (snapshot) => {
+        const products = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        if (onUpdate) onUpdate(products);
+      },
+      (error) => {
+        console.error('Error listening to supplier products:', error);
+      }
+    );
+    
+    return unsubscribe;
+  }, []);
+
   const value = useMemo(() => ({
     products,
     listenToProducts,
-    fetchRestockRequests
-  }), [products, listenToProducts, fetchRestockRequests]);
+    fetchRestockRequests,
+    listenToSupplierProducts
+  }), [products, listenToProducts, fetchRestockRequests, listenToSupplierProducts]);
 
   return (
     <ServicesContext.Provider value={value}>
@@ -324,26 +346,6 @@ export const useServices = () => {
     linkProductToSupplier,
     unlinkProductFromSupplier,
     updateSupplierProductDetails,
-    getSupplierProducts,
-    listenToSupplierProducts: useCallback((supplierId, onUpdate) => {
-      if (!supplierId) return () => {};
-      
-      const supplierProductsRef = collection(db, 'supplier_products', supplierId, 'products');
-      const unsubscribe = onSnapshot(
-        supplierProductsRef,
-        (snapshot) => {
-          const products = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          if (onUpdate) onUpdate(products);
-        },
-        (error) => {
-          console.error('Error listening to supplier products:', error);
-        }
-      );
-      
-      return unsubscribe;
-    }, [])
+    getSupplierProducts
   };
 };

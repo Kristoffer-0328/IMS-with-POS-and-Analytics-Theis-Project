@@ -100,12 +100,13 @@ export const ProductFactory = {
             specifications: data.specifications || '',
             imageUrl: data.imageUrl || null,
             
-            // Supplier information
+            // Supplier information - handle both single and multiple suppliers
             supplier: data.supplier || {
                 name: 'Unknown',
                 code: '',
                 primaryCode: ''
             },
+            suppliers: data.suppliers || (data.supplier ? [data.supplier] : []),
             
             // Additional fields
             categoryValues: data.categoryValues || {},
@@ -154,6 +155,7 @@ export const ProductFactory = {
             size: variantData.size || 'default',
             specifications: variantData.specifications || '',
             supplier: variantData.supplier || parentProduct.supplier,
+            suppliers: variantData.suppliers || parentProduct.suppliers || (variantData.supplier ? [variantData.supplier] : []),
             customFields: variantData.customFields || {},
             imageUrl: variantData.imageUrl || parentProduct.imageUrl || null,
             

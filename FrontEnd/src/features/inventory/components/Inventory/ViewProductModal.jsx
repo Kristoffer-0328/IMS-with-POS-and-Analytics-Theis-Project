@@ -6,17 +6,19 @@ import { FiPackage, FiDollarSign, FiMapPin, FiInfo, FiLayers, FiCalendar, FiMap 
 import ShelfViewModal from './ShelfViewModal';
 import { uploadImage } from '../../../../services/cloudinary/CloudinaryService';
 import { getStorageUnitConfig } from '../../config/StorageUnitsConfig';
+import NewVariantForm from './CategoryModal/NewVariantForm';
 
-const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
+const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTab = 'overview' }) => {
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [imageUrl, setImageUrl] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'variants', 'supplier', 'additional'
+  const [activeTab, setActiveTab] = useState(initialTab); // 'overview', 'variants', 'supplier', 'additional'
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [selectedUnitForMap, setSelectedUnitForMap] = useState(null);
   const [variants, setVariants] = useState([]); // For flat structure variants
   const [loadingVariants, setLoadingVariants] = useState(false);
+  const [showVariantCreationModal, setShowVariantCreationModal] = useState(false);
   const db = getFirestore(app);
   
   useEffect(() => {
@@ -25,6 +27,10 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
       setImageUrl(product.imageUrl || product.image || null);
     }
   }, [product]);
+  
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
   
   // Fetch variants from flat structure
   useEffect(() => {
@@ -747,7 +753,7 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
               >
                 <div className="flex items-center gap-2">
                   <FiPackage size={16} />
-                  Supplier
+                  Supplier{(product.suppliers && Array.isArray(product.suppliers) && product.suppliers.length > 1) ? `s (${product.suppliers.length})` : ''}
                 </div>
               </button>
               {additionalFields.length > 0 && (
@@ -848,25 +854,70 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
                   </div>
                 </div>
 
-                {/* Timestamps */}
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                    <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                      <FiCalendar size={16} />
-                      Timeline
-                    </h4>
+                {/* Supplier Information - Show if multiple suppliers */}
+                {product.suppliers && Array.isArray(product.suppliers) && product.suppliers.length > 0 && (
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                      <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                        <FiPackage size={16} />
+                        Supplier{product.suppliers.length > 1 ? 's' : ''} ({product.suppliers.length})
+                      </h4>
+                    </div>
+                    <div className="p-4">
+                      <div className="space-y-3">
+                        {product.suppliers.map((supplier, index) => (
+                          <div key={supplier.id || index} className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <FiPackage className="text-blue-600" size={14} />
+                              <span className="text-xs font-semibold text-blue-700">
+                                Supplier {index + 1}: {supplier.name}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              <div>
+                                <span className="text-xs text-blue-600">Code:</span>
+                                <div className="font-medium text-gray-900">{supplier.code || supplier.primaryCode || 'N/A'}</div>
+                              </div>
+                              <div>
+                                <span className="text-xs text-blue-600">ID:</span>
+                                <div className="font-medium text-gray-900">{supplier.id}</div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                  <div className="p-4 space-y-1">
-                    <InfoRow label="Created At" value={formatDate(product.createdAt)} />
-                    <InfoRow label="Last Updated" value={formatDate(product.lastUpdated)} />
-                  </div>
-                </div>
+                )}
               </div>
             )}
 
             {/* Variants Tab */}
             {activeTab === 'variants' && (
               <div className="space-y-4">
+                {/* Add Variant Button - Only show for base products */}
+                {!product.isVariant && (
+                  <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-4 border border-purple-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-purple-800 mb-1">Add New Variant</h4>
+                        <p className="text-xs text-purple-600">Create a new variant for this product</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowVariantCreationModal(true);
+                        }}
+                        className="px-4 py-2 bg-purple-500 text-white text-sm font-medium rounded-lg hover:bg-purple-600 transition-colors flex items-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                        Add Variant
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
                 {loadingVariants ? (
                   <div className="text-center py-8">
                     <div className={`w-8 h-8 border-3 ${product.isVariant ? 'border-purple-500' : 'border-orange-500'} border-t-transparent rounded-full animate-spin mx-auto mb-2`}></div>
@@ -947,8 +998,44 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
             {/* Supplier Tab */}
             {activeTab === 'supplier' && (
               <div className="space-y-4">
+                {/* Dedicated Suppliers Section */}
+                {product.suppliers && Array.isArray(product.suppliers) && product.suppliers.length > 0 && (
+                  <div className="bg-white rounded-xl border border-blue-200 overflow-hidden">
+                    <div className="bg-gradient-to-r from-blue-50 to-blue-100/50 px-4 py-3 border-b border-blue-200">
+                      <h4 className="text-sm font-semibold text-blue-700 flex items-center gap-2">
+                        <FiPackage size={16} />
+                        Product Suppliers ({product.suppliers.length})
+                      </h4>
+                    </div>
+                    <div className="p-4">
+                      <div className="space-y-4">
+                        {product.suppliers.map((supplier, index) => (
+                          <div key={supplier.id || index} className="bg-white border border-blue-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                            <div className="flex items-center gap-3 mb-3">
+                              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                                <FiPackage className="text-blue-600" size={16} />
+                              </div>
+                              <div>
+                                <h5 className="text-sm font-semibold text-gray-900">{supplier.name}</h5>
+                                <p className="text-xs text-gray-600">Supplier {index + 1}</p>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                              <InfoRow label="Supplier Code" value={supplier.code || supplier.primaryCode || 'N/A'} />
+                              <InfoRow label="Supplier ID" value={supplier.id} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Other Supplier Fields */}
                 {supplierFields.length > 0 ? (
-                  supplierFields.map(([key, value]) => (
+                  supplierFields
+                    .filter(([key]) => key !== 'suppliers') // Exclude the suppliers array since we display it above
+                    .map(([key, value]) => (
                     <div key={key} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                       <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
                         <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2 capitalize">
@@ -1003,13 +1090,13 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
                       </div>
                     </div>
                   ))
-                ) : (
+                ) : !product.suppliers || !Array.isArray(product.suppliers) || product.suppliers.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <FiPackage className="mx-auto mb-2" size={32} />
                     <p>No supplier information available</p>
                     <p className="text-xs mt-1">Supplier details will appear here when available</p>
                   </div>
-                )}
+                ) : null}
               </div>
             )}
 
@@ -1061,6 +1148,59 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate }) => {
         selectedUnit={selectedUnitForMap}
         highlightedProduct={product}
       />
+
+      {/* Variant Creation Modal */}
+      {showVariantCreationModal && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowVariantCreationModal(false)}></div>
+          <div className="min-h-screen px-4 py-8 flex items-center justify-center">
+            <div className="relative bg-white w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden">
+              <NewVariantForm
+                selectedCategory={{ name: product.category }}
+                onBack={() => {
+                  setShowVariantCreationModal(false);
+                  // Refresh variants list after creating a new variant
+                  if (product && !product.isVariant) {
+                    const fetchVariants = async () => {
+                      setLoadingVariants(true);
+                      try {
+                        const storageLocation = product.storageLocation;
+                        if (!storageLocation) {
+                          setVariants([]);
+                          return;
+                        }
+
+                        // Query for all products where parentProductId === this product's ID
+                        const productsRef = collection(db, 'Products', storageLocation, 'products');
+                        const variantsQuery = query(
+                          productsRef,
+                          where('parentProductId', '==', product.id),
+                          where('isVariant', '==', true)
+                        );
+                        
+                        const variantsSnapshot = await getDocs(variantsQuery);
+                        const variantsList = variantsSnapshot.docs.map(doc => ({
+                          id: doc.id,
+                          ...doc.data()
+                        }));
+                        
+                        setVariants(variantsList);
+                      } catch (error) {
+                        console.error('Error fetching variants:', error);
+                        setVariants([]);
+                      } finally {
+                        setLoadingVariants(false);
+                      }
+                    };
+                    fetchVariants();
+                  }
+                }}
+                preSelectedProduct={product}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -10,6 +10,7 @@ import {
   addDoc,
   collection,
   setDoc,
+  getDocs,
 } from 'firebase/firestore';
 import app from  '../../../FirebaseConfig';
 import { useAuth } from '../../auth/services/FirebaseAuth';
@@ -96,54 +97,477 @@ const checkRestockingThreshold = (productData, variantIndex) => {
 };
 
 // Helper function to generate restocking request
+const generateRestockingRequest = async (productData, variantIndex, locationInfo, currentUser) => {
+  try {
+    let variant = null;
+    let isVariantRequest = true;
 
-// Helper function to generate sale notification
-  const generateSaleNotification = async (transactionData, currentUser) => {
-    try {
-      if (!transactionData) return null;
-      
-      const notificationId = `SALE-NOT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      
-      const notification = {
-        notificationId,
-        type: 'sale_completed',
-        priority: 'normal',
-        title: '�Sale Completed',
-        message: `Sale ${transactionData.transactionId} completed for ₱${transactionData.total.toLocaleString()}`,
-        details: {
-          transactionId: transactionData.transactionId,
-          totalAmount: transactionData.total,
-          itemCount: transactionData.items.length,
-          paymentMethod: transactionData.paymentMethod,
-          customerInfo: transactionData.customerInfo,
-          items: transactionData.items.map(item => ({
-            productName: item.productName,
-            variantName: item.variantName,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            totalPrice: item.totalPrice,
-            category: item.category
-          }))
-        },
-        targetRoles: ['InventoryManager', 'Admin'], // Who should see this notification
-        triggeredBy: currentUser?.uid || 'system',
-        triggeredByName: currentUser?.displayName || currentUser?.email || 'POS System',
-        relatedTransactionId: transactionData.transactionId,
-        isRead: false,
-        status: 'active',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      };
-      
-      // Save to notifications collection
-      await addDoc(collection(db, 'Notifications'), notification);
+    // Check if this is a variant request or non-variant request
+    if (variantIndex >= 0 && productData.variants?.[variantIndex]) {
+      variant = productData.variants[variantIndex];
+      isVariantRequest = true;
+    } else {
+      // Non-variant product
+      isVariantRequest = false;
+    }
 
-      return notification;
-    } catch (error) {
-      console.error('Error generating sale notification:', error);
+    const restockCheck = checkRestockingThreshold(productData, variantIndex);
+
+    if (!restockCheck.needsRestock) {
       return null;
     }
-  };
+
+    const requestId = `RSR-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    const restockingRequest = {
+      requestId,
+      productId: productData.id || 'unknown',
+      productName: productData.name || 'Unknown Product',
+      category: productData.category || 'Uncategorized',
+      supplierId: productData.supplier?.code || '',
+      supplierName: productData.supplier?.name || 'Unknown Supplier',
+      variantIndex: isVariantRequest ? variantIndex : -1,
+      variantDetails: isVariantRequest ? {
+        size: variant.size || '',
+        unit: variant.unit || 'pcs',
+        unitPrice: variant.unitPrice || 0
+      } : {
+        size: 'N/A',
+        unit: productData.unit || 'pcs',
+        unitPrice: productData.unitPrice || 0
+      },
+      currentQuantity: restockCheck.currentQuantity,
+      restockLevel: restockCheck.restockLevel,
+      maximumStockLevel: restockCheck.maximumStockLevel,
+      suggestedOrderQuantity: Math.max(50, restockCheck.maximumStockLevel - restockCheck.currentQuantity), // Suggest ordering to reach max level
+      priority: restockCheck.currentQuantity === 0 ? 'urgent' : 'normal',
+      location: {
+        storageLocation: locationInfo.storageLocation,
+        shelfName: locationInfo.shelfName,
+        rowName: locationInfo.rowName,
+        columnIndex: locationInfo.columnIndex,
+        fullPath: `${locationInfo.storageLocation}/${locationInfo.shelfName}/${locationInfo.rowName}/${locationInfo.columnIndex}`
+      },
+      triggeredBy: 'pos_sale',
+      triggeredByUser: currentUser?.uid || 'unknown',
+      triggeredByUserName: currentUser?.displayName || currentUser?.email || 'Unknown User',
+      status: 'pending',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+
+    // Save to restocking requests collection
+    await addDoc(collection(db, 'RestockingRequests'), restockingRequest);
+
+    return restockingRequest;
+  } catch (error) {
+    console.error('Error generating restocking request:', error);
+    return null;
+  }
+};
+
+// Helper function to normalize variant IDs for comparison
+const normalizeVariantId = (id) => {
+  if (!id) return '';
+  return String(id).toLowerCase().trim()
+    .replace(/[-_]/g, '') // Remove separators
+    .replace(/\s+/g, ''); // Remove spaces
+};
+
+// Function to find all locations where a product exists with available quantities
+const findAllProductLocations = async (productId, variantId, variantName, fullLocation, storageLocation) => {
+  try {
+    const allLocations = [];
+
+    // If we have a variantId, try to find the variant document directly first
+    if (variantId) {
+      // Search all storage units for the variant document
+      const productsRef = collection(db, 'Products');
+      const storageUnitsSnapshot = await getDocs(productsRef);
+
+      for (const storageUnitDoc of storageUnitsSnapshot.docs) {
+        const unitId = storageUnitDoc.id;
+
+        // Skip non-storage unit documents
+        if (!unitId.startsWith('Unit ')) continue;
+
+        try {
+          // Try to find the variant document directly by variantId
+          const variantRef = doc(db, 'Products', unitId, 'products', variantId);
+          const variantDoc = await getDoc(variantRef);
+
+          if (variantDoc.exists()) {
+            const variantData = variantDoc.data();
+
+            // Verify this is actually a variant and matches our product
+            if (variantData.isVariant && (variantData.parentProductId === productId || variantData.id === productId)) {
+              const availableQty = Number(variantData.quantity) || 0;
+
+              // CRITICAL: Always add the location even if quantity is 0
+              // This allows proper error messages and restock request generation
+              allLocations.push({
+                productRef: variantDoc.ref,
+                currentQty: availableQty,
+                variantIndex: -1, // Not using nested variant index anymore
+                variant: variantData, // The variant data itself
+                location: {
+                  storageLocation: unitId,
+                  shelfName: variantData.shelfName,
+                  rowName: variantData.rowName,
+                  columnIndex: variantData.columnIndex
+                },
+                productData: variantData,
+                outOfStock: availableQty === 0, // Flag for special handling
+                isVariant: true // Flag to indicate this is a variant document
+              });
+
+              if (availableQty === 0) {
+                console.warn(`⚠️ WARNING: Variant found but OUT OF STOCK at ${unitId}`);
+              } else {
+              }
+
+              // Return immediately since we found the specific variant
+              return allLocations;
+            }
+          }
+        } catch (error) {
+          console.warn(`Error searching variant in unit ${unitId}:`, error);
+          continue;
+        }
+      }
+    }
+
+    // Fallback: search all storage units
+    const productsRef = collection(db, 'Products');
+    const storageUnitsSnapshot = await getDocs(productsRef);
+
+    for (const storageUnitDoc of storageUnitsSnapshot.docs) {
+      const unitId = storageUnitDoc.id;
+
+      // Skip non-storage unit documents
+      if (!unitId.startsWith('Unit ')) continue;
+
+      try {
+        // Search products subcollection in this unit
+        const unitProductsRef = collection(db, 'Products', unitId, 'products');
+        const productsSnapshot = await getDocs(unitProductsRef);
+
+        for (const productDoc of productsSnapshot.docs) {
+          const productData = productDoc.data();
+
+          // Check if this matches our product
+          if (productData.id !== productId && productData.productId !== productId) continue;
+
+          // Check if this product has variants
+          const variantsArray = productData.variants || productData.Variants || productData.productVariants || [];
+          const hasVariants = Array.isArray(variantsArray) && variantsArray.length > 0;
+
+          if (hasVariants && variantId) {
+            // Enhanced variant matching with normalization
+            const normalizedSearchId = normalizeVariantId(variantId);
+
+            // Find the specific variant with improved matching
+            const variantIndex = variantsArray.findIndex(v => {
+              // Direct matches
+              if (v.id === variantId || v.variantId === variantId || v.size === variantId) return true;
+
+              // String matches
+              if (String(v.size) === String(variantId)) return true;
+
+              // Name matches
+              if (v.name && v.name === variantName) return true;
+
+              // Normalized matches
+              const normalizedVariantId = normalizeVariantId(v.variantId || v.id || v.size);
+              if (normalizedVariantId === normalizedSearchId) return true;
+
+              // Partial matches for complex variantIds
+              if (normalizedSearchId.includes(normalizedVariantId) || normalizedVariantId.includes(normalizedSearchId)) return true;
+
+              // Check if variantId contains multiple identifiers separated by dashes/underscores
+              const variantIdParts = String(variantId).split(/[-_]/).map(part => normalizeVariantId(part));
+              const hasMatchingPart = variantIdParts.some(part =>
+                part && (normalizedVariantId.includes(part) || part.includes(normalizedVariantId))
+              );
+              if (hasMatchingPart) return true;
+
+              return false;
+            });
+
+            if (variantIndex !== -1) {
+              const variant = variantsArray[variantIndex];
+              const availableQty = Number(variant.quantity) || 0;
+
+              if (availableQty > 0) {
+                allLocations.push({
+                  productRef: productDoc.ref,
+                  currentQty: availableQty,
+                  variantIndex,
+                  variant,
+                  location: {
+                    storageLocation: unitId,
+                    shelfName: productData.shelfName,
+                    rowName: productData.rowName,
+                    columnIndex: productData.columnIndex
+                  },
+                  productData
+                });
+              }
+            } else {
+              // Variant not found - this is an error for variant products
+              console.error(`❌ Variant ${variantId} not found in product ${productData.name} at ${unitId}`);
+            }
+          } else if (!hasVariants) {
+            // Non-variant product OR product that should be treated as non-variant
+            const availableQty = Number(productData.quantity) || 0;
+
+            // CRITICAL: Always add the location even if quantity is 0
+            // This allows proper error messages and restock request generation
+            allLocations.push({
+              productRef: productDoc.ref,
+              currentQty: availableQty,
+              variantIndex: -1,
+              variant: null,
+              location: {
+                storageLocation: unitId,
+                shelfName: productData.shelfName,
+                rowName: productData.rowName,
+                columnIndex: productData.columnIndex
+              },
+              productData,
+              outOfStock: availableQty === 0 // Flag for special handling
+            });
+
+            if (availableQty === 0) {
+              console.warn(`⚠️ WARNING: Product found but OUT OF STOCK at ${unitId}`);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`Error searching in unit ${unitId}:`, error);
+        continue;
+      }
+    }
+
+    return allLocations;
+  } catch (error) {
+    console.error(`Error finding all locations for product ${variantName}:`, error);
+    throw error;
+  }
+};
+
+// Function to update inventory by deducting released items
+const updateInventoryQuantities = async (releasedProducts, currentUser) => {
+  try {
+    for (const product of releasedProducts) {
+      if (product.status !== 'released') {
+        continue;
+      }
+
+      const releasedQty = Number(product.releasedQty);
+      if (isNaN(releasedQty) || releasedQty <= 0) {
+        continue;
+      }
+
+      // Find all locations where this product exists
+      const allLocations = await findAllProductLocations(
+        product.productId,
+        product.variantId,
+        product.name,
+        product.fullLocation,
+        product.storageLocation
+      );
+
+      if (allLocations.length === 0) {
+        console.error(`❌ Product ${product.name} not found in any inventory location`);
+        throw new Error(
+          `Product Not Found: ${product.name}\n\n` +
+          `This product could not be located in any inventory location.\n` +
+          `Please check if the product exists in the inventory system.`
+        );
+      }
+
+      // Check if product is out of stock at all locations
+      const allOutOfStock = allLocations.every(loc => loc.currentQty === 0);
+
+      if (allOutOfStock) {
+        const locationDetails = allLocations.map(loc =>
+          `${loc.location.storageLocation}/${loc.location.shelfName}/${loc.location.rowName}/${loc.location.columnIndex}`
+        ).join('\n   ');
+
+        // Check if this is a quotation product
+        const isQuotationProduct = product.productId && product.productId.startsWith('quotation-');
+
+        if (isQuotationProduct) {
+          console.warn(`⚠️ WARNING: Quotation product ${product.name} is out of stock. Proceeding with note.`);
+        } else {
+          throw new Error(
+            `❌ OUT OF STOCK: ${product.name}\n\n` +
+            `This product is currently unavailable at all locations:\n   ${locationDetails}\n\n` +
+            `Current Quantity: 0 units\n` +
+            `Requested: ${releasedQty} units\n\n` +
+            `Action Required:\n` +
+            `1. Restock this product in inventory\n` +
+            `2. Or reduce the release quantity\n` +
+            `3. Or remove this item from the release`
+          );
+        }
+      }
+
+      // Sort locations by available quantity (descending) to prioritize locations with more stock
+      allLocations.sort((a, b) => b.currentQty - a.currentQty);
+
+      // Calculate total available quantity across all locations
+      const totalAvailable = allLocations.reduce((sum, loc) => sum + loc.currentQty, 0);
+
+      if (totalAvailable < releasedQty) {
+        // For quotation products, allow negative inventory with warning
+        const isQuotationProduct = product.productId && product.productId.startsWith('quotation-');
+        if (isQuotationProduct) {
+          console.warn(`⚠️ WARNING: Allowing release with insufficient stock for quotation product ${product.name}. Available: ${totalAvailable}, Requested: ${releasedQty}. Inventory will go negative.`);
+        } else {
+          const locationDetails = allLocations
+            .filter(loc => loc.currentQty > 0)
+            .map(loc => `   • ${loc.location.storageLocation}: ${loc.currentQty} units`)
+            .join('\n');
+
+          throw new Error(
+            `❌ INSUFFICIENT STOCK: ${product.name}\n\n` +
+            `Available: ${totalAvailable} units\n` +
+            `Requested: ${releasedQty} units\n` +
+            `Shortage: ${releasedQty - totalAvailable} units\n\n` +
+            `Available at:\n${locationDetails}\n\n` +
+            `Please:\n` +
+            `1. Add more stock to inventory (${releasedQty - totalAvailable} more units needed)\n` +
+            `2. Or reduce release quantity to ${totalAvailable} units`
+          );
+        }
+      }
+
+      // Deduct from multiple locations as needed
+      let remainingQty = releasedQty;
+      const deductionDetails = [];
+
+      for (const location of allLocations) {
+        if (remainingQty <= 0) break;
+
+        const deductQty = Math.min(remainingQty, location.currentQty);
+
+        // Deduct from this location using transaction
+        await runTransaction(db, async (transaction) => {
+          const productDoc = await transaction.get(location.productRef);
+
+          if (!productDoc.exists()) {
+            throw new Error(`Product ${product.name} no longer exists at ${location.location.storageLocation}`);
+          }
+
+          const productData = productDoc.data();
+
+          // Check if this is a variant document (separate document) or base product with nested variants
+          const isVariantDocument = productData.isVariant === true;
+
+          if (isVariantDocument) {
+            // VARIANT DOCUMENT: Update the variant document directly
+            const currentQty = Number(productData.quantity) || 0;
+            const newQty = currentQty - deductQty;
+
+            // Validate that we're not going negative (unless it's a quotation product)
+            const isQuotationProduct = product.productId && product.productId.startsWith('quotation-');
+            if (newQty < 0 && !isQuotationProduct) {
+              throw new Error(`Insufficient stock for variant ${productData.variantName || productData.size || product.name}. Available: ${currentQty}, Requested: ${deductQty}`);
+            }
+
+            // Update variant document quantity
+            transaction.update(location.productRef, {
+              quantity: Math.max(0, newQty), // Ensure we don't go below 0
+              lastUpdated: serverTimestamp()
+            });
+
+            // Check for low stock on variant
+            const restockLevel = productData.restockLevel || productData.maximumStockLevel || 10;
+            if (newQty <= restockLevel) {
+              // Generate restock request using the centralized function with variant data
+              await generateRestockingRequest(productData, -1, location.location, currentUser);
+            }
+          } else {
+            // BASE PRODUCT: Check if this product has nested variants (legacy structure)
+            const hasVariants = productData.variants && Array.isArray(productData.variants) && productData.variants.length > 0;
+
+            if (hasVariants && location.variantIndex >= 0) {
+              // LEGACY: Product has nested variants - update the specific variant's quantity
+              const variants = [...productData.variants];
+              const variant = variants[location.variantIndex];
+              const currentQty = Number(variant.quantity) || 0;
+              const newQty = currentQty - deductQty;
+
+              // Validate that we're not going negative (unless it's a quotation product)
+              const isQuotationProduct = product.productId && product.productId.startsWith('quotation-');
+              if (newQty < 0 && !isQuotationProduct) {
+                throw new Error(`Insufficient stock for variant ${variant.size || variant.name}. Available: ${currentQty}, Requested: ${deductQty}`);
+              }
+
+              // Update the variant quantity
+              variants[location.variantIndex] = {
+                ...variant,
+                quantity: Math.max(0, newQty) // Ensure we don't go below 0
+              };
+
+              // Update the product document with modified variants
+              transaction.update(location.productRef, {
+                variants: variants,
+                lastUpdated: serverTimestamp()
+              });
+
+              // Check for low stock on variant
+              const restockLevel = variant.restockLevel || productData.restockLevel || productData.reorderPoint || 10;
+              if (newQty <= restockLevel) {
+                // Generate restock request using the centralized function with updated product data
+                const updatedProductData = { ...productData, variants };
+                await generateRestockingRequest(updatedProductData, location.variantIndex, location.location, currentUser);
+              }
+            } else {
+              // BASE PRODUCT: Non-variant product - update base product quantity
+              const currentQty = Number(productData.quantity) || 0;
+              const newQty = currentQty - deductQty;
+
+              // Validate that we're not going negative (unless it's a quotation product)
+              const isQuotationProduct = product.productId && product.productId.startsWith('quotation-');
+              if (newQty < 0 && !isQuotationProduct) {
+                throw new Error(`Insufficient stock for ${product.name}. Available: ${currentQty}, Requested: ${deductQty}`);
+              }
+
+              // Update product quantity
+              transaction.update(location.productRef, {
+                quantity: Math.max(0, newQty), // Ensure we don't go below 0
+                lastUpdated: serverTimestamp()
+              });
+
+              // Generate restock request if quantity is low
+              const restockLevel = productData.restockLevel || productData.reorderPoint || 10;
+              if (newQty <= restockLevel) {
+                // Generate restock request using the centralized function with updated product data
+                const updatedProductData = { ...productData, quantity: newQty };
+                await generateRestockingRequest(updatedProductData, -1, location.location, currentUser);
+              }
+            }
+          }
+        });
+
+        deductionDetails.push({
+          location: location.location,
+          deductedQty: deductQty,
+          remainingAtLocation: location.currentQty - deductQty
+        });
+
+        remainingQty -= deductQty;
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error in inventory deduction:', error);
+    throw new Error(`Failed to update inventory: ${error.message}`);
+  }
+};
+
 
 export default function Pos_NewSale() {
   // --- User Authentication ---
@@ -985,7 +1409,6 @@ export default function Pos_NewSale() {
           paymentMethod,
           paymentReference: paymentReference || null,
           status: 'completed',
-          releaseStatus: 'pending_release', // Add release status for inventory tracking
           createdAt: serverTimestamp(),
           createdBy: currentUser?.uid || 'unknown',
           saleDate: formattedDate,
@@ -993,10 +1416,73 @@ export default function Pos_NewSale() {
           cashierName: currentUser?.name  || currentUser?.email || "Cashier",
         };
 
+        // Prepare products for inventory deduction
+        const productsForDeduction = addedProducts.map(item => ({
+          id: item.variantId || item.id,
+          name: item.name,
+          productId: item.baseProductId || item.id,
+          variantId: item.variantId || item.id,
+          variantName: item.name,
+          storageLocation: item.storageLocation,
+          fullLocation: item.fullLocation,
+          releasedQty: item.qty,
+          status: 'released' // Mark as released for immediate deduction
+        }));
+
+        // Deduct inventory immediately
+        try {
+          await updateInventoryQuantities(productsForDeduction, currentUser);
+        } catch (inventoryError) {
+          console.error('Inventory deduction failed:', inventoryError);
+          alert(`Transaction failed: ${inventoryError.message}`);
+          setIsProcessing(false);
+          return;
+        }
+
         // Save transaction to Firestore
-        // NOTE: Inventory deduction will happen in Release Management when items are actually released
         const transactionRef = doc(db, 'posTransactions', receiptNumber);
         await setDoc(transactionRef, transactionData);
+
+        // Create stock movement records for the sale
+        try {
+          const stockMovementPromises = addedProducts.map(async (item) => {
+            const movementRef = doc(collection(db, 'stock_movements'));
+            
+            const movementData = {
+              movementType: 'OUT',
+              reason: 'POS Sale',
+              productId: item.baseProductId || item.id,
+              productName: item.baseName || item.name,
+              variantId: item.variantId || item.id,
+              variantName: item.name,
+              category: item.category,
+              quantity: item.qty,
+              unitPrice: item.price,
+              totalValue: item.price * item.qty,
+              referenceType: 'pos_transaction',
+              referenceId: receiptNumber,
+              transactionId: receiptNumber,
+              customer: customerDetails?.name || customerDisplayName || 'Walk-in Customer',
+              customerPhone: customerDetails?.phone || '',
+              cashier: currentUser?.name || currentUser?.email || 'Unknown',
+              remarks: '',
+              status: 'completed',
+              movementDate: serverTimestamp(),
+              createdAt: serverTimestamp(),
+              storageLocation: item.storageLocation,
+              shelfName: item.shelfName,
+              rowName: item.rowName,
+              columnIndex: item.columnIndex
+            };
+            
+            return setDoc(movementRef, movementData);
+          });
+
+          await Promise.all(stockMovementPromises);
+        } catch (movementError) {
+          console.error('Error creating stock movements:', movementError);
+          // Don't fail the transaction if stock movement logging fails
+        }
 
         // Generate sale notification for inventory manager
         try {
@@ -1035,7 +1521,7 @@ export default function Pos_NewSale() {
 
         // Clear cart and reset states
         resetSaleState();
-        alert('Transaction completed successfully!');
+        alert('Transaction completed successfully! Inventory updated.');
 
     } catch (error) {
         console.error("Transaction failed:", error);

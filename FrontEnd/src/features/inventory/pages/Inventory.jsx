@@ -6,27 +6,29 @@ import InventoryFilters from '../components/Inventory/InventoryFilters';
 
 import ViewProductModal from '../components/Inventory/ViewProductModal';
 import { useServices } from '../../../services/firebase/ProductServices';
-import { FiPlusCircle, FiUpload, FiSearch, FiInfo, FiGrid, FiList, FiPackage, FiLayers, FiTrendingDown, FiTruck, FiRefreshCw, FiSend } from 'react-icons/fi';
+import { FiPlusCircle, FiUpload, FiSearch, FiInfo, FiGrid, FiList, FiPackage, FiLayers, FiTrendingDown, FiTruck, FiRefreshCw } from 'react-icons/fi';
 import ImportCVGModal from '../components/Inventory/ImportCVGModal';
 import ProductChoice from '../components/Inventory/ProductChoices';
 import CategoryMOdalIndex from '../components/Inventory/CategoryModal/CategoryModalIndex';
 import InfoModal from '../components/Dashboard/InfoModal';
 import StorageFacilityInteractiveMap from '../components/Inventory/StorageFacilityInteractiveMap';
-import DashboardHeader from '../components/Dashboard/DashboardHeader';
-
+import BulkProductImport from '../components/BulkProductImport';
+import { getFirestore, collection, getDocs } from 'firebase/firestore';
+import app from '../../../FirebaseConfig';
 // Import components for tabs
 import RestockingRequest from './RestockingRequest';
 import ReceivingManagement from './ReceivingManagement';
 import StockTransfer from './StockTransfer';
-import ReleaseManagement from './ReleaseManagement';
 
 
 const Inventory = () => {
+  const [suppliers, setSuppliers] = useState([]); // Add suppliers state
+  const db = getFirestore(app);
   // Read tab from URL query string and set activeTab
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const tabParam = searchParams.get('tab');
-    if (tabParam && ['stock', 'restock', 'receiving', 'transfer', 'release'].includes(tabParam)) {
+    if (tabParam && ['stock', 'restock', 'receiving', 'transfer'].includes(tabParam)) {
       setActiveTab(tabParam);
     }
   }, []);
@@ -49,28 +51,27 @@ const Inventory = () => {
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [activeModal, setActiveModal] = useState(null);
-
+  const [initialTab, setInitialTab] = useState('overview');
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   // New state for tabs
   const [activeTab, setActiveTab] = useState('stock'); // 'stock', 'restock', 'receiving', 'transfer', 'release'
 
   // Category color mapping
   const categoryColors = {
-    'Hardware': 'bg-blue-100 text-blue-900',
-    'Electrical': 'bg-yellow-100 text-yellow-900',
-    'Plumbing': 'bg-green-100 text-green-900',
-    'Paint': 'bg-purple-100 text-purple-900',
-    'Tools': 'bg-red-100 text-red-900',
-    'Automotive': 'bg-indigo-100 text-indigo-900',
-    'Garden': 'bg-emerald-100 text-emerald-900',
-    'Safety': 'bg-orange-100 text-orange-900',
-    'Lighting': 'bg-cyan-100 text-cyan-900',
-    'Building Materials': 'bg-teal-100 text-teal-900',
-    'default': 'bg-gray-100 text-gray-900'
+    'Steel & Heavy Materials': 'bg-blue-100 text-blue-900',
+    'Plywood & Sheet Materials': 'bg-yellow-100 text-yellow-900',
+    'Cement & Aggregates': 'bg-green-100 text-green-900',
+    'Electrical & Plumbing': 'bg-purple-100 text-purple-900',
+    'Paint & Coatings': 'bg-red-100 text-red-900',
+    'Insulation & Foam': 'bg-indigo-100 text-indigo-900',
+    'Miscellaneous': 'bg-emerald-100 text-emerald-900',
+    'Roofing Materials': 'bg-orange-100 text-orange-900',
+    'Hardware & Fasteners': 'bg-cyan-100 text-cyan-900',
   };
 
   // Function to get category color
   const getCategoryColor = (category) => {
-    return categoryColors[category] || categoryColors.default;
+    return categoryColors[category] || 'bg-gray-100 text-gray-900';
   };
 
   // Chart information content
@@ -116,8 +117,9 @@ const Inventory = () => {
   };
 
   // Function to handle opening the view product modal
-  const handleViewProduct = (product) => {
+  const handleViewProduct = (product, tab = 'overview') => {
     setSelectedProduct(product);
+    setInitialTab(tab);
     setViewModalOpen(true);
   };
 
@@ -131,6 +133,25 @@ const Inventory = () => {
   useEffect(() => {
     const unsubscribe = listenToProducts(setProduct);
     return () => unsubscribe();
+  }, []);
+
+  // Fetch suppliers
+  useEffect(() => {
+    const fetchSuppliers = async () => {
+      try {
+        const suppliersRef = collection(db, 'suppliers');
+        const suppliersSnapshot = await getDocs(suppliersRef);
+        const suppliersData = suppliersSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setSuppliers(suppliersData);
+      } catch (error) {
+        console.error('Error fetching suppliers:', error);
+      }
+    };
+
+    fetchSuppliers();
   }, []);
 
   // Debounce effect (wait 400ms after user stops typing)
@@ -335,17 +356,6 @@ const Inventory = () => {
               <FiTruck size={20} />
               <span>Receiving</span>
             </button>
-            <button
-              onClick={() => setActiveTab('release')}
-              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors border-b-2 ${
-                activeTab === 'release'
-                  ? 'border-orange-500 text-orange-600 bg-orange-50'
-                  : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <FiSend size={20} />
-              <span>Release </span>
-            </button>
           </div>
         </div>
 
@@ -375,7 +385,7 @@ const Inventory = () => {
               <StorageFacilityInteractiveMap viewOnly={true} />
             </div>
           </div>
-
+      
           {/* Enhanced Table Section */}
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
             <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
@@ -404,6 +414,7 @@ const Inventory = () => {
                   selectedChart={selectedChart}
                   setSelectedChart={setSelectedChart}
                 />
+                
 
                 {/* View Toggle Button */}
                 <button
@@ -422,6 +433,26 @@ const Inventory = () => {
                     </>
                   )}
                 </button>
+                <button
+                onClick={() => setcategorymodal(true)}
+                className="inline-flex items-center px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg 
+                         hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 
+                         transition-all shadow-md hover:shadow-lg transform hover:scale-105"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Add Product
+              </button>
+              <button
+                onClick={() => setShowBulkImportModal(true)}
+                className="inline-flex items-center px-5 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-lg 
+                         hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 
+                         transition-all shadow-md hover:shadow-lg transform hover:scale-105"
+              >
+                <FiUpload className="w-5 h-5 mr-2" />
+                Bulk Import
+              </button>
               </div>
             </div>
 
@@ -549,27 +580,31 @@ const Inventory = () => {
         </div>
       )}
 
-      {/* Release / Outgoing Tab Content */}
-      {activeTab === 'release' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          <ReleaseManagement />
-        </div>
-      )}
-
       {/* Modals */}
       <ImportCVGModal isOpen={isImportModalOpen} onClose={() => setImportIsModalOpen(false)} />
-      <CategoryMOdalIndex CategoryOpen={categorymodal} CategoryClose={() => setcategorymodal(false)} />
+      <CategoryMOdalIndex CategoryOpen={categorymodal} CategoryClose={() => setcategorymodal(false)} onOpenViewProductModal={(product, tab = 'variants') => {
+        setSelectedProduct(product);
+        setInitialTab(tab);
+        setViewModalOpen(true);
+        setcategorymodal(false); // Close the category modal
+      }} />
       <ViewProductModal 
         isOpen={viewModalOpen} 
         onClose={() => setViewModalOpen(false)} 
         product={selectedProduct}
         onProductUpdate={handleProductUpdate}
+        initialTab={initialTab}
       />
       <InfoModal
         isOpen={activeModal === 'stockLevel' || activeModal === 'stockTrend'}
         onClose={() => setActiveModal(null)}
         title={activeModal ? chartInfo[activeModal].title : ''}
         content={activeModal ? chartInfo[activeModal].content : ''}
+      />
+      <BulkProductImport
+        isOpen={showBulkImportModal}
+        onClose={() => setShowBulkImportModal(false)}
+        suppliers={suppliers || []}
       />
       
     </div>

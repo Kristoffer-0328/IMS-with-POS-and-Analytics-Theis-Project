@@ -3,16 +3,21 @@ import { useSupplierServices } from '../../../../services/firebase/SupplierServi
 import { FiPlus, FiSearch } from 'react-icons/fi';
 import EditSupplierModal from './EditSupplierModal';
 
-const SupplierSelector = ({ onSelect, selectedSupplierId }) => {
+const SupplierSelector = ({ onSelect, selectedSupplierIds = [] }) => {
     const [suppliers, setSuppliers] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [selectedIds, setSelectedIds] = useState(selectedSupplierIds);
     const supplierServices = useSupplierServices();
 
     useEffect(() => {
         loadSuppliers();
     }, []);
+
+    useEffect(() => {
+        setSelectedIds(selectedSupplierIds);
+    }, [selectedSupplierIds]);
 
     const loadSuppliers = async () => {
         try {
@@ -34,13 +39,19 @@ const SupplierSelector = ({ onSelect, selectedSupplierId }) => {
         (supplier.primaryCode || supplier.code).toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const handleSupplierSelect = (supplier) => {
-        onSelect(supplier);
+    const handleSupplierToggle = (supplierId) => {
+        const newSelected = selectedIds.includes(supplierId)
+            ? selectedIds.filter(id => id !== supplierId)
+            : [...selectedIds, supplierId];
+        setSelectedIds(newSelected);
+        const selectedSuppliers = suppliers.filter(s => newSelected.includes(s.id));
+        onSelect(selectedSuppliers);
     };
+
+    const selectedSuppliers = suppliers.filter(s => selectedIds.includes(s.id));
 
     const handleModalClose = () => {
         setShowAddModal(false);
-        loadSuppliers(); // Refresh the list after adding new supplier
     };
 
     return (
@@ -77,24 +88,33 @@ const SupplierSelector = ({ onSelect, selectedSupplierId }) => {
                         {filteredSuppliers.map((supplier) => (
                             <div
                                 key={supplier.id}
-                                className={`p-4 cursor-pointer hover:bg-gray-50 ${
-                                    selectedSupplierId === supplier.id ? 'bg-blue-50' : ''
+                                className={`p-4 hover:bg-gray-50 ${
+                                    selectedIds.includes(supplier.id) ? 'bg-blue-50' : ''
                                 }`}
-                                onClick={() => handleSupplierSelect(supplier)}
                             >
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <h4 className="text-sm font-medium text-gray-900">{supplier.name}</h4>
-                                        <p className="text-sm text-gray-500">Primary Code: {supplier.primaryCode || supplier.code}</p>
+                                <div className="flex items-start">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedIds.includes(supplier.id)}
+                                        onChange={() => handleSupplierToggle(supplier.id)}
+                                        className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                    />
+                                    <div className="ml-3 flex-1">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <h4 className="text-sm font-medium text-gray-900">{supplier.name}</h4>
+                                                <p className="text-sm text-gray-500">Primary Code: {supplier.primaryCode || supplier.code}</p>
+                                            </div>
+                                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                                supplier.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                            }`}>
+                                                {supplier.status}
+                                            </span>
+                                        </div>
+                                        <div className="mt-2 text-sm text-gray-500">
+                                            <p>{supplier.contactPerson} • {supplier.phone}</p>
+                                        </div>
                                     </div>
-                                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                        supplier.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                                    }`}>
-                                        {supplier.status}
-                                    </span>
-                                </div>
-                                <div className="mt-2 text-sm text-gray-500">
-                                    <p>{supplier.contactPerson} • {supplier.phone}</p>
                                 </div>
                             </div>
                         ))}
@@ -107,8 +127,11 @@ const SupplierSelector = ({ onSelect, selectedSupplierId }) => {
                     supplier={null}
                     onClose={handleModalClose}
                     onSave={(newSupplier) => {
-                        handleModalClose();
-                        handleSupplierSelect(newSupplier);
+                        setShowAddModal(false);
+                        loadSuppliers();
+                        const newSelected = [...selectedSuppliers, newSupplier];
+                        setSelectedIds(newSelected.map(s => s.id));
+                        onSelect(newSelected);
                     }}
                 />
             )}

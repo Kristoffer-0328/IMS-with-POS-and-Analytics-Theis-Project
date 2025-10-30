@@ -19,7 +19,6 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
         location: 'STR A1'
     });
     const [quantity, setQuantity] = useState('');
-    const [restockLevel, setRestockLevel] = useState('');
     const [storageLocation, setStorageLocation] = useState('STR A1');
     const [variantImage, setVariantImage] = useState(null);
     const [unit, setUnit] = useState('pcs');
@@ -33,6 +32,9 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
     const [specifications, setSpecifications] = useState('');
     const [selectedSupplier, setSelectedSupplier] = useState(null);
     const [supplierPrice, setSupplierPrice] = useState('');
+    
+    // Safety stock for ROP calculation
+    const [safetyStock, setSafetyStock] = useState('');
     
     // Storage location modal states
     const [isStorageModalOpen, setIsStorageModalOpen] = useState(false);
@@ -121,7 +123,6 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
         if (preSelectedProduct) {
             setSelectedProduct(preSelectedProduct);
             setUnit(preSelectedProduct.measurements?.defaultUnit || 'pcs');
-            setRestockLevel(preSelectedProduct.quantity || '');
             setStorageLocation(preSelectedProduct.location || 'STR A1');
             setVariantValue(prev => ({
                 ...prev,
@@ -186,7 +187,7 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
             console.error('Error in products listener:', error);
             setExistingProducts([]);
         }
-    }, [selectedCategory?.name, listenToProducts]);
+    }, [selectedCategory?.name]);
 
     useEffect(() => {
 
@@ -198,7 +199,6 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
         if (product) {
             setSelectedProduct(product);
             setUnit(product.measurements?.defaultUnit || 'pcs');
-            setRestockLevel(product.quantity || '');
             setStorageLocation(product.location || 'STR A1');
             setVariantValue(prev => ({
                 ...prev,
@@ -319,13 +319,39 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                     }), {}),
                     imageUrl: variantImage || null,
                     storageType: selectedProduct.storageType || 'Goods',
-                    restockLevel: selectedProduct.restockLevel || 0,
                     maximumStockLevel: selectedProduct.maximumStockLevel || 0,
+                    safetyStock: Number(safetyStock) || 0,
                     
                     // Timestamps
                     createdAt: new Date().toISOString(),
                     lastUpdated: new Date().toISOString()
                 };
+
+                // Calculate EOQ and ROP
+                const defaultDemand = 10; // Default demand when no historical data
+                const purchaseCost = Number(supplierPrice) || Number(variantValue.unitPrice) || 1;
+                const currentDate = new Date();
+                const createdDate = new Date(variantProductData.createdAt);
+                const holdingPeriodDays = Math.max(1, Math.ceil((currentDate - createdDate) / (1000 * 60 * 60 * 24))); // At least 1 day
+                const holdingCost = purchaseCost / holdingPeriodDays; // Holding cost per day
+
+                // EOQ = sqrt(2 * demand * purchase_cost / holding_cost)
+                const eoq = Math.ceil(Math.sqrt(2 * defaultDemand * purchaseCost / holdingCost));
+
+                // Get lead time from supplier (assume first supplier has leadTime in days)
+                const leadTime = currentSupplier ? (currentSupplier.leadTime || 7) : 7; // Default 7 days
+                const avgDemand = defaultDemand;
+                const safetyStockQty = Number(safetyStock) || 0;
+
+                // ROP = (AVG demand * Lead time) + safety stock
+                const rop = Math.ceil((avgDemand * leadTime) + safetyStockQty);
+
+                // Add calculations to variant data
+                variantProductData.eoq = eoq;
+                variantProductData.rop = rop;
+                variantProductData.restockLevel = rop; // Always use ROP as restock level
+                variantProductData.calculatedDemand = defaultDemand;
+                variantProductData.leadTime = leadTime;
 
                 // Remove any undefined values
                 const cleanVariantData = JSON.parse(JSON.stringify(variantProductData));
@@ -472,13 +498,14 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Size/Dimension
+                                    Variant Type
+                                    <span className="text-xs text-gray-500 ml-1">(e.g., #4, #5 for CHB; Blue, Gray for paint)</span>
                                 </label>
                                 <input
                                     type="text"
                                     value={variantValue.size}
                                     onChange={(e) => setVariantValue(prev => ({...prev, size: e.target.value}))}
-                                    placeholder="Enter size or dimension"
+                                    placeholder="Enter variant type (size, color, etc.)"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                                 />
                             </div>
@@ -620,6 +647,20 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                                 />
                             </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Safety Stock
+                                    <span className="text-xs text-gray-500 ml-1">(Used for reorder calculations)</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    value={safetyStock}
+                                    onChange={(e) => setSafetyStock(e.target.value)}
+                                    placeholder="Buffer stock quantity"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">Safety stock helps prevent stockouts during supply delays</p>
+                            </div>
                         </div>
                         
                         {/* Storage Location Selection - Combined */}
@@ -725,7 +766,24 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                         </div>
                     </div>
 
-
+                    {/* Scientific Calculations Info */}
+                    <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-lg p-4 border border-green-200">
+                        <div className="flex items-start gap-3">
+                            <div className="p-2 bg-green-100 rounded-lg">
+                                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="text-sm font-semibold text-green-800 mb-2">Scientific Inventory Management</h4>
+                                <div className="text-xs text-green-700 space-y-1">
+                                    <p><strong>EOQ (Economic Order Quantity):</strong> Calculated automatically for optimal order sizing</p>
+                                    <p><strong>ROP (ReOrder Point):</strong> Automatically set as restock level using safety stock + lead time</p>
+                                    <p><strong>Benefits:</strong> Prevents stockouts, minimizes holding costs, optimizes cash flow</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
                     {/* Enhanced Custom Fields */}
                     <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
@@ -821,7 +879,11 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                         </button>
                     </div>
                 </div>
+
+
+
             )}
+
             </div>
             
             {/* Storage Location Selection Modal */}

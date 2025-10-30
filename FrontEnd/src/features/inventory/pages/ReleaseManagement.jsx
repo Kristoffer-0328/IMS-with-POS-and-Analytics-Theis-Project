@@ -44,11 +44,12 @@ const ReleaseManagement = () => {
   // Listen to POS transactions that need to be released
   useEffect(() => {
 
-    // Query for all completed transactions (status='completed')
-    // These will have releaseStatus field to track release workflow
+    // Query for transactions that still have pending release status (legacy)
+    // NOTE: Release phase has been removed. This component now shows transactions that still need manual release processing
+    // (if any exist from before the change)
     const q = query(
       collection(db, 'posTransactions'),
-      where('status', '==', 'completed'),
+      where('releaseStatus', '==', 'pending_release'), // Only show transactions that still have pending release status
       orderBy('createdAt', 'desc')
     );
 
@@ -185,8 +186,8 @@ const ReleaseManagement = () => {
     <div className="p-6">
       {/* Header */}
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Release Management</h2>
-        <p className="text-gray-600">Manage outgoing stock from completed sales</p>
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">Release Management (Legacy)</h2>
+        <p className="text-gray-600">This section shows transactions that still require manual release processing from before the system update. New transactions are processed automatically.</p>
       </div>
 
       {/* Statistics Cards */}
