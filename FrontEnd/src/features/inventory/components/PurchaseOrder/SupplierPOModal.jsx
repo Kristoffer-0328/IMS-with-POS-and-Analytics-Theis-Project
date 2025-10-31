@@ -113,27 +113,18 @@ const SupplierPOModal = ({ onClose, onSuccess }) => {
 
         // Filter requests for this supplier
         const supplierRequests = requests.filter(req => {
-
           // First check if supplier IDs match (most reliable)
           if (selectedSupplier.id === req.supplier?.id) {
-
             return true;
           }
 
           // Then check primary codes
           const primaryCodeMatch = (selectedSupplier.primaryCode || selectedSupplier.code) === req.supplierPrimaryCode;
-          
+
           // Then check if this supplier has registered the product code
-          const productCodeMatch = selectedSupplier.supplierCodes?.some(sc => 
+          const productCodeMatch = selectedSupplier.supplierCodes?.some(sc =>
             sc.code === req.supplierCode
           );
-
-          if (primaryCodeMatch) {
-
-          }
-
-          if (productCodeMatch) );
-          }
 
           return primaryCodeMatch || productCodeMatch;
         });
@@ -164,7 +155,7 @@ const SupplierPOModal = ({ onClose, onSuccess }) => {
 
             // Wait for all product fetches to complete
             const products = await Promise.all(productPromises);
-            supplierProducts = products.filter(Boolean); // Remove any null results
+            supplierProducts = products.filter(Boolean).filter(product => product.isActive !== false); // Filter out inactive products
 
             
           } catch (error) {

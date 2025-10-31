@@ -19,12 +19,18 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
   const [variants, setVariants] = useState([]); // For flat structure variants
   const [loadingVariants, setLoadingVariants] = useState(false);
   const [showVariantCreationModal, setShowVariantCreationModal] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editedProduct, setEditedProduct] = useState(null);
+  const [isActive, setIsActive] = useState(true);
   const db = getFirestore(app);
   
   useEffect(() => {
     if (product) {
       // Check both imageUrl and image fields (image is used in some products)
       setImageUrl(product.imageUrl || product.image || null);
+      // Initialize edited product data and active status
+      setEditedProduct({ ...product });
+      setIsActive(product.isActive !== false); // Default to true if not specified
     }
   }, [product]);
   
@@ -524,6 +530,87 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
     }
   };
 
+  // Edit mode functions
+  const handleEditToggle = () => {
+    if (isEditMode) {
+      // Cancel edit - reset to original
+      setEditedProduct({ ...product });
+      setIsActive(product.isActive !== false);
+    }
+    setIsEditMode(!isEditMode);
+  };
+
+  const handleFieldChange = (field, value) => {
+    setEditedProduct(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleSaveChanges = async () => {
+    try {
+      if (!editedProduct || !product) return;
+
+      const storageLocation = product.storageLocation;
+      if (!storageLocation) {
+        alert('Cannot save: Product storage location is missing');
+        return;
+      }
+
+      // Clean the data by removing undefined values and computed fields
+      const cleanData = (obj) => {
+        const cleaned = {};
+        for (const [key, value] of Object.entries(obj)) {
+          // Skip undefined values and computed fields
+          if (value !== undefined && 
+              !['hasVariants', 'variantCount', 'locations', 'locationCount', 'status', 'totalvalue', 'allIds'].includes(key)) {
+            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+              // Recursively clean nested objects
+              cleaned[key] = cleanData(value);
+            } else {
+              cleaned[key] = value;
+            }
+          }
+        }
+        return cleaned;
+      };
+
+      const updateData = {
+        ...cleanData(editedProduct),
+        isActive: isActive,
+        lastUpdated: new Date().toISOString()
+      };
+
+      // Update the product in Firebase
+      const productRef = doc(
+        db,
+        'Products',
+        storageLocation,
+        'products',
+        product.id
+      );
+
+      await updateDoc(productRef, updateData);
+
+      // Update local state
+      setIsEditMode(false);
+      
+      // Notify parent component to refresh
+      if (onProductUpdate) {
+        onProductUpdate();
+      }
+
+      alert('Product updated successfully!');
+    } catch (error) {
+      console.error('Error updating product:', error);
+      alert('Failed to update product: ' + error.message);
+    }
+  };
+
+  const handleActiveToggle = () => {
+    setIsActive(!isActive);
+  };
+
   const InfoRow = ({ label, value, icon: Icon }) => (
     <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
       <div className="flex items-center gap-2">
@@ -560,11 +647,11 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
       <div className="min-h-screen px-4 py-8 flex items-center justify-center">
         <div className="relative bg-white w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl animate-scaleUp overflow-hidden">
           {/* Header */}
-          <div className={`bg-gradient-to-r px-6 py-4 flex items-center justify-between ${
+          <div className={`bg-gradient-to-r px-6 py-4 flex items-center justify-between ${isEditMode ? 'bg-gradient-to-r from-blue-500 to-blue-600' : (
             product.isVariant 
               ? 'from-purple-500 to-purple-600' 
               : 'from-orange-500 to-orange-600'
-          }`}>
+          )}`}>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
                 {product.isVariant ? (
@@ -576,7 +663,7 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-semibold text-white">
-                    {product.isVariant ? 'Product Variant Details' : 'Product Details'}
+                    {isEditMode ? 'Edit Product' : 'Product Details'}
                   </h2>
                   {product.isVariant && (
                     <span className="px-2 py-0.5 bg-white/20 backdrop-blur-sm text-white text-xs font-bold rounded-full border border-white/30">
@@ -588,8 +675,15 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                       BASE PRODUCT
                     </span>
                   )}
+                  {isEditMode && (
+                    <span className="px-2 py-0.5 bg-blue-200 backdrop-blur-sm text-blue-800 text-xs font-bold rounded-full border border-blue-300">
+                      EDIT MODE
+                    </span>
+                  )}
                 </div>
-                <p className={`text-xs mt-0.5 ${product.isVariant ? 'text-purple-100' : 'text-orange-100'}`}>
+                <p className={`text-xs mt-0.5 ${isEditMode ? 'text-blue-100' : (
+                  product.isVariant ? 'text-purple-100' : 'text-orange-100'
+                )}`}>
                   {getProductDetail('category')}
                   {product.isVariant && product.variantName && (
                     <span className="ml-2">• {product.variantName}</span>
@@ -597,12 +691,64 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                 </p>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-            >
-              <span className="text-xl">✕</span>
-            </button>
+            <div className="flex items-center gap-3">
+              {/* Active/Inactive Toggle */}
+              <div className="flex items-center gap-2">
+                <span className="text-white text-sm font-medium">
+                  {isActive ? 'Active' : 'Inactive'}
+                </span>
+                <button
+                  onClick={handleActiveToggle}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    isActive ? 'bg-green-500' : 'bg-gray-400'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      isActive ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Edit/Save/Cancel Buttons */}
+              {!isEditMode ? (
+                <button
+                  onClick={handleEditToggle}
+                  className="px-4 py-2 bg-white/20 backdrop-blur-sm text-white border border-white/30 rounded-lg hover:bg-white/30 transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  Edit
+                </button>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleEditToggle}
+                    className="px-4 py-2 bg-white/20 backdrop-blur-sm text-white border border-white/30 rounded-lg hover:bg-white/30 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveChanges}
+                    className="px-4 py-2 bg-green-500 text-white border border-green-400 rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Save
+                  </button>
+                </div>
+              )}
+
+              <button
+                onClick={onClose}
+                className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+              >
+                <span className="text-xl">✕</span>
+              </button>
+            </div>
           </div>
 
           {/* Product Header Card */}
@@ -653,7 +799,17 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
               {/* Product Info */}
               <div className="flex-1">
                 <div className="flex items-start gap-3 mb-2">
-                  <h3 className="text-2xl font-bold text-gray-900 flex-1">{getProductDetail('name')}</h3>
+                  {isEditMode ? (
+                    <input
+                      type="text"
+                      value={editedProduct?.name || ''}
+                      onChange={(e) => handleFieldChange('name', e.target.value)}
+                      className="text-2xl font-bold text-gray-900 flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Product name"
+                    />
+                  ) : (
+                    <h3 className="text-2xl font-bold text-gray-900 flex-1">{getProductDetail('name')}</h3>
+                  )}
                   {product.isVariant && (
                     <div className="flex flex-col gap-1">
                       <span className="px-3 py-1 bg-purple-500 text-white text-xs font-bold rounded-full flex items-center gap-1.5 shadow-sm">
@@ -680,7 +836,26 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                     : 'bg-orange-100 text-orange-700'
                 }`}>
                   <FiLayers size={14} />
-                  {getProductDetail('category')}
+                  {isEditMode ? (
+                    <select
+                      value={editedProduct?.category || ''}
+                      onChange={(e) => handleFieldChange('category', e.target.value)}
+                      className="bg-transparent border-none outline-none text-sm font-medium"
+                    >
+                      <option value="">Select Category</option>
+                      <option value="Steel & Heavy Materials">Steel & Heavy Materials</option>
+                      <option value="Plywood & Sheet Materials">Plywood & Sheet Materials</option>
+                      <option value="Cement & Aggregates">Cement & Aggregates</option>
+                      <option value="Electrical & Plumbing">Electrical & Plumbing</option>
+                      <option value="Paint & Coatings">Paint & Coatings</option>
+                      <option value="Insulation & Foam">Insulation & Foam</option>
+                      <option value="Miscellaneous">Miscellaneous</option>
+                      <option value="Roofing Materials">Roofing Materials</option>
+                      <option value="Hardware & Fasteners">Hardware & Fasteners</option>
+                    </select>
+                  ) : (
+                    getProductDetail('category')
+                  )}
                 </div>
 
                 {/* Stats Grid */}
@@ -706,7 +881,14 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                   <StatCard 
                     icon={FiLayers}
                     label="Variants"
-                    value={loadingVariants ? '...' : variants.length}
+                    value={loadingVariants ? '...' : (() => {
+                      const groupedCount = variants.reduce((groups, variant) => {
+                        const key = variant.variantName || variant.size || variant.specifications || 'Default';
+                        groups[key] = true;
+                        return groups;
+                      }, {});
+                      return Object.keys(groupedCount).length;
+                    })()}
                     color="purple"
                   />
                 </div>
@@ -740,7 +922,14 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
               >
                 <div className="flex items-center gap-2">
                   <FiLayers size={16} />
-                  Variants ({loadingVariants ? '...' : variants.length})
+                  Variants ({loadingVariants ? '...' : (() => {
+                    const groupedCount = variants.reduce((groups, variant) => {
+                      const key = variant.variantName || variant.size || variant.specifications || 'Default';
+                      groups[key] = true;
+                      return groups;
+                    }, {});
+                    return Object.keys(groupedCount).length;
+                  })()})
                 </div>
               </button>
               <button
@@ -788,9 +977,55 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                     </h4>
                   </div>
                   <div className="p-4 space-y-1">
-                    <InfoRow label="Maximum Stock Level" value={product.maximumStockLevel || 'N/A'} />
-                    <InfoRow label="Restock Level" value={product.restockLevel || 60} />
-                    <InfoRow label="Unit" value={getProductDetail('unit')} />
+                    {isEditMode ? (
+                      <>
+                        <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+                          <div className="flex items-center gap-2">
+                            <FiPackage className="text-gray-400" size={16} />
+                            <span className="text-sm text-gray-600">Maximum Stock Level</span>
+                          </div>
+                          <input
+                            type="number"
+                            value={editedProduct?.maximumStockLevel || ''}
+                            onChange={(e) => handleFieldChange('maximumStockLevel', e.target.value)}
+                            className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="0"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+                          <div className="flex items-center gap-2">
+                            <FiPackage className="text-gray-400" size={16} />
+                            <span className="text-sm text-gray-600">Restock Level</span>
+                          </div>
+                          <input
+                            type="number"
+                            value={editedProduct?.restockLevel || ''}
+                            onChange={(e) => handleFieldChange('restockLevel', e.target.value)}
+                            className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="0"
+                          />
+                        </div>
+                        <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+                          <div className="flex items-center gap-2">
+                            <FiPackage className="text-gray-400" size={16} />
+                            <span className="text-sm text-gray-600">Unit</span>
+                          </div>
+                          <input
+                            type="text"
+                            value={editedProduct?.unit || ''}
+                            onChange={(e) => handleFieldChange('unit', e.target.value)}
+                            className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="pcs"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <InfoRow label="Maximum Stock Level" value={product.maximumStockLevel || 'N/A'} />
+                        <InfoRow label="Restock Level" value={product.restockLevel || 60} />
+                        <InfoRow label="Unit" value={getProductDetail('unit')} />
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -924,67 +1159,129 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                     <p className="text-gray-500">Loading variants...</p>
                   </div>
                 ) : variants.length > 0 ? (
-                  variants.map((variant, index) => (
-                    <div key={variant.id || index} className="bg-white rounded-xl border border-purple-200 overflow-hidden hover:shadow-md transition-shadow hover:border-purple-300">
-                      <div className="bg-gradient-to-r from-purple-50 to-purple-100/50 px-4 py-3 border-b border-purple-200">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <FiLayers className="text-purple-600" size={16} />
-                            <h4 className="text-sm font-semibold text-gray-800">
-                              Variant {index + 1}: {variant.variantName || variant.size || variant.specifications || 'Default'} 
-                            </h4>
+                  (() => {
+                    // Group variants by variant name or identifier
+                    const groupedVariants = variants.reduce((groups, variant) => {
+                      // Use variantName as primary key, fallback to size or specifications
+                      const key = variant.variantName || variant.size || variant.specifications || 'Default';
+                      
+                      if (!groups[key]) {
+                        groups[key] = {
+                          name: key,
+                          instances: [],
+                          totalQuantity: 0,
+                          totalValue: 0,
+                          unitPrice: variant.unitPrice || variant.price || 0,
+                          unit: variant.unit || 'pcs',
+                          specifications: variant.specifications,
+                          size: variant.size
+                        };
+                      }
+                      
+                      groups[key].instances.push(variant);
+                      groups[key].totalQuantity += Number(variant.quantity) || 0;
+                      groups[key].totalValue += (Number(variant.quantity) || 0) * (Number(variant.unitPrice) || Number(variant.price) || 0);
+                      
+                      return groups;
+                    }, {});
+                    
+                    return Object.values(groupedVariants).map((group, index) => (
+                      <div key={group.name + index} className="bg-white rounded-xl border border-purple-200 overflow-hidden hover:shadow-md transition-shadow hover:border-purple-300">
+                        <div className="bg-gradient-to-r from-purple-50 to-purple-100/50 px-4 py-3 border-b border-purple-200">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <FiLayers className="text-purple-600" size={16} />
+                              <h4 className="text-sm font-semibold text-gray-800">
+                                {group.name}
+                              </h4>
+                              {group.instances.length > 1 && (
+                                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
+                                  {group.instances.length} locations
+                                </span>
+                              )}
+                            </div>
+                            <span className="px-3 py-1 bg-white rounded-full text-xs font-medium text-purple-700 shadow-sm border border-purple-200">
+                              {group.totalQuantity} {group.unit}
+                            </span>
                           </div>
-                          <span className="px-3 py-1 bg-white rounded-full text-xs font-medium text-purple-700 shadow-sm border border-purple-200">
-                            {Number(variant.quantity) || 0} {variant.unit || 'pcs'}
-                          </span>
                         </div>
-                      </div>
-                      <div className="p-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1">Variant Name</div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {variant.variantName || variant.size || 'N/A'}
+                        <div className="p-4">
+                          <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1">Variant Name</div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {group.name}
+                              </div>
                             </div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1">Size</div>
-                            <div className="text-sm font-medium text-gray-900">{variant.size || 'N/A'}</div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1">Quantity</div>
-                            <div className="text-sm font-medium text-purple-600">
-                              {Number(variant.quantity) || 0} {variant.unit || 'pcs'}
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1">Total Quantity</div>
+                              <div className="text-sm font-medium text-purple-600">
+                                {group.totalQuantity} {group.unit}
+                              </div>
                             </div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1">Unit Price</div>
-                            <div className="text-sm font-medium text-green-600">
-                              ₱{formatMoney(Number(variant.unitPrice) || 0)}
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1">Unit Price</div>
+                              <div className="text-sm font-medium text-green-600">
+                                ₱{formatMoney(group.unitPrice)}
+                              </div>
                             </div>
-                          </div>
-                          <div className="col-span-2">
-                            <div className="text-xs text-gray-500 mb-1">Total Value</div>
-                            <div className="text-sm font-medium text-purple-600">
-                              ₱{formatMoney((Number(variant.quantity) || 0) * (Number(variant.unitPrice) || 0))}
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1">Total Value</div>
+                              <div className="text-sm font-medium text-purple-600">
+                                ₱{formatMoney(group.totalValue)}
+                              </div>
                             </div>
+                            {group.size && (
+                              <div>
+                                <div className="text-xs text-gray-500 mb-1">Size</div>
+                                <div className="text-sm font-medium text-gray-900">{group.size}</div>
+                              </div>
+                            )}
+                            {group.specifications && (
+                              <div className={group.size ? "" : "col-span-2"}>
+                                <div className="text-xs text-gray-500 mb-1">Specifications</div>
+                                <div className="text-sm font-medium text-gray-900">{group.specifications}</div>
+                              </div>
+                            )}
                           </div>
-                          {variant.specifications && (
-                            <div className="col-span-2">
-                              <div className="text-xs text-gray-500 mb-1">Specifications</div>
-                              <div className="text-sm font-medium text-gray-900">{variant.specifications}</div>
+                          
+                          {/* Show multiple locations if more than one */}
+                          {group.instances.length > 1 && (
+                            <div className="border-t border-purple-100 pt-4">
+                              <div className="text-xs text-gray-500 mb-3 font-medium">Storage Locations ({group.instances.length})</div>
+                              <div className="space-y-2">
+                                {group.instances.map((instance, locIndex) => (
+                                  <div key={instance.id || locIndex} className="bg-purple-50/50 border border-purple-200 rounded-lg p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <span className="text-xs font-semibold text-purple-700 bg-purple-100 px-2 py-1 rounded">
+                                        Location {locIndex + 1}
+                                      </span>
+                                      <span className="text-xs font-medium text-purple-600">
+                                        Qty: {Number(instance.quantity) || 0} {instance.unit || group.unit}
+                                      </span>
+                                    </div>
+                                    <div className="text-sm text-gray-700">
+                                      {instance.fullLocation || `${instance.storageLocation} - ${instance.shelfName} - ${instance.rowName}` || 'N/A'}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           )}
-                          <div className="col-span-2">
-                            <div className="text-xs text-gray-500 mb-1">Storage Location</div>
-                            <div className="text-sm font-medium text-gray-900">
-                              {variant.fullLocation || `${variant.storageLocation} - ${variant.shelfName} - ${variant.rowName}` || 'N/A'}
+                          
+                          {/* Show single location */}
+                          {group.instances.length === 1 && (
+                            <div className="border-t border-purple-100 pt-4">
+                              <div className="text-xs text-gray-500 mb-1">Storage Location</div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {group.instances[0].fullLocation || `${group.instances[0].storageLocation} - ${group.instances[0].shelfName} - ${group.instances[0].rowName}` || 'N/A'}
+                              </div>
                             </div>
-                          </div>
+                          )}
                         </div>
                       </div>
-                    </div>
-                  ))
+                    ));
+                  })()
                 ) : (
                   <div className="text-center py-8 text-gray-500">
                     <FiLayers className="mx-auto mb-2" size={32} />

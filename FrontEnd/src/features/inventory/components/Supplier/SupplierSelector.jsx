@@ -3,7 +3,7 @@ import { useSupplierServices } from '../../../../services/firebase/SupplierServi
 import { FiPlus, FiSearch } from 'react-icons/fi';
 import EditSupplierModal from './EditSupplierModal';
 
-const SupplierSelector = ({ onSelect, selectedSupplierIds = [] }) => {
+const SupplierSelector = ({ onSelect, selectedSupplierIds = [], singleSelect = false }) => {
     const [suppliers, setSuppliers] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
@@ -40,9 +40,16 @@ const SupplierSelector = ({ onSelect, selectedSupplierIds = [] }) => {
     );
 
     const handleSupplierToggle = (supplierId) => {
-        const newSelected = selectedIds.includes(supplierId)
-            ? selectedIds.filter(id => id !== supplierId)
-            : [...selectedIds, supplierId];
+        let newSelected;
+        if (singleSelect) {
+            // Single selection: only allow one supplier to be selected
+            newSelected = selectedIds.includes(supplierId) ? [] : [supplierId];
+        } else {
+            // Multiple selection: toggle the supplier
+            newSelected = selectedIds.includes(supplierId)
+                ? selectedIds.filter(id => id !== supplierId)
+                : [...selectedIds, supplierId];
+        }
         setSelectedIds(newSelected);
         const selectedSuppliers = suppliers.filter(s => newSelected.includes(s.id));
         onSelect(selectedSuppliers);
@@ -94,10 +101,11 @@ const SupplierSelector = ({ onSelect, selectedSupplierIds = [] }) => {
                             >
                                 <div className="flex items-start">
                                     <input
-                                        type="checkbox"
+                                        type={singleSelect ? "radio" : "checkbox"}
                                         checked={selectedIds.includes(supplier.id)}
                                         onChange={() => handleSupplierToggle(supplier.id)}
-                                        className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                        className={`mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${singleSelect ? '' : ''}`}
+                                        name={singleSelect ? "supplier-selection" : undefined}
                                     />
                                     <div className="ml-3 flex-1">
                                         <div className="flex justify-between items-start">

@@ -10,11 +10,11 @@ const SupplierProducts = ({ supplier, onClose }) => {
   const [supplierProducts, setSupplierProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [categorymodal, setcategorymodal] = useState(false);
+  const [linkProductModal, setLinkProductModal] = useState(false);
   const [variantModal, setVariantModal] = useState(false);
   const [selectedProductForVariant, setSelectedProductForVariant] = useState(null);
   const [editingProduct, setEditingProduct] = useState(null);
   const [editData, setEditData] = useState({ supplierPrice: '', supplierSKU: '', unitPrice: '' });
-  const [expandedProducts, setExpandedProducts] = useState(new Set());
   const [editingVariant, setEditingVariant] = useState(null);
   const [variantEditData, setVariantEditData] = useState({ supplierPrice: '', supplierSKU: '', unitPrice: '' });
   const db = getFirestore(app);
@@ -202,16 +202,6 @@ const SupplierProducts = ({ supplier, onClose }) => {
     }
   };
 
-  const toggleProductExpansion = (productId) => {
-    const newExpanded = new Set(expandedProducts);
-    if (newExpanded.has(productId)) {
-      newExpanded.delete(productId);
-    } else {
-      newExpanded.add(productId);
-    }
-    setExpandedProducts(newExpanded);
-  };
-
   const hasVariants = (product) => {
     return product.variants && Array.isArray(product.variants) && product.variants.length > 0;
   };
@@ -297,6 +287,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
           <h2 className="text-xl font-semibold">
             Products from {supplier?.name}
           </h2>
+          
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 transition-colors"
@@ -345,378 +336,180 @@ const SupplierProducts = ({ supplier, onClose }) => {
                 </div>
               </div>
 
-              <div className="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
-                <div className="overflow-x-auto min-w-full">
-                  <table className="min-w-full divide-y divide-gray-200 table-fixed">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '200px'}}>
-                          Product Name
-                        </th>
-                        <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '250px'}}>
-                          Product Details
-                        </th>
-                        <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '120px'}}>
-                          Category
-                        </th>
-                        <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '120px'}}>
-                          Supplier Price
-                        </th>
-                        <th className="px-3 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '120px'}}>
-                          Unit Price
-                        </th>
-                        <th className="px-4 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider" style={{width: '160px'}}>
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {supplierProducts.length === 0 ? (
-                    <tr>
-                      <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
-                        <div className="flex flex-col items-center space-y-2">
-                          <svg className="w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-5.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                          </svg>
-                          <p className="text-sm">No products linked to this supplier yet</p>
-                          <p className="text-xs text-gray-400">Click "Add Product" to link products from your inventory</p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    supplierProducts.map((product) => (
-                      <React.Fragment key={product.id}>
-                        <tr className="hover:bg-gray-50">
-                        <td className="px-4 py-4 whitespace-nowrap">
-                          <div className="flex items-center">
-                            {hasVariants(product) && (
-                              <button
-                                onClick={() => toggleProductExpansion(product.id)}
-                                className="mr-2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                                title={expandedProducts.has(product.id) ? 'Collapse variants' : 'Expand variants'}
-                              >
-                                <svg 
-                                  className={`w-4 h-4 transition-transform ${expandedProducts.has(product.id) ? 'rotate-90' : ''}`} 
-                                  fill="none" 
-                                  stroke="currentColor" 
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
-                              </button>
-                            )}
-                            <div>
-                              <div className={`text-sm font-medium ${
-                                product.name === 'Product not found' 
-                                  ? 'text-red-600' 
-                                  : 'text-gray-900'
-                              }`}>
-                                {product.name || 'Unknown Product'}
-                                {product.name === 'Product not found' && (
-                                  <span className="ml-2 px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded-full">
-                                    Missing from inventory
-                                  </span>
-                                )}
-                              </div>
-                              {hasVariants(product) && (
-                                <div className="text-xs text-gray-500 mt-1">
-                                  {product.variants.length} variant{product.variants.length !== 1 ? 's' : ''}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                      </td>
-                        <td className="px-3 py-4">
-                        {editingProduct === product.id ? (
-                          <div className="space-y-2">
-                            <div>
-                              <label className="block text-xs text-gray-500 mb-1">Supplier SKU</label>
-                              <input
-                                type="text"
-                                value={editData.supplierSKU}
-                                onChange={(e) => setEditData({ ...editData, supplierSKU: e.target.value })}
-                                className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                placeholder="Enter supplier SKU"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-500 mb-1">Supplier Price (₱)</label>
-                              <input
-                                type="number"
-                                value={editData.supplierPrice}
-                                onChange={(e) => setEditData({ ...editData, supplierPrice: parseFloat(e.target.value) })}
-                                className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                placeholder="Enter supplier price"
-                                step="0.01"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-500 mb-1">Unit Price (₱)</label>
-                              <input
-                                type="number"
-                                value={editData.unitPrice}
-                                onChange={(e) => setEditData({ ...editData, unitPrice: parseFloat(e.target.value) })}
-                                className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                placeholder="Enter unit price"
-                                step="0.01"
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                            <div className="text-sm text-gray-900 break-words max-w-xs">
-                              <div className="font-medium text-gray-700">SKU: {product.supplierSKU || 'Not set'}</div>
-                              {product.specifications && (
-                                <div className="text-xs text-gray-500 mt-1">
-                                  Specs: {product.specifications}
-                                </div>
-                              )}
-                              {product.brand && (
-                                <div className="text-xs text-gray-500">
-                                  Brand: {product.brand}
-                                </div>
-                              )}
-                              {product.storageType && (
-                                <div className="text-xs text-gray-500">
-                                  Storage: {product.storageType}
-                                </div>
-                              )}
-                              {product.locationCount > 1 && (
-                                <div className="text-xs mt-2">
-                                  <span className="inline-flex items-center px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-semibold">
-                                    📍 {product.locationCount} storage locations
-                                  </span>
-                                  <div className="mt-1 text-xs text-gray-600">
-                                    Total qty: {product.totalQuantity} {product.unit || 'pcs'}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                        )}
-                      </td>
-                        <td className="px-3 py-4 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {product.category || 'Uncategorized'}
-                          </span>
-                      </td>
-                        <td className="px-3 py-4 whitespace-nowrap">
-                        {editingProduct === product.id ? (
-                          <input
-                            type="number"
-                            value={editData.supplierPrice}
-                            onChange={(e) => setEditData({ ...editData, supplierPrice: parseFloat(e.target.value) })}
-                              className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              {/* Products Grid View */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {supplierProducts.length === 0 ? (
+                  <div className="col-span-full text-center py-12">
+                    <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-5.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                    </svg>
+                    <p className="text-lg font-semibold text-gray-800">No products linked yet</p>
+                    <p className="text-sm text-gray-500">Click "Link Product" to add products from your inventory</p>
+                  </div>
+                ) : (
+                  supplierProducts.map((product) => (
+                    <div key={product.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+                      {/* Product Image */}
+                      <div className="aspect-square bg-gray-100 relative">
+                        {product.imageUrl ? (
+                          <img
+                            src={product.imageUrl}
+                            alt={product.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJDMTMuMSAyIDE0IDIuOSAxNCA0VjE2QzE0IDE3LjEgMTMuMSAxOCA5IDE4QzQuOSAxOCA0IDE3LjEgNCAxNlY0QzQgMi45IDQuOSAyIDYgMkgxOEMxOS4xIDIgMjAgMi45IDIwIDRWMTZDMjAgMTcuMSAxOS4xIDE4IDE4IDE4SDE0VjE2QzE0IDE0LjkgMTMuMSAxNCAxMiAxNFoiIGZpbGw9IiM5Q0E0QUYiLz4KPC9zdmc+';
+                            }}
                           />
                         ) : (
-                            <div className="text-sm font-medium text-gray-900">₱{(product.supplierPrice || 0).toLocaleString()}</div>
-                        )}
-                      </td>
-                        <td className="px-3 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">₱{(product.variants?.[0]?.unitPrice || product.unitPrice || 0).toLocaleString()}</div>
-                      </td>
-                        <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        {editingProduct === product.id ? (
-                            <div className="flex justify-end space-x-2">
-                            <button
-                              onClick={() => handleSave(product.id)}
-                                className="inline-flex items-center p-2 text-green-600 hover:text-green-900 hover:bg-green-50 rounded-md transition-colors"
-                                title="Save changes"
-                            >
-                                <FiSave className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => setEditingProduct(null)}
-                                className="inline-flex items-center p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md transition-colors"
-                                title="Cancel"
-                            >
-                                <FiX className="w-4 h-4" />
-                            </button>
+                          <div className="w-full h-full flex items-center justify-center">
+                            <svg className="w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
                           </div>
-                        ) : (
-                            <div className="flex justify-end space-x-1">
-                              <button
-                                onClick={() => handleAddVariant(product)}
-                                disabled={product.name === 'Product not found' || !product.category}
-                                className={`inline-flex items-center p-2 rounded-md transition-colors ${
-                                  product.name === 'Product not found' || !product.category
-                                    ? 'text-gray-400 cursor-not-allowed' 
-                                    : 'text-green-600 hover:text-green-900 hover:bg-green-50'
-                                }`}
-                                title={
-                                  product.name === 'Product not found' || !product.category
-                                    ? "Cannot add variant - product not found in main inventory"
-                                    : "Add variant to this product"
-                                }
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                </svg>
-                              </button>
+                        )}
+
+                        {/* Status Indicator */}
+                        {product.name === 'Product not found' && (
+                          <div className="absolute top-3 left-3 bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                            Missing
+                          </div>
+                        )}
+
+                        {/* Variant Count Badge */}
+                        {hasVariants(product) && (
+                          <div className="absolute top-3 right-3 bg-purple-500 text-white text-xs px-2 py-1 rounded-full">
+                            {product.variants.length} variants
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Product Info */}
+                      <div className="p-4">
+                        <div className="mb-3">
+                          <h3 className={`text-sm font-semibold mb-1 line-clamp-2 ${
+                            product.name === 'Product not found' 
+                              ? 'text-red-600' 
+                              : 'text-gray-900'
+                          }`}>
+                            {product.name || 'Unknown Product'}
+                          </h3>
+                          
+                          <div className="space-y-1 text-xs text-gray-500">
+                            <div>SKU: {product.supplierSKU || 'Not set'}</div>
+                            {product.brand && <div>Brand: {product.brand}</div>}
+                            {product.specifications && (
+                              <div className="line-clamp-1" title={product.specifications}>
+                                Specs: {product.specifications}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="mt-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {product.category || 'Uncategorized'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Pricing Info */}
+                        <div className="space-y-2 mb-3">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Supplier Price:</span>
+                            <span className="font-semibold text-gray-900">₱{(product.supplierPrice || 0).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-500">Unit Price:</span>
+                            <span className="font-semibold text-gray-900">₱{(product.variants?.[0]?.unitPrice || product.unitPrice || 0).toLocaleString()}</span>
+                          </div>
+                        </div>
+
+                        {/* Storage & Location Info */}
+                        {product.locationCount > 1 && (
+                          <div className="mb-3 p-2 bg-blue-50 rounded-lg">
+                            <div className="text-xs text-blue-700">
+                              <span className="font-semibold">📍 {product.locationCount} storage locations</span>
+                              <div className="mt-1">Total qty: {product.totalQuantity} {product.unit || 'pcs'}</div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Action Buttons */}
+                        <div className="flex justify-between items-center pt-3 border-t border-gray-100">
+                          <div className="flex space-x-1">
                             <button
                               onClick={() => handleEdit(product)}
-                                className="inline-flex items-center p-2 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-md transition-colors"
-                                title="Edit product details"
+                              className="inline-flex items-center p-2 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-md transition-colors"
+                              title="Edit product details"
                             >
-                                <FiEdit2 className="w-4 h-4" />
+                              <FiEdit2 className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleUnlink(product.id)}
-                                className="inline-flex items-center p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-md transition-colors"
-                                title="Unlink from supplier"
-                              >
-                                <FiTrash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                      {/* Variant rows */}
-                      {expandedProducts.has(product.id) && hasVariants(product) && 
-                        product.variants.map((variant, variantIndex) => (
-                          <tr key={`${product.id}-variant-${variantIndex}`} className="bg-gray-50">
-                            <td className="px-4 py-3 whitespace-nowrap">
-                              <div className="flex items-center pl-6">
-                                <div className="w-4 h-4 mr-2 flex-shrink-0">
-                                  <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
-                                </div>
-                                <div>
-                                  <div className="text-sm text-gray-700 font-medium">
-                                    {variant.size ? `${product.name} (${variant.size})` : `${product.name} - Variant ${variantIndex + 1}`}
-                                  </div>
-                                  {variant.specifications && (
-                                    <div className="text-xs text-gray-500 mt-1">
-                                      {variant.specifications}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-3 py-3">
-                              {editingVariant === `${product.id}-${variantIndex}` ? (
-                                <div className="space-y-2">
-                                  <div>
-                                    <label className="block text-xs text-gray-500 mb-1">Supplier SKU</label>
-                                    <input
-                                      type="text"
-                                      value={variantEditData.supplierSKU}
-                                      onChange={(e) => setVariantEditData({ ...variantEditData, supplierSKU: e.target.value })}
-                                      className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                      placeholder="Enter supplier SKU"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs text-gray-500 mb-1">Supplier Price (₱)</label>
-                                    <input
-                                      type="number"
-                                      value={variantEditData.supplierPrice}
-                                      onChange={(e) => setVariantEditData({ ...variantEditData, supplierPrice: parseFloat(e.target.value) })}
-                                      className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                      placeholder="Enter supplier price"
-                                      step="0.01"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs text-gray-500 mb-1">Unit Price (₱)</label>
-                                    <input
-                                      type="number"
-                                      value={variantEditData.unitPrice}
-                                      onChange={(e) => setVariantEditData({ ...variantEditData, unitPrice: parseFloat(e.target.value) })}
-                                      className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                      placeholder="Enter unit price"
-                                      step="0.01"
-                                    />
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="text-sm text-gray-600 break-words max-w-xs">
-                                  <div className="font-medium text-gray-700">SKU: {variant.supplierSKU || 'Not set'}</div>
-                                  {variant.specifications && (
-                                    <div className="text-xs text-gray-500 mt-1">
-                                      Specs: {variant.specifications}
-                                    </div>
-                                  )}
-                                  {variant.size && (
-                                    <div className="text-xs text-gray-500">
-                                      Size: {variant.size}
-                                    </div>
-                                  )}
-                                  {variant.storageType && (
-                                    <div className="text-xs text-gray-500">
-                                      Storage: {variant.storageType}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-3 py-3 whitespace-nowrap">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                                Variant
-                              </span>
-                            </td>
-                            <td className="px-3 py-3 whitespace-nowrap">
-                              {editingVariant === `${product.id}-${variantIndex}` ? (
-                                <input
-                                  type="number"
-                                  value={variantEditData.supplierPrice}
-                                  onChange={(e) => setVariantEditData({ ...variantEditData, supplierPrice: parseFloat(e.target.value) || 0 })}
-                                  className="w-full p-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                />
-                              ) : (
-                                <div className="text-sm text-gray-700">
-                                  {variant.supplierPrice ? `₱${variant.supplierPrice.toLocaleString()}` : '-'}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-3 py-3 whitespace-nowrap">
-                              <div className="text-sm font-medium text-gray-700">
-                                ₱{(variant.unitPrice || 0).toLocaleString()}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
-                              {editingVariant === `${product.id}-${variantIndex}` ? (
-                                <div className="flex justify-end space-x-2">
-                                  <button
-                                    onClick={() => handleVariantSave(product.id, variantIndex)}
-                                    className="inline-flex items-center p-1.5 text-green-600 hover:text-green-900 hover:bg-green-50 rounded-md transition-colors"
-                                    title="Save variant changes"
-                                  >
-                                    <FiSave className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => setEditingVariant(null)}
-                                    className="inline-flex items-center p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md transition-colors"
-                                    title="Cancel"
-                                  >
-                                    <FiX className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex justify-end space-x-2">
-                                  <button
-                                    onClick={() => handleVariantEdit(product.id, variantIndex, variant)}
-                                    className="inline-flex items-center p-1.5 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-md transition-colors"
-                                    title="Edit variant supplier info"
-                                  >
-                                    <FiEdit2 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleVariantUnlink(product.id, variantIndex, variant.size ? `${product.name} (${variant.size})` : `Variant ${variantIndex + 1}`)}
-                                    className="inline-flex items-center p-1.5 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-md transition-colors"
-                                    title="Remove variant from supplier"
-                                  >
-                                    <FiTrash2 className="w-3.5 h-3.5" />
+                              className="inline-flex items-center p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-md transition-colors"
+                              title="Unlink from supplier"
+                            >
+                              <FiTrash2 className="w-4 h-4" />
                             </button>
                           </div>
-                        )}
-                      </td>
-                    </tr>
-                        ))
-                      }
-                      </React.Fragment>
+                        
+                        </div>
+                      </div>
+
+                      {/* Variants Section */}
+                      {hasVariants(product) && (
+                        <div className="border-t border-gray-100 bg-gray-50">
+                          <div className="p-3">
+                            <div className="text-xs font-semibold text-gray-700 mb-2">Variants:</div>
+                            <div className="space-y-2">
+                              {product.variants.map((variant, variantIndex) => (
+                                <div key={`${product.id}-variant-${variantIndex}`} className="bg-white rounded-lg p-3 border border-gray-200">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <div className="flex-1">
+                                      <div className="text-sm font-medium text-gray-900">
+                                        {variant.size ? `${product.name} (${variant.size})` : `${product.name} - Variant ${variantIndex + 1}`}
+                                      </div>
+                                      <div className="text-xs text-gray-500 space-y-1">
+                                        <div>SKU: {variant.supplierSKU || 'Not set'}</div>
+                                        {variant.specifications && <div>Specs: {variant.specifications}</div>}
+                                        {variant.storageType && <div>Storage: {variant.storageType}</div>}
+                                      </div>
+                                    </div>
+                                    <div className="flex space-x-1 ml-2">
+                                      <button
+                                        onClick={() => handleVariantEdit(product.id, variantIndex, variant)}
+                                        className="inline-flex items-center p-1.5 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-md transition-colors"
+                                        title="Edit variant supplier info"
+                                      >
+                                        <FiEdit2 className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleVariantUnlink(product.id, variantIndex, variant.size ? `${product.name} (${variant.size})` : `Variant ${variantIndex + 1}`)}
+                                        className="inline-flex items-center p-1.5 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-md transition-colors"
+                                        title="Remove variant from supplier"
+                                      >
+                                        <FiTrash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-gray-500">Supplier Price:</span>
+                                    <span className="font-medium text-gray-900">
+                                      {variant.supplierPrice ? `₱${variant.supplierPrice.toLocaleString()}` : '-'}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between text-xs mt-1">
+                                    <span className="text-gray-500">Unit Price:</span>
+                                    <span className="font-medium text-gray-900">₱{(variant.unitPrice || 0).toLocaleString()}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   ))
-                  )}
-                </tbody>
-              </table>
-                </div>
+                )}
               </div>
             </div>
           )}
@@ -736,7 +529,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
             
             <div className="flex gap-3 flex-shrink-0">
               <button
-                onClick={() => setcategorymodal(true)}
+                onClick={() => setLinkProductModal(true)}
                 className="inline-flex items-center px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg 
                          hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 
                          transition-all shadow-md hover:shadow-lg transform hover:scale-105"
@@ -744,7 +537,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                 </svg>
-                Add Product
+                Link Product
               </button>
 
               <button
@@ -759,36 +552,336 @@ const SupplierProducts = ({ supplier, onClose }) => {
           </div>
         </div>
       </div>
-      <CategoryModalIndex CategoryOpen={categorymodal} CategoryClose={() => setcategorymodal(false)} supplier={supplier} />
+     
       
-      {/* Variant Modal */}
-      {variantModal && selectedProductForVariant && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
-          <div className="bg-white rounded-lg w-full max-w-3xl max-h-[90vh] overflow-hidden">
-            <div className="flex justify-between items-center p-6 border-b">
-              <h2 className="text-xl font-semibold">
-                Add Variant to {selectedProductForVariant.name}
-              </h2>
-              <button
-                onClick={() => setVariantModal(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <FiX size={24} />
-              </button>
+      {/* Link Product Modal */}
+      {linkProductModal && (
+        <LinkProductModal 
+          supplier={supplier} 
+          onClose={() => setLinkProductModal(false)} 
+          onProductLinked={fetchSupplierProducts}
+          linkedProductIds={supplierProducts.map(p => p.id)}
+        />
+      )}
+      
+   ~
+    </div>
+    
+  );
+};
+
+const LinkProductModal = ({ supplier, onClose, onProductLinked, linkedProductIds }) => {
+  const [allProducts, setAllProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedProducts, setSelectedProducts] = useState({});
+  const [supplierPrices, setSupplierPrices] = useState({});
+  const [linking, setLinking] = useState(false);
+  const { listenToProducts, linkProductToSupplier } = useServices();
+
+  useEffect(() => {
+    const unsubscribe = listenToProducts((products) => {
+      // Group products by base identity to avoid duplicates
+      const productGroups = {};
+      
+      products.forEach(product => {
+        const groupKey = `${product.name || 'unknown'}_${product.brand || 'generic'}_${product.specifications || ''}_${product.category || ''}`;
+        
+        if (!productGroups[groupKey]) {
+          productGroups[groupKey] = {
+            ...product,
+            locations: [product],
+            totalQuantity: Number(product.quantity) || 0,
+            allIds: [product.id]
+          };
+        } else {
+          productGroups[groupKey].locations.push(product);
+          productGroups[groupKey].totalQuantity += Number(product.quantity) || 0;
+          productGroups[groupKey].allIds.push(product.id);
+        }
+      });
+
+      // Convert to array and filter out already linked products
+      const availableProducts = Object.values(productGroups)
+        .filter(group => !group.allIds.some(id => linkedProductIds.includes(id)))
+        .map(group => ({
+          ...group,
+          id: group.allIds[0], // Use first ID as primary
+          location: group.locations.length > 1 
+            ? `${group.locations.length} locations` 
+            : (group.locations[0]?.fullLocation || 'Unknown'),
+          quantity: group.totalQuantity
+        }));
+
+      setAllProducts(availableProducts);
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, [linkedProductIds]);
+
+  const handleProductSelect = (productId, checked) => {
+    setSelectedProducts(prev => ({
+      ...prev,
+      [productId]: checked
+    }));
+    
+    if (checked) {
+      // Initialize supplier price when selecting
+      const product = allProducts.find(p => p.id === productId);
+      if (product && !supplierPrices[productId]) {
+        setSupplierPrices(prev => ({
+          ...prev,
+          [productId]: product.unitPrice || 0
+        }));
+      }
+    }
+  };
+
+  const handleSupplierPriceChange = (productId, price) => {
+    setSupplierPrices(prev => ({
+      ...prev,
+      [productId]: parseFloat(price) || 0
+    }));
+  };
+
+  const handleLinkProducts = async () => {
+    const productsToLink = Object.keys(selectedProducts).filter(id => selectedProducts[id]);
+    
+    if (productsToLink.length === 0) {
+      alert('Please select at least one product to link.');
+      return;
+    }
+
+    setLinking(true);
+    try {
+      for (const productId of productsToLink) {
+        const supplierData = {
+          supplierPrice: supplierPrices[productId] || 0,
+          supplierSKU: productId,  // Use product ID as supplier SKU (like the old system)
+          supplierName: supplier.name,
+          supplierCode: supplier.primaryCode || supplier.code
+        };
+
+        const result = await linkProductToSupplier(productId, supplier.id, supplierData);
+        if (!result.success) {
+          throw new Error(`Failed to link product ${productId}`);
+        }
+      }
+
+      alert(`Successfully linked ${productsToLink.length} product(s) to ${supplier.name}!`);
+      onProductLinked(); // Refresh the supplier products list
+      onClose(); // Close the modal
+    } catch (error) {
+      console.error('Error linking products:', error);
+      alert('Failed to link some products: ' + error.message);
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  const selectedCount = Object.values(selectedProducts).filter(Boolean).length;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+        {/* Header */}
+        <div className="flex justify-between items-center p-6 border-b bg-white flex-shrink-0">
+          <h2 className="text-xl font-semibold">
+            Link Products to {supplier?.name}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            <FiX size={24} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 overflow-y-auto flex-1">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-12 space-y-4">
+              <div className="relative">
+                <div className="w-16 h-16 border-4 border-blue-200 rounded-full"></div>
+                <div className="w-16 h-16 border-4 border-blue-600 rounded-full animate-spin border-t-transparent absolute top-0 left-0"></div>
+              </div>
+              <div className="text-center space-y-2">
+                <p className="text-lg font-semibold text-gray-800">Loading Products...</p>
+                <p className="text-sm text-gray-500">Please wait while we fetch available products</p>
+              </div>
             </div>
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
-              <NewVariantForm 
-                selectedCategory={{ name: selectedProductForVariant.actualCategory || selectedProductForVariant.category }}
-                onBack={handleVariantModalClose}
-                preSelectedProduct={selectedProductForVariant}
-                supplier={supplier}
-              />
+          ) : allProducts.length === 0 ? (
+            <div className="text-center py-12">
+              <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-5.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+              </svg>
+              <p className="text-lg font-semibold text-gray-800">No Available Products</p>
+              <p className="text-sm text-gray-500">All products are already linked to this supplier</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  Select products from your inventory to link to <strong>{supplier.name}</strong>. 
+                  Set the supplier price for each selected product. The supplier SKU will be automatically set to match your internal product ID.
+                </p>
+                {selectedCount > 0 && (
+                  <p className="text-sm text-blue-700 mt-2 font-medium">
+                    {selectedCount} product{selectedCount !== 1 ? 's' : ''} selected
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {allProducts.map((product) => (
+                  <div key={product.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+                    {/* Product Image */}
+                    <div className="aspect-square bg-gray-100 relative">
+                      {product.imageUrl ? (
+                        <img
+                          src={product.imageUrl}
+                          alt={product.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJDMTMuMSAyIDE0IDIuOSAxNCA0VjE2QzE0IDE3LjEgMTMuMSAxOCA5IDE4QzQuOSAxOCA0IDE3LjEgNCAxNlY0QzQgMi45IDQuOSAyIDYgMkgxOEMxOS4xIDIgMjAgMi45IDIwIDRWMTZDMjAgMTcuMSAxOS4xIDE4IDE4IDE4SDE0VjE2QzE0IDE0LjkgMTMuMSAxNCAxMiAxNFoiIGZpbGw9IiM5Q0E0QUYiLz4KPC9zdmc+';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <svg className="w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                      )}
+
+                      {/* Selection Checkbox */}
+                      <div className="absolute top-3 left-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedProducts[product.id] || false}
+                          onChange={(e) => handleProductSelect(product.id, e.target.checked)}
+                          className="w-5 h-5 text-blue-600 bg-white border-2 border-white rounded focus:ring-blue-500 focus:ring-2"
+                        />
+                      </div>
+
+                      {/* Selection Indicator */}
+                      {selectedProducts[product.id] && (
+                        <div className="absolute top-3 right-3 bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Product Info */}
+                    <div className="p-4">
+                      <div className="mb-3">
+                        <h3 className="text-sm font-semibold text-gray-900 mb-1 line-clamp-2">
+                          {product.name || 'Unknown Product'}
+                        </h3>
+                        {product.brand && (
+                          <p className="text-xs text-gray-500 mb-1">Brand: {product.brand}</p>
+                        )}
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {product.category || 'Uncategorized'}
+                        </span>
+                      </div>
+
+                      {/* Stock Info */}
+                      <div className="space-y-1 mb-3">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-500">Stock:</span>
+                          <span className="font-medium text-gray-900">{product.quantity} {product.unit || 'pcs'}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-500">Unit Price:</span>
+                          <span className="font-medium text-gray-900">₱{product.unitPrice?.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-500">Location:</span>
+                          <span className="font-medium text-gray-900 truncate max-w-24" title={product.location}>
+                            {product.location}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Supplier Price Input - Only show when selected */}
+                      {selectedProducts[product.id] && (
+                        <div className="border-t border-gray-100 pt-3">
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Supplier Price (₱)
+                          </label>
+                          <input
+                            type="number"
+                            value={supplierPrices[product.id] || ''}
+                            onChange={(e) => handleSupplierPriceChange(product.id, e.target.value)}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            placeholder="0.00"
+                            step="0.01"
+                            min="0"
+                          />
+                        </div>
+                      )}
+
+                      {/* Specifications */}
+                      {product.specifications && (
+                        <div className="mt-2">
+                          <p className="text-xs text-gray-500 line-clamp-2" title={product.specifications}>
+                            {product.specifications}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-gray-200 bg-gray-50 p-6 flex-shrink-0">
+          <div className="flex justify-between items-center">
+            <div className="text-sm text-gray-600">
+              {allProducts.length} available product{allProducts.length !== 1 ? 's' : ''} • {selectedCount} selected
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={onClose}
+                className="inline-flex items-center px-5 py-2.5 bg-white text-gray-700 text-sm font-semibold rounded-lg 
+                         border-2 border-gray-300 hover:bg-gray-50 hover:border-gray-400 focus:outline-none 
+                         focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all shadow-sm hover:shadow"
+                disabled={linking}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLinkProducts}
+                disabled={selectedCount === 0 || linking}
+                className={`inline-flex items-center px-5 py-2.5 text-white text-sm font-semibold rounded-lg 
+                         transition-all shadow-md hover:shadow-lg transform hover:scale-105 ${
+                  selectedCount === 0 || linking
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
+                }`}
+              >
+                {linking ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                    Linking...
+                  </>
+                ) : (
+                  <>
+                    Link {selectedCount} Product{selectedCount !== 1 ? 's' : ''}
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
-    
   );
 };
 

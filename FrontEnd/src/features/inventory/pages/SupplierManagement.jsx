@@ -197,8 +197,6 @@ const SupplierManagement = () => {
 
   return (
     <div >
-
-     
         {/* Tab Navigation */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
           <div className="flex border-b border-gray-200">
@@ -239,13 +237,7 @@ const SupplierManagement = () => {
                   <FiPlus size={20} />
                   <span>Add New Supplier</span>
                 </button>
-                <button
-                  onClick={() => setShowBulkImportModal(true)}
-                  className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-                >
-                  <FiUpload size={20} />
-                  <span>Bulk Import Products</span>
-                </button>
+               
               </div>
               <button
                 onClick={toggleViewMode}

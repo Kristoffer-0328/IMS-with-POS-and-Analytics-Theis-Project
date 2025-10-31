@@ -467,86 +467,88 @@ const Inventory = () => {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredData.map((product) => (
-                  <div key={product.id} className={`bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow border-2 ${
-                    product.isVariant 
-                      ? 'border-purple-200 bg-purple-50/30' 
-                      : 'border-gray-100'
-                  }`}>
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h4 className={`text-sm font-medium inline-block px-2 py-1 rounded-md ${getCategoryColor(product.category)}`}>
-                            {product.name} 
-                            {product.brand && <span className="ml-1 text-gray-600">({product.brand})</span>}
-                          </h4>
-                          {product.isVariant && (
-                            <span className="px-2 py-0.5 bg-purple-500 text-white text-xs font-semibold rounded-full flex items-center gap-1">
-                              <FiLayers size={10} />
-                              VARIANT
-                            </span>
-                          )}
-                          {!product.isVariant && product.hasVariants && (
-                            <span className="px-2 py-0.5 bg-blue-500 text-white text-xs font-semibold rounded-full flex items-center gap-1">
-                              <FiPackage size={10} />
-                              BASE
-                            </span>
-                          )}
+                  <div key={product.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+                    {/* Product Image */}
+                    <div className="aspect-square bg-gray-100 relative">
+                      {product.imageUrl ? (
+                        <img
+                          src={product.imageUrl}
+                          alt={product.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJDMTMuMSAyIDE0IDIuOSAxNCA0VjE2QzE0IDE3LjEgMTMuMSAxOCA5IDE4QzQuOSAxOCA0IDE3LjEgNCAxNlY0QzQgMi45IDQuOSAyIDYgMkgxOEMxOS4xIDIgMjAgMi45IDIwIDRWMTZDMjAgMTcuMSAxOS4xIDE4IDE4IDE4SDE0VjE2QzE0IDE0LjkgMTMuMSAxNCAxMiAxNFoiIGZpbGw9IiM5Q0E0QUYiLz4KPC9zdmc+';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <svg className="w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
                         </div>
-                        {product.isVariant && product.variantName && (
-                          <p className="text-xs text-purple-700 font-medium mt-1">
-                            Variant: {product.variantName || product.size || 'Standard'}
-                          </p>
-                        )}
-                        <p className="text-xs text-gray-500 mt-1">{product.category}</p>
-                      </div>
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        product.status === 'in-stock' 
-                          ? 'bg-green-100 text-green-800'
-                          : product.status === 'low-stock'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {product.status === 'in-stock' 
-                          ? 'In Stock'
-                          : product.status === 'low-stock'
-                          ? 'Low Stock'
-                          : 'Out of Stock'}
-                      </span>
-                    </div>
-                    
-                    <div className="space-y-1.5 mb-3">
-                      <p className="text-sm">
-                        <span className="font-medium">Quantity:</span> {product.quantity} {product.unit}
-                        {product.hasVariants && (
-                          <span className="ml-2 text-xs text-gray-500">
-                            ({product.variantCount} variant{product.variantCount !== 1 ? 's' : ''})
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-sm">
-                        <span className="font-medium">Unit Price:</span> ₱{product.unitPrice?.toLocaleString()}
-                        {product.hasVariants && (
-                          <span className="ml-2 text-xs text-gray-500">(avg)</span>
-                        )}
-                      </p>
-                      <p className="text-sm">
-                        <span className="font-medium">Location:</span> {product.location}
-                        {product.locationCount > 1 && (
-                          <span className="ml-2 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-semibold">
-                            {product.locationCount} locations
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-sm">
-                        <span className="font-medium">Total Value:</span> ₱{product.totalvalue?.toLocaleString()}
-                      </p>
+                      )}
                     </div>
 
-                    <div className="pt-3 border-t border-gray-100">
+                    {/* Product Info */}
+                    <div className="p-4">
+                      <div className="mb-3">
+                        <h3 className="text-sm font-semibold text-gray-900 mb-1 line-clamp-2">
+                          {product.name || 'Unknown Product'}
+                        </h3>
+                        {product.brand && (
+                          <p className="text-xs text-gray-500 mb-1">Brand: {product.brand}</p>
+                        )}
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {product.category || 'Uncategorized'}
+                        </span>
+                      </div>
+
+                      {/* Stock Info */}
+                      <div className="space-y-1 mb-3">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-500">Stock:</span>
+                          <span className="font-medium text-gray-900">{product.quantity} {product.unit || 'pcs'}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-500">Unit Price:</span>
+                          <span className="font-medium text-gray-900">₱{product.unitPrice?.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-500">Location:</span>
+                          <span className="font-medium text-gray-900 truncate max-w-24" title={product.location}>
+                            {product.location}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-500">Total Value:</span>
+                          <span className="font-medium text-gray-900">₱{product.totalvalue?.toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      {/* Status Badge */}
+                      <div className="flex justify-between items-center mb-3">
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                          product.status === 'in-stock' 
+                            ? 'bg-green-100 text-green-800'
+                            : product.status === 'low-stock'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {product.status === 'in-stock' 
+                            ? 'In Stock'
+                            : product.status === 'low-stock'
+                            ? 'Low Stock'
+                            : 'Out of Stock'}
+                        </span>
+                        {product.hasVariants && (
+                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
+                            {product.variantCount} variant{product.variantCount !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+
                       <button
                         onClick={() => handleViewProduct(product)}
-                        className={`w-full px-4 py-2 rounded-lg transition-colors text-sm font-bold bg-gray-50 hover:bg-gray-100
-                          ${getCategoryColor(product.category).replace('bg-', '').replace('-100', '-600')}`}
+                        className="w-full px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 text-sm font-medium rounded-lg transition-colors"
                       >
                         View Details
                       </button>

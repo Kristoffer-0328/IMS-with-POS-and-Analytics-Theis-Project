@@ -30,7 +30,7 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
     
     // Add new state for variant-specific information
     const [specifications, setSpecifications] = useState('');
-    const [selectedSupplier, setSelectedSupplier] = useState(null);
+    const [selectedSuppliers, setSelectedSuppliers] = useState([]);
     const [supplierPrice, setSupplierPrice] = useState('');
     
     // Safety stock for ROP calculation
@@ -134,7 +134,7 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
 
     useEffect(() => {
         if (supplier) {
-            setSelectedSupplier(supplier);
+            setSelectedSuppliers([supplier]);
         }
     }, [supplier]);
 
@@ -209,7 +209,8 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
     };
 
     const handleSupplierSelect = (supplierData) => {
-        setSelectedSupplier(supplierData);
+        // supplierData is an array of selected suppliers
+        setSelectedSuppliers(supplierData);
     };
 
     const handleAddVariant = async () => {
@@ -254,8 +255,8 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                 return acc;
             }, {});
 
-            // Get current supplier
-            const currentSupplier = supplier || selectedSupplier;
+            // Get suppliers for variant (support multiple suppliers)
+            const variantSuppliers = supplier ? [supplier] : selectedSuppliers;
             
             // Create variants for each storage location
             for (const location of selectedStorageLocations) {
@@ -268,7 +269,7 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                     ? `${baseVariantId}-${locationSuffix}` 
                     : baseVariantId;
 
-                // Create variant as a separate product document with FLAT STRUCTURE
+                // Create variant data with all selected suppliers
                 const variantProductData = {
                     id: variantId,
                     name: selectedProduct.name,
@@ -298,12 +299,25 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                     multiLocation: selectedStorageLocations.length > 1,
                     totalQuantityAllLocations: totalQty,
                     
-                    // Supplier information
-                    supplier: currentSupplier ? {
-                        name: currentSupplier.name,
-                        code: currentSupplier.primaryCode || currentSupplier.code,
-                        primaryCode: currentSupplier.primaryCode || currentSupplier.code,
-                        id: currentSupplier.id,
+                    // Supplier information - store all suppliers
+                    suppliers: variantSuppliers.length > 0 ? variantSuppliers.map(supp => ({
+                        name: supp.name,
+                        code: supp.primaryCode || supp.code,
+                        primaryCode: supp.primaryCode || supp.code,
+                        id: supp.id,
+                        price: Number(supplierPrice) || Number(variantValue.supplierPrice) || 0
+                    })) : selectedProduct.supplier ? [selectedProduct.supplier] : [{
+                        name: 'Unknown',
+                        primaryCode: '',
+                        code: ''
+                    }],
+                    
+                    // Keep backward compatibility with single supplier field
+                    supplier: variantSuppliers.length > 0 ? {
+                        name: variantSuppliers[0].name,
+                        code: variantSuppliers[0].primaryCode || variantSuppliers[0].code,
+                        primaryCode: variantSuppliers[0].primaryCode || variantSuppliers[0].code,
+                        id: variantSuppliers[0].id,
                         price: Number(supplierPrice) || Number(variantValue.supplierPrice) || 0
                     } : selectedProduct.supplier || {
                         name: 'Unknown',
@@ -338,8 +352,8 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                 // EOQ = sqrt(2 * demand * purchase_cost / holding_cost)
                 const eoq = Math.ceil(Math.sqrt(2 * defaultDemand * purchaseCost / holdingCost));
 
-                // Get lead time from supplier (assume first supplier has leadTime in days)
-                const leadTime = currentSupplier ? (currentSupplier.leadTime || 7) : 7; // Default 7 days
+                // Get lead time from first supplier (assume first supplier has leadTime in days)
+                const leadTime = variantSuppliers.length > 0 ? (variantSuppliers[0].leadTime || 7) : 7; // Default 7 days
                 const avgDemand = defaultDemand;
                 const safetyStockQty = Number(safetyStock) || 0;
 
@@ -363,17 +377,17 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                 await setDoc(variantRef, cleanVariantData);
 
 
-                // If supplier is provided, create supplier-product relationship for the variant
-                if (currentSupplier) {
+                // If suppliers are selected, create supplier-product relationships for the variant
+                const suppliersToLink = supplier ? [supplier] : selectedSuppliers;
+                for (const supplierToLink of suppliersToLink) {
                     try {
-                        await linkProductToSupplier(variantId, currentSupplier.id, {
+                        await linkProductToSupplier(variantId, supplierToLink.id, {
                             supplierPrice: Number(supplierPrice) || Number(variantValue.supplierPrice) || 0,
                             supplierSKU: variantId,
                             isVariant: true,
                             parentProductId: selectedProduct.id,
                             lastUpdated: new Date().toISOString()
                         });
-
                     } catch (linkError) {
                         console.error('Error linking variant to supplier:', linkError);
                         // Don't fail the whole operation if linking fails
@@ -547,13 +561,20 @@ const NewVariantForm = ({ selectedCategory, onBack, preSelectedProduct, supplier
                             <>
                                 <SupplierSelector 
                                     onSelect={handleSupplierSelect}
-                                    selectedSupplierId={selectedSupplier?.id}
+                                    selectedSupplierIds={selectedSuppliers.map(s => s.id)}
                                 />
-                                {selectedSupplier && (
+                                {selectedSuppliers.length > 0 && (
                                     <div className="mt-3 p-3 bg-gray-50 rounded border">
                                         <p className="text-sm text-gray-600">
-                                            <span className="font-medium">Selected:</span> {selectedSupplier.name} ({selectedSupplier.primaryCode || selectedSupplier.code})
+                                            <span className="font-medium">Selected Suppliers:</span>
                                         </p>
+                                        <div className="mt-2 space-y-1">
+                                            {selectedSuppliers.map((supplier, index) => (
+                                                <div key={supplier.id} className="text-sm text-gray-700">
+                                                    {supplier.name} ({supplier.primaryCode || supplier.code})
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
                             </>
