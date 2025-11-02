@@ -37,6 +37,7 @@ export const useSupplierServices = () => {
         phone: supplierData.phone,
         email: supplierData.email,
         supplierCodes: supplierData.supplierCodes || [],
+        leadTime: supplierData.leadTime || 7,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         status: 'active'
@@ -54,7 +55,7 @@ export const useSupplierServices = () => {
   const updateSupplier = async (supplierId, updateData) => {
     try {
       // Validate update data
-      const allowedFields = ['name', 'primaryCode', 'address', 'contactPerson', 'phone', 'email', 'status', 'supplierCodes'];
+      const allowedFields = ['name', 'primaryCode', 'address', 'contactPerson', 'phone', 'email', 'status', 'supplierCodes', 'leadTime'];
       const invalidFields = Object.keys(updateData).filter(field => !allowedFields.includes(field));
       
       if (invalidFields.length > 0) {

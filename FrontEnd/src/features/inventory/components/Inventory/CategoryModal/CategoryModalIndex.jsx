@@ -125,7 +125,6 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, onOpenViewProductModa
     const handleStorageLocationClick = (storageLocation) => {
         setSelectedStorageLocation(storageLocation);
         setShowAddProductModal(true);
-        setActiveForm('product'); // Directly go to product form
     };
 
     const handleClose = () => {

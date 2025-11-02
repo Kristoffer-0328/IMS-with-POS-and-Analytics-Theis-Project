@@ -1,19 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { getFirestore, doc, updateDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { useNavigate } from 'react-router-dom';
+import { getFirestore, doc, updateDoc, collection, query, where, getDocs, deleteDoc } from "firebase/firestore";
 import app from '../../../../FirebaseConfig';
 import { getDoc } from 'firebase/firestore';
-import { FiPackage, FiDollarSign, FiMapPin, FiInfo, FiLayers, FiCalendar, FiMap } from 'react-icons/fi';
+import { FiPackage, FiDollarSign, FiMapPin, FiInfo, FiLayers, FiCalendar, FiMap, FiTrash2 } from 'react-icons/fi';
 import ShelfViewModal from './ShelfViewModal';
 import { uploadImage } from '../../../../services/cloudinary/CloudinaryService';
 import { getStorageUnitConfig } from '../../config/StorageUnitsConfig';
 import NewVariantForm from './CategoryModal/NewVariantForm';
 
 const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTab = 'overview' }) => {
+  const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [imageUrl, setImageUrl] = useState(null);
-  const [activeTab, setActiveTab] = useState(initialTab); // 'overview', 'variants', 'supplier', 'additional'
+  const [activeTab, setActiveTab] = useState(initialTab); // 'overview', 'variants', 'location', 'supplier', 'additional'
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [selectedUnitForMap, setSelectedUnitForMap] = useState(null);
   const [variants, setVariants] = useState([]); // For flat structure variants
@@ -22,7 +24,45 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
   const [isEditMode, setIsEditMode] = useState(false);
   const [editedProduct, setEditedProduct] = useState(null);
   const [isActive, setIsActive] = useState(true);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
   const db = getFirestore(app);
+  
+  // Helper function to normalize supplier data - handles both old (suppliers array) and new (supplier object) structures
+  const getSuppliers = (product) => {
+    if (!product) return [];
+    
+    // If product has suppliers array (old structure or multi-supplier)
+    if (product.suppliers && Array.isArray(product.suppliers) && product.suppliers.length > 0) {
+      return product.suppliers;
+    }
+    
+    // If product has supplier object (new structure from linking)
+    if (product.supplier && typeof product.supplier === 'object' && product.supplier.name) {
+      return [product.supplier];
+    }
+    
+    // Check variants for supplier info
+    if (product.variants && Array.isArray(product.variants) && product.variants.length > 0) {
+      const variantSuppliers = product.variants
+        .filter(v => v.supplier && v.supplier.name)
+        .map(v => v.supplier);
+      
+      if (variantSuppliers.length > 0) {
+        // Remove duplicates by supplier id
+        const uniqueSuppliers = variantSuppliers.reduce((acc, supplier) => {
+          if (!acc.find(s => s.id === supplier.id)) {
+            acc.push(supplier);
+          }
+          return acc;
+        }, []);
+        return uniqueSuppliers;
+      }
+    }
+    
+    return [];
+  };
   
   useEffect(() => {
     if (product) {
@@ -611,6 +651,60 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
     setIsActive(!isActive);
   };
 
+  const handleDeleteProduct = async () => {
+    try {
+      if (!product) return;
+
+      const storageLocation = product.storageLocation;
+      if (!storageLocation) {
+        alert('Cannot delete: Product storage location is missing');
+        return;
+      }
+
+      setIsDeleting(true);
+
+      // Delete supplier links first
+      const suppliers = getSuppliers(product);
+      if (suppliers.length > 0) {
+        for (const supplier of suppliers) {
+          try {
+            // Delete from supplier_products collection
+            const supplierProductRef = doc(db, 'supplier_products', supplier.id, 'products', product.id);
+            await deleteDoc(supplierProductRef);
+            console.log(`Deleted supplier link: ${supplier.name} -> ${product.name}`);
+          } catch (error) {
+            console.error(`Error deleting supplier link for ${supplier.name}:`, error);
+            // Continue with deletion even if supplier link deletion fails
+          }
+        }
+      }
+
+      // Delete the product document
+      const productRef = doc(
+        db,
+        'Products',
+        storageLocation,
+        'products',
+        product.id
+      );
+
+      await deleteDoc(productRef);
+
+      // Close modals and notify parent to refresh
+      setShowDeleteModal(false);
+      setDeleteConfirmText('');
+      onClose();
+      if (onProductUpdate) {
+        onProductUpdate();
+      }
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      alert('❌ Failed to delete product: ' + error.message);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const InfoRow = ({ label, value, icon: Icon }) => (
     <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
       <div className="flex items-center gap-2">
@@ -710,6 +804,18 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                   />
                 </button>
               </div>
+
+              {/* Delete Button */}
+              {!isEditMode && (
+                <button
+                  onClick={() => setShowDeleteModal(true)}
+                  className="px-4 py-2 bg-red-500/90 backdrop-blur-sm text-white border border-red-400 rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2"
+                  title="Delete Product"
+                >
+                  <FiTrash2 size={16} />
+                  Delete
+                </button>
+              )}
 
               {/* Edit/Save/Cancel Buttons */}
               {!isEditMode ? (
@@ -830,32 +936,216 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                     </span>
                   )}
                 </div>
-                <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium mb-4 ${
-                  product.isVariant 
-                    ? 'bg-purple-100 text-purple-700' 
-                    : 'bg-orange-100 text-orange-700'
-                }`}>
-                  <FiLayers size={14} />
-                  {isEditMode ? (
-                    <select
-                      value={editedProduct?.category || ''}
-                      onChange={(e) => handleFieldChange('category', e.target.value)}
-                      className="bg-transparent border-none outline-none text-sm font-medium"
-                    >
-                      <option value="">Select Category</option>
-                      <option value="Steel & Heavy Materials">Steel & Heavy Materials</option>
-                      <option value="Plywood & Sheet Materials">Plywood & Sheet Materials</option>
-                      <option value="Cement & Aggregates">Cement & Aggregates</option>
-                      <option value="Electrical & Plumbing">Electrical & Plumbing</option>
-                      <option value="Paint & Coatings">Paint & Coatings</option>
-                      <option value="Insulation & Foam">Insulation & Foam</option>
-                      <option value="Miscellaneous">Miscellaneous</option>
-                      <option value="Roofing Materials">Roofing Materials</option>
-                      <option value="Hardware & Fasteners">Hardware & Fasteners</option>
-                    </select>
-                  ) : (
-                    getProductDetail('category')
+                
+                {/* Product Details List */}
+                <div className="space-y-2 mb-4">
+                  {/* Category */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 w-28 flex-shrink-0">Category:</span>
+                    {isEditMode ? (
+                      <select
+                        value={editedProduct?.category || ''}
+                        onChange={(e) => handleFieldChange('category', e.target.value)}
+                        className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="">Select Category</option>
+                        <option value="Steel & Heavy Materials">Steel & Heavy Materials</option>
+                        <option value="Plywood & Sheet Materials">Plywood & Sheet Materials</option>
+                        <option value="Cement & Aggregates">Cement & Aggregates</option>
+                        <option value="Electrical & Plumbing">Electrical & Plumbing</option>
+                        <option value="Paint & Coatings">Paint & Coatings</option>
+                        <option value="Insulation & Foam">Insulation & Foam</option>
+                        <option value="Miscellaneous">Miscellaneous</option>
+                        <option value="Roofing Materials">Roofing Materials</option>
+                        <option value="Hardware & Fasteners">Hardware & Fasteners</option>
+                      </select>
+                    ) : (
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                        product.isVariant 
+                          ? 'bg-purple-100 text-purple-700' 
+                          : 'bg-orange-100 text-orange-700'
+                      }`}>
+                        <FiLayers size={12} />
+                        {getProductDetail('category')}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Brand */}
+                  {product.brand && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-28 flex-shrink-0">Brand:</span>
+                      {isEditMode ? (
+                        <input
+                          type="text"
+                          value={editedProduct?.brand || ''}
+                          onChange={(e) => handleFieldChange('brand', e.target.value)}
+                          className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Brand"
+                        />
+                      ) : (
+                        <span className="text-sm font-medium text-gray-900">{product.brand}</span>
+                      )}
+                    </div>
                   )}
+
+                  {/* Size/Variant Name */}
+                  {(product.length || product.width || product.height) && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-28 flex-shrink-0">Variant/Size:</span>
+                      {isEditMode ? (
+                        <input
+                          type="text"
+                          value={editedProduct?.size || editedProduct?.variantName || ''}
+                          onChange={(e) => handleFieldChange('size', e.target.value)}
+                          className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Variant/Size"
+                        />
+                      ) : (
+                        <span className="text-sm font-medium text-gray-900">{product.length } x {product.width } x {product.thickness }</span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Specifications */}
+                  {product.specifications && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-xs text-gray-500 w-28 flex-shrink-0 pt-1">Specifications:</span>
+                      {isEditMode ? (
+                        <textarea
+                          value={editedProduct?.specifications || ''}
+                          onChange={(e) => handleFieldChange('specifications', e.target.value)}
+                          className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          rows="2"
+                          placeholder="Product specifications"
+                        />
+                      ) : (
+                        <span className="text-xs text-gray-700 flex-1">{product.specifications}</span>
+                      )}  
+                    </div>
+                  )}
+
+                  {/* Measurement Type */}
+                  {product.measurementType && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-28 flex-shrink-0">Measurement:</span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        product.measurementType === 'length' ? 'bg-blue-100 text-blue-700' :
+                        product.measurementType === 'weight' ? 'bg-green-100 text-green-700' :
+                        product.measurementType === 'volume' ? 'bg-purple-100 text-purple-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {product.measurementType === 'length' && (
+                          <span className="inline-flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                            </svg>
+                            Length-based
+                          </span>
+                        )}
+                        {product.measurementType === 'weight' && (
+                          <span className="inline-flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+                            </svg>
+                            Weight-based
+                          </span>
+                        )}
+                        {product.measurementType === 'volume' && (
+                          <span className="inline-flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                            </svg>
+                            Volume-based
+                          </span>
+                        )}
+                        {!product.measurementType && (
+                          <span className="inline-flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                            </svg>
+                            Count-based
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-xs text-gray-600">
+                        Base Unit: <span className="font-medium text-gray-900">{product.baseUnit || 'pcs'}</span>
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Dimensions (for length-based products) */}
+                  {product.measurementType === 'length' && (product.lengthCm || product.widthCm || product.thicknessCm) && (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs text-gray-500">Dimensions:</span>
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        {product.lengthCm && (
+                          <span className="bg-blue-50 px-2 py-1 rounded text-blue-700">
+                            Length: <span className="font-medium">{product.lengthCm} cm</span>
+                          </span>
+                        )}
+                        {product.widthCm && (
+                          <span className="bg-blue-50 px-2 py-1 rounded text-blue-700">
+                            Width: <span className="font-medium">{product.widthCm} cm</span>
+                          </span>
+                        )}
+                        {product.thicknessCm && (
+                          <span className="bg-blue-50 px-2 py-1 rounded text-blue-700">
+                            Thickness: <span className="font-medium">{product.thicknessCm} cm</span>
+                          </span>
+                        )}
+                      </div>
+                      {product.unitVolumeCm3 && (
+                        <div className="mt-1">
+                          <span className="text-xs text-gray-600">
+                            Calculated Volume: <span className="font-medium text-blue-600">{product.unitVolumeCm3.toFixed(2)} cm³</span>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Unit Weight (for weight-based products) */}
+                  {product.measurementType === 'weight' && product.unitWeightKg && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-28 flex-shrink-0">Unit Weight:</span>
+                      <span className="bg-green-50 px-2 py-1 rounded text-green-700 text-sm font-medium">
+                        {product.unitWeightKg} kg
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Unit Volume (for volume-based products) */}
+                  {product.measurementType === 'volume' && product.unitVolumeLiters && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 w-28 flex-shrink-0">Unit Volume:</span>
+                      <span className="bg-purple-50 px-2 py-1 rounded text-purple-700 text-sm font-medium">
+                        {product.unitVolumeLiters} L
+                      </span>
+                    </div>
+                  )}
+
+                  {/* UOM Conversions */}
+                  {product.uomConversions && Array.isArray(product.uomConversions) && product.uomConversions.length > 0 && (
+                    <div className="flex flex-col gap-2 mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-gray-700">Package/Bundle Conversions:</span>
+                        <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">
+                          {product.uomConversions.length} type{product.uomConversions.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {product.uomConversions.map((uom, index) => (
+                          <div key={index} className="flex items-center gap-2 bg-white p-2 rounded border border-gray-200">
+                            <span className="text-xs text-gray-600">1 {uom.name} =</span>
+                            <span className="font-medium text-sm text-gray-900">{uom.quantity} {product.baseUnit || 'pcs'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                
                 </div>
 
                 {/* Stats Grid */}
@@ -863,15 +1153,39 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                   <StatCard 
                     icon={FiPackage}
                     label="Total Stock"
-                    value={getProductDetail('quantity')}
+                    value={`${getProductDetail('quantity')} ${product.unit || 'pcs'}`}
                     color={product.isVariant ? "purple" : "blue"}
                   />
-                  <StatCard 
-                    icon={FiDollarSign}
-                    label="Unit Price"
-                    value={`₱${formatMoney(getProductDetail('unitprice'))}`}
-                    color="green"
-                  />
+                  
+                  {/* Consolidated Pricing Card */}
+                  {product.isBundle && product.piecesPerBundle ? (
+                    <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl border border-purple-200 p-3 shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="p-1.5 bg-purple-500 rounded-lg">
+                          <FiDollarSign className="text-white" size={14} />
+                        </div>
+                        <h4 className="text-xs font-semibold text-purple-800">Pricing</h4>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-purple-600">Bundle:</span>
+                          <span className="text-sm font-bold text-purple-700">₱{formatMoney(getProductDetail('unitprice'))}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-purple-600">Per {product.baseUnit || 'pc'}:</span>
+                          <span className="text-sm font-bold text-purple-700">₱{formatMoney(getProductDetail('unitprice') / product.piecesPerBundle)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <StatCard 
+                      icon={FiDollarSign}
+                      label="Unit Price"
+                      value={`₱${formatMoney(getProductDetail('unitprice'))}`}
+                      color="green"
+                    />
+                  )}
+                  
                   <StatCard 
                     icon={FiDollarSign}
                     label="Total Value"
@@ -933,6 +1247,19 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                 </div>
               </button>
               <button
+                onClick={() => setActiveTab('location')}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'location'
+                    ? (product.isVariant ? 'border-purple-500 text-purple-600' : 'border-orange-500 text-orange-600')
+                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <FiMapPin size={16} />
+                  Location
+                </div>
+              </button>
+              <button
                 onClick={() => setActiveTab('supplier')}
                 className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'supplier'
@@ -942,7 +1269,7 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
               >
                 <div className="flex items-center gap-2">
                   <FiPackage size={16} />
-                  Supplier{(product.suppliers && Array.isArray(product.suppliers) && product.suppliers.length > 1) ? `s (${product.suppliers.length})` : ''}
+                  Supplier{getSuppliers(product).length > 1 ? `s (${getSuppliers(product).length})` : ''}
                 </div>
               </button>
               {additionalFields.length > 0 && (
@@ -968,162 +1295,186 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
             {/* Overview Tab */}
             {activeTab === 'overview' && (
               <div className="space-y-6">
-                {/* Stock Information */}
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                    <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                      <FiPackage size={16} />
-                      Stock Information
-                    </h4>
-                  </div>
-                  <div className="p-4 space-y-1">
-                    {isEditMode ? (
-                      <>
-                        <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
-                          <div className="flex items-center gap-2">
-                            <FiPackage className="text-gray-400" size={16} />
-                            <span className="text-sm text-gray-600">Maximum Stock Level</span>
-                          </div>
-                          <input
-                            type="number"
-                            value={editedProduct?.maximumStockLevel || ''}
-                            onChange={(e) => handleFieldChange('maximumStockLevel', e.target.value)}
-                            className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="0"
-                          />
-                        </div>
-                        <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
-                          <div className="flex items-center gap-2">
-                            <FiPackage className="text-gray-400" size={16} />
-                            <span className="text-sm text-gray-600">Restock Level</span>
-                          </div>
-                          <input
-                            type="number"
-                            value={editedProduct?.restockLevel || ''}
-                            onChange={(e) => handleFieldChange('restockLevel', e.target.value)}
-                            className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="0"
-                          />
-                        </div>
-                        <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
-                          <div className="flex items-center gap-2">
-                            <FiPackage className="text-gray-400" size={16} />
-                            <span className="text-sm text-gray-600">Unit</span>
-                          </div>
-                          <input
-                            type="text"
-                            value={editedProduct?.unit || ''}
-                            onChange={(e) => handleFieldChange('unit', e.target.value)}
-                            className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="pcs"
-                          />
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <InfoRow label="Maximum Stock Level" value={product.maximumStockLevel || 'N/A'} />
-                        <InfoRow label="Restock Level" value={product.restockLevel || 60} />
-                        <InfoRow label="Unit" value={getProductDetail('unit')} />
-                      </>
-                    )}
-                  </div>
-                </div>
+              
+               
 
-                {/* Location Information */}
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                      <FiMapPin size={16} />
-                      Storage Location{product.locations && product.locations.length > 1 ? 's' : ''}
-                    </h4>
-                    {product.storageLocation && (
-                      <button
-                        onClick={handleViewLocation}
-                        className={`flex items-center gap-2 px-3 py-1.5 text-white text-xs font-medium rounded-lg transition-colors ${
-                          product.isVariant 
-                            ? 'bg-purple-500 hover:bg-purple-600' 
-                            : 'bg-orange-500 hover:bg-orange-600'
-                        }`}
-                      >
-                        <FiMap size={14} />
-                        View on Map
-                      </button>
-                    )}
-                  </div>
-                  <div className="p-4 space-y-3">
-                    {product.locations && product.locations.length > 1 ? (
-                      <>
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
-                          <p className="text-sm text-blue-800 font-medium">
-                            📍 This product is stored in {product.locations.length} different locations
-                          </p>
-                          <p className="text-xs text-blue-600 mt-1">
-                            Total quantity across all locations: {product.quantity} {product.unit}
-                          </p>
+                {/* Bundle/Package Summary - Compact */}
+                {product.isBundle && product.piecesPerBundle && (
+                  <div className="bg-gradient-to-r from-teal-50 to-cyan-50 rounded-xl border-2 border-teal-200 p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-3 flex-1">
+                        <div className="p-2 bg-teal-500 rounded-lg">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                          </svg>
                         </div>
-                        {product.locations.map((loc, index) => (
-                          <div key={loc.id || index} className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-1">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs font-semibold text-gray-700 bg-gray-200 px-2 py-1 rounded">
-                                Location {index + 1}
-                              </span>
-                              <span className="text-xs font-medium text-gray-600">
-                                Qty: {loc.quantity} {product.unit}
-                              </span>
-                            </div>
-                            <InfoRow label="Full Location" value={loc.location || 'N/A'} />
-                            <InfoRow label="Storage Unit" value={loc.storageLocation || 'N/A'} />
-                            {loc.shelfName && <InfoRow label="Shelf" value={loc.shelfName} />}
-                            {loc.rowName && <InfoRow label="Row" value={loc.rowName} />}
-                          </div>
-                        ))}
-                      </>
-                    ) : (
-                      <>
-                        <InfoRow label="Storage Location" value={product.storageLocation || 'N/A'} />
-                        <InfoRow label="Shelf Name" value={product.shelfName || 'N/A'} />
-                        <InfoRow label="Row Name" value={product.rowName || 'N/A'} />
-                        <InfoRow label="Full Location" value={product.fullLocation || 'N/A'} />
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Supplier Information - Show if multiple suppliers */}
-                {product.suppliers && Array.isArray(product.suppliers) && product.suppliers.length > 0 && (
-                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                    <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                      <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                        <FiPackage size={16} />
-                        Supplier{product.suppliers.length > 1 ? 's' : ''} ({product.suppliers.length})
-                      </h4>
-                    </div>
-                    <div className="p-4">
-                      <div className="space-y-3">
-                        {product.suppliers.map((supplier, index) => (
-                          <div key={supplier.id || index} className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                            <div className="flex items-center gap-2 mb-2">
-                              <FiPackage className="text-blue-600" size={14} />
-                              <span className="text-xs font-semibold text-blue-700">
-                                Supplier {index + 1}: {supplier.name}
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="flex-1">
+                          <h4 className="text-sm font-bold text-teal-800 mb-2">Bundle/Package Product</h4>
+                          
+                          {/* Pricing Information */}
+                          <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3">
+                            <div className="grid grid-cols-2 gap-3">
                               <div>
-                                <span className="text-xs text-blue-600">Code:</span>
-                                <div className="font-medium text-gray-900">{supplier.code || supplier.primaryCode || 'N/A'}</div>
+                                <div className="text-xs text-purple-600 mb-1">Bundle Price</div>
+                                <div className="text-lg font-bold text-purple-700">
+                                  ₱{formatMoney(product.unitPrice || 0)}
+                                </div>
+                                <div className="text-xs text-purple-600">per {product.bundlePackagingType || 'bundle'}</div>
                               </div>
                               <div>
-                                <span className="text-xs text-blue-600">ID:</span>
-                                <div className="font-medium text-gray-900">{supplier.id}</div>
+                                <div className="text-xs text-purple-600 mb-1">Price per Piece</div>
+                                <div className="text-lg font-bold text-purple-700">
+                                  ₱{formatMoney((product.unitPrice || 0) / (product.piecesPerBundle || 1))}
+                                </div>
+                                <div className="text-xs text-purple-600">per {product.baseUnit || 'pc'}</div>
                               </div>
                             </div>
                           </div>
-                        ))}
+                          
+                          <div className="grid grid-cols-3 gap-3">
+                            <div className="bg-white rounded-lg p-2 border border-teal-200">
+                              <div className="text-xs text-teal-600">Type</div>
+                              <div className="text-sm font-bold text-teal-700 capitalize">{product.bundlePackagingType || 'bundle'}</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-2 border border-teal-200">
+                              <div className="text-xs text-teal-600">Per Package</div>
+                              <div className="text-sm font-bold text-teal-700">{product.piecesPerBundle} {product.baseUnit || product.unit || 'pcs'}</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-2 border border-teal-200">
+                              <div className="text-xs text-teal-600">Total Packages</div>
+                              <div className="text-sm font-bold text-teal-700">{product.totalBundles || Math.floor((product.quantity || 0) / (product.piecesPerBundle || 1))}</div>
+                            </div>
+                          </div>
+                          {(product.loosePieces > 0 || (product.quantity || 0) % (product.piecesPerBundle || 1) > 0) && (
+                            <div className="mt-2 p-2 bg-orange-100 rounded-lg border border-orange-200">
+                              <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                                <span className="text-xs text-orange-700">
+                                  <span className="font-bold">{product.loosePieces || (product.quantity || 0) % (product.piecesPerBundle || 1)}</span> loose pieces
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
                 )}
+
+                {/* Quick Info Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Storage Location Card */}
+                  <div 
+                    onClick={handleViewLocation}
+                    className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer group"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-blue-100 rounded-lg group-hover:bg-blue-200 transition-colors">
+                          <FiMapPin className="text-blue-600" size={18} />
+                        </div>
+                        <h4 className="text-sm font-semibold text-gray-700">Storage Location</h4>
+                      </div>
+                      <svg className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-500">Storage Unit:</span>
+                        <span className="font-medium text-gray-900">{product.storageLocation || 'N/A'}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-500">Location:</span>
+                        <span className="font-medium text-gray-900">{product.shelfName || 'N/A'} - {product.rowName || 'N/A'}</span>
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <span className="text-xs text-blue-600 font-medium group-hover:text-blue-700">
+                        Click to view on map →
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Supplier Card */}
+                  <div 
+                    onClick={() => {
+                      const suppliers = getSuppliers(product);
+                      if (suppliers.length > 0) {
+                        setActiveTab('supplier');
+                      } else {
+                        onClose();
+                        navigate('/im/suppliers');
+                      }
+                    }}
+                    className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer group"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-orange-100 rounded-lg group-hover:bg-orange-200 transition-colors">
+                          <FiPackage className="text-orange-600" size={18} />
+                        </div>
+                        <h4 className="text-sm font-semibold text-gray-700">Supplier Info</h4>
+                      </div>
+                      <svg className="w-4 h-4 text-gray-400 group-hover:text-orange-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                    <div className="space-y-2">
+                      {(() => {
+                        const suppliers = getSuppliers(product);
+                        return suppliers.length > 0 ? (
+                          <>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-gray-500">Primary:</span>
+                              <span className="font-medium text-gray-900">{suppliers[0].name}</span>
+                            </div>
+                            {suppliers.length > 1 && (
+                              <div className="flex items-center gap-1">
+                                <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs font-medium rounded-full">
+                                  +{suppliers.length - 1} more
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                            <p className="text-xs text-amber-800 font-medium mb-1 flex items-center gap-1">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              No supplier linked
+                            </p>
+                            <p className="text-xs text-amber-700 leading-relaxed">
+                              Link this product to a supplier in the Supplier Management page
+                            </p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <span className="text-xs text-orange-600 font-medium group-hover:text-orange-700 flex items-center gap-1">
+                        {getSuppliers(product).length > 0 ? (
+                          <>
+                            View supplier details
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </>
+                        ) : (
+                          <>
+                            Go to Supplier Management
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1174,7 +1525,11 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                           unitPrice: variant.unitPrice || variant.price || 0,
                           unit: variant.unit || 'pcs',
                           specifications: variant.specifications,
-                          size: variant.size
+                          size: variant.size,
+                          isBundle: variant.isBundle,
+                          piecesPerBundle: variant.piecesPerBundle,
+                          bundlePackagingType: variant.bundlePackagingType,
+                          baseUnit: variant.baseUnit
                         };
                       }
                       
@@ -1220,9 +1575,16 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                               </div>
                             </div>
                             <div>
-                              <div className="text-xs text-gray-500 mb-1">Unit Price</div>
+                              <div className="text-xs text-gray-500 mb-1">
+                                {group.isBundle && group.piecesPerBundle ? 'Bundle Price' : 'Unit Price'}
+                              </div>
                               <div className="text-sm font-medium text-green-600">
                                 ₱{formatMoney(group.unitPrice)}
+                                {group.isBundle && group.piecesPerBundle && (
+                                  <span className="text-xs text-purple-600 block mt-0.5">
+                                    (₱{formatMoney(group.unitPrice / group.piecesPerBundle)} / {group.baseUnit || 'pc'})
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <div>
@@ -1231,6 +1593,14 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                                 ₱{formatMoney(group.totalValue)}
                               </div>
                             </div>
+                            {group.isBundle && group.piecesPerBundle && (
+                              <div>
+                                <div className="text-xs text-gray-500 mb-1">Bundle Info</div>
+                                <div className="text-xs font-medium text-purple-700 bg-purple-50 px-2 py-1 rounded">
+                                  {group.piecesPerBundle} {group.baseUnit || 'pcs'} / {group.bundlePackagingType || 'bundle'}
+                                </div>
+                              </div>
+                            )}
                             {group.size && (
                               <div>
                                 <div className="text-xs text-gray-500 mb-1">Size</div>
@@ -1292,21 +1662,153 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
               </div>
             )}
 
+            {/* Location Tab */}
+            {activeTab === 'location' && (
+              <div className="space-y-6">
+                {/* Location Information */}
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <FiMapPin size={16} />
+                      Storage Location{product.locations && product.locations.length > 1 ? 's' : ''}
+                    </h4>
+                    {product.storageLocation && (
+                      <button
+                        onClick={handleViewLocation}
+                        className={`flex items-center gap-2 px-3 py-1.5 text-white text-xs font-medium rounded-lg transition-colors ${
+                          product.isVariant 
+                            ? 'bg-purple-500 hover:bg-purple-600' 
+                            : 'bg-orange-500 hover:bg-orange-600'
+                        }`}
+                      >
+                        <FiMap size={14} />
+                        View on Map
+                      </button>
+                    )}
+                  </div>
+                  <div className="p-4 space-y-3">
+                    {product.locations && product.locations.length > 1 ? (
+                      <>
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                          <p className="text-sm text-blue-800 font-medium">
+                            📍 This product is stored in {product.locations.length} different locations
+                          </p>
+                          <p className="text-xs text-blue-600 mt-1">
+                            Total quantity across all locations: {product.quantity} {product.unit}
+                          </p>
+                        </div>
+                        {product.locations.map((loc, index) => (
+                          <div key={loc.id || index} className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-1">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-semibold text-gray-700 bg-gray-200 px-2 py-1 rounded">
+                                Location {index + 1}
+                              </span>
+                              <span className="text-xs font-medium text-gray-600">
+                                Qty: {loc.quantity} {product.unit}
+                              </span>
+                            </div>
+                            <InfoRow label="Full Location" value={loc.location || 'N/A'} />
+                            <InfoRow label="Storage Unit" value={loc.storageLocation || 'N/A'} />
+                            {loc.shelfName && <InfoRow label="Shelf" value={loc.shelfName} />}
+                            {loc.rowName && <InfoRow label="Row" value={loc.rowName} />}
+                          </div>
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        <InfoRow label="Storage Location" value={product.storageLocation || 'N/A'} />
+                        <InfoRow label="Shelf Name" value={product.shelfName || 'N/A'} />
+                        <InfoRow label="Row Name" value={product.rowName || 'N/A'} />
+                        <InfoRow label="Full Location" value={product.fullLocation || 'N/A'} />
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Storage Unit Configuration */}
+                {product.storageLocation && (
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                      <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                        <FiMap size={16} />
+                        Storage Unit Details
+                      </h4>
+                    </div>
+                    <div className="p-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <InfoRow label="Storage Unit" value={product.storageLocation || 'N/A'} />
+                        <InfoRow label="Unit Type" value={getUnitConfig(product.storageLocation)?.type || 'N/A'} />
+                        <InfoRow label="Shelves" value={getUnitConfig(product.storageLocation)?.shelves?.length || 'N/A'} />
+                        <InfoRow label="Column Index" value={product.columnIndex || 'N/A'} />
+                      </div>
+                      {getUnitConfig(product.storageLocation) && (
+                        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                          <p className="text-xs text-blue-700">
+                            <strong>Unit Configuration:</strong> {getUnitConfig(product.storageLocation).title}
+                          </p>
+                          <p className="text-xs text-blue-600 mt-1">
+                            This storage unit has {getUnitConfig(product.storageLocation).shelves.length} shelves available for storage.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Location Map Preview */}
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <FiMap size={16} />
+                      Location Map
+                    </h4>
+                    <button
+                      onClick={handleViewLocation}
+                      disabled={!product.storageLocation}
+                      className={`flex items-center gap-2 px-3 py-1.5 text-white text-xs font-medium rounded-lg transition-colors ${
+                        product.storageLocation
+                          ? (product.isVariant ? 'bg-purple-500 hover:bg-purple-600' : 'bg-orange-500 hover:bg-orange-600')
+                          : 'bg-gray-400 cursor-not-allowed'
+                      }`}
+                    >
+                      <FiMap size={14} />
+                      {product.storageLocation ? 'View Full Map' : 'No Location Set'}
+                    </button>
+                  </div>
+                  <div className="p-4">
+                    {product.storageLocation ? (
+                      <div className="text-center py-8">
+                        <FiMap className="mx-auto mb-2 text-gray-400" size={32} />
+                        <p className="text-sm text-gray-600 mb-2">Interactive storage map available</p>
+                        <p className="text-xs text-gray-500">Click "View Full Map" to see the complete storage layout and locate this product</p>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        <FiMapPin className="mx-auto mb-2" size={32} />
+                        <p>No storage location assigned</p>
+                        <p className="text-xs mt-1">This product needs to be assigned to a storage location</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Supplier Tab */}
             {activeTab === 'supplier' && (
               <div className="space-y-4">
                 {/* Dedicated Suppliers Section */}
-                {product.suppliers && Array.isArray(product.suppliers) && product.suppliers.length > 0 && (
+                {getSuppliers(product).length > 0 && (
                   <div className="bg-white rounded-xl border border-blue-200 overflow-hidden">
                     <div className="bg-gradient-to-r from-blue-50 to-blue-100/50 px-4 py-3 border-b border-blue-200">
                       <h4 className="text-sm font-semibold text-blue-700 flex items-center gap-2">
                         <FiPackage size={16} />
-                        Product Suppliers ({product.suppliers.length})
+                        Product Suppliers ({getSuppliers(product).length})
                       </h4>
                     </div>
                     <div className="p-4">
                       <div className="space-y-4">
-                        {product.suppliers.map((supplier, index) => (
+                        {getSuppliers(product).map((supplier, index) => (
                           <div key={supplier.id || index} className="bg-white border border-blue-200 rounded-lg p-4 hover:shadow-md transition-shadow">
                             <div className="flex items-center gap-3 mb-3">
                               <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -1319,7 +1821,9 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                               <InfoRow label="Supplier Code" value={supplier.code || supplier.primaryCode || 'N/A'} />
-                              <InfoRow label="Supplier ID" value={supplier.id} />
+                              <InfoRow label="Supplier ID" value={supplier.id || 'N/A'} />
+                              {supplier.price && <InfoRow label="Supplier Price" value={`₱${formatMoney(supplier.price)}`} />}
+                              {supplier.sku && <InfoRow label="Supplier SKU" value={supplier.sku} />}
                             </div>
                           </div>
                         ))}
@@ -1328,72 +1832,54 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                   </div>
                 )}
 
-                {/* Other Supplier Fields */}
-                {supplierFields.length > 0 ? (
-                  supplierFields
-                    .filter(([key]) => key !== 'suppliers') // Exclude the suppliers array since we display it above
-                    .map(([key, value]) => (
-                    <div key={key} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                      <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                        <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2 capitalize">
-                          <FiPackage size={16} />
-                          {key.replace(/([A-Z])/g, ' $1').replace(/^(supplier|vendor|manufacturer)/i, '').trim() || 'Supplier Information'}
+                {/* Empty State - No Suppliers */}
+                {getSuppliers(product).length === 0 && (
+                  <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border-2 border-amber-200 p-8">
+                    <div className="text-center max-w-md mx-auto">
+                      <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <FiPackage className="text-amber-600" size={32} />
+                      </div>
+                      <h3 className="text-lg font-bold text-amber-900 mb-2">No Supplier Linked</h3>
+                      <p className="text-sm text-amber-800 mb-4">
+                        This product is not currently linked to any supplier. Link this product to track supplier information, pricing, and manage purchase orders.
+                      </p>
+                      <div className="bg-white rounded-lg border border-amber-200 p-4 mb-4">
+                        <h4 className="text-sm font-semibold text-amber-900 mb-2 flex items-center justify-center gap-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          How to Link a Supplier
                         </h4>
+                        <ol className="text-left text-xs text-amber-800 space-y-2">
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-5 h-5 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 font-bold text-xs">1</span>
+                            <span>Navigate to <strong>Supplier Management</strong> page</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-5 h-5 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 font-bold text-xs">2</span>
+                            <span>Select a supplier or create a new one</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-5 h-5 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 font-bold text-xs">3</span>
+                            <span>Add this product to the supplier's product list</span>
+                          </li>
+                        </ol>
                       </div>
-                      <div className="p-4">
-                        {Array.isArray(value) ? (
-                          // Handle array of suppliers
-                          <div className="space-y-3">
-                            {value.map((supplier, index) => (
-                              <div key={index} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                                <div className="text-xs font-semibold text-gray-700 mb-2">
-                                  Supplier {index + 1}
-                                </div>
-                                <div className="grid grid-cols-2 gap-3">
-                                  {Object.entries(supplier).map(([supplierKey, supplierValue]) => (
-                                    <div key={supplierKey}>
-                                      <div className="text-xs text-gray-500 mb-1 capitalize">
-                                        {supplierKey.replace(/([A-Z])/g, ' $1').trim()}
-                                      </div>
-                                      <div className="text-sm font-medium text-gray-900 break-words">
-                                        {formatValue(supplierValue)}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : typeof value === 'object' && value !== null ? (
-                          // Handle single supplier object
-                          <div className="grid grid-cols-2 gap-4">
-                            {Object.entries(value).map(([supplierKey, supplierValue]) => (
-                              <div key={supplierKey} className="pb-3 border-b border-gray-100 last:border-0">
-                                <div className="text-xs text-gray-500 mb-1 capitalize">
-                                  {supplierKey.replace(/([A-Z])/g, ' $1').trim()}
-                                </div>
-                                <div className="text-sm font-medium text-gray-900 break-words">
-                                  {formatValue(supplierValue)}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          // Handle simple supplier field
-                          <div className="text-sm font-medium text-gray-900 break-words">
-                            {formatValue(value)}
-                          </div>
-                        )}
-                      </div>
+                      <button
+                        onClick={() => {
+                          onClose(); // Close the modal first
+                          navigate('/im/suppliers'); // Navigate to supplier management page
+                        }}
+                        className="inline-flex items-center gap-2 px-6 py-3 bg-amber-600 text-white font-medium rounded-lg hover:bg-amber-700 transition-colors shadow-md hover:shadow-lg"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                        Go to Supplier Management
+                      </button>
                     </div>
-                  ))
-                ) : !product.suppliers || !Array.isArray(product.suppliers) || product.suppliers.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <FiPackage className="mx-auto mb-2" size={32} />
-                    <p>No supplier information available</p>
-                    <p className="text-xs mt-1">Supplier details will appear here when available</p>
                   </div>
-                ) : null}
+                )}
               </div>
             )}
 
@@ -1494,6 +1980,182 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                 }}
                 preSelectedProduct={product}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !isDeleting && setShowDeleteModal(false)}></div>
+          <div className="min-h-screen px-4 py-8 flex items-center justify-center">
+            <div className="relative bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-scaleUp">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-red-500 to-red-600 px-6 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                    <FiTrash2 className="text-white" size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">Delete Product</h2>
+                    <p className="text-xs text-red-100">This action cannot be undone</p>
+                  </div>
+                </div>
+                {!isDeleting && (
+                  <button
+                    onClick={() => {
+                      setShowDeleteModal(false);
+                      setDeleteConfirmText('');
+                    }}
+                    className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                  >
+                    <span className="text-xl">✕</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Content */}
+              <div className="p-6">
+                {/* Warning Banner */}
+                <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 mb-6">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+                      <span className="text-red-600 text-lg font-bold">⚠</span>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-sm font-bold text-red-800 mb-1">Warning: Permanent Deletion</h3>
+                      <p className="text-xs text-red-700">
+                        This will permanently delete the product and remove all its supplier connections. This action cannot be undone.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Product Details */}
+                <div className="bg-gray-50 rounded-lg p-4 mb-6 border border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Product Information</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Name:</span>
+                      <span className="text-sm font-medium text-gray-900">{product.name}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Category:</span>
+                      <span className="text-sm font-medium text-gray-900">{product.category}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Current Stock:</span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {product.quantity || 0} {product.unit || 'units'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Location:</span>
+                      <span className="text-sm font-medium text-gray-900">{product.fullLocation || 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Supplier Information */}
+                {getSuppliers(product).length > 0 && (
+                  <div className="bg-blue-50 rounded-lg p-4 mb-6 border border-blue-200">
+                    <h4 className="text-sm font-semibold text-blue-700 mb-3 flex items-center gap-2">
+                      <FiPackage size={14} />
+                      Linked Suppliers ({getSuppliers(product).length})
+                    </h4>
+                    <div className="space-y-2">
+                      {getSuppliers(product).map((supplier, index) => (
+                        <div key={supplier.id || index} className="flex items-center gap-2 text-sm text-blue-800">
+                          <span className="w-2 h-2 bg-blue-400 rounded-full"></span>
+                          <span className="font-medium">{supplier.name}</span>
+                          <span className="text-blue-600">({supplier.code || supplier.primaryCode || 'N/A'})</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-blue-200">
+                      <p className="text-xs text-blue-700">
+                        All supplier connections for this product will be permanently removed.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* What will be deleted */}
+                <div className="bg-gray-50 rounded-lg p-4 mb-6 border border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">This action will:</h4>
+                  <ul className="space-y-2">
+                    <li className="flex items-start gap-2 text-sm text-gray-700">
+                      <span className="text-red-500 mt-0.5">✕</span>
+                      <span>Permanently delete this product from inventory</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-sm text-gray-700">
+                      <span className="text-red-500 mt-0.5">✕</span>
+                      <span>Remove all supplier connections for this product</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-sm text-gray-700">
+                      <span className="text-red-500 mt-0.5">✕</span>
+                      <span>Remove this product from all supplier records</span>
+                    </li>
+                    <li className="flex items-start gap-2 text-sm text-gray-700">
+                      <span className="text-red-500 mt-0.5">✕</span>
+                      <span>Delete product image and all associated data</span>
+                    </li>
+                  </ul>
+                </div>
+
+                {/* Confirmation Input */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Type <span className="font-bold text-red-600">DELETE</span> to confirm:
+                  </label>
+                  <input
+                    type="text"
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder="Type DELETE here"
+                    disabled={isDeleting}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm font-medium disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    autoFocus
+                  />
+                  {deleteConfirmText && deleteConfirmText !== 'DELETE' && (
+                    <p className="mt-2 text-xs text-red-600">
+                      Please type "DELETE" exactly as shown (all capitals)
+                    </p>
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setShowDeleteModal(false);
+                      setDeleteConfirmText('');
+                    }}
+                    disabled={isDeleting}
+                    className="flex-1 px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDeleteProduct}
+                    disabled={deleteConfirmText !== 'DELETE' || isDeleting}
+                    className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isDeleting ? (
+                      <>
+                        <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Deleting...
+                      </>
+                    ) : (
+                      <>
+                        <FiTrash2 size={16} />
+                        Delete Product
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

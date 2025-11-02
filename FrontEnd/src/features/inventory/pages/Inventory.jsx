@@ -19,6 +19,7 @@ import app from '../../../FirebaseConfig';
 import RestockingRequest from './RestockingRequest';
 import ReceivingManagement from './ReceivingManagement';
 import StockTransfer from './StockTransfer';
+import BulkDeleteModal from '../components/Inventory/BulkDeleteModal';
 
 
 const Inventory = () => {
@@ -55,6 +56,9 @@ const Inventory = () => {
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   // New state for tabs
   const [activeTab, setActiveTab] = useState('stock'); // 'stock', 'restock', 'receiving', 'transfer', 'release'
+  // Bulk selection state
+  const [selectedProducts, setSelectedProducts] = useState([]);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
 
   // Category color mapping
   const categoryColors = {
@@ -128,6 +132,15 @@ const Inventory = () => {
     // The listenToProducts will automatically pick up the changes
     // But we can also force a refresh if needed
 
+  };
+
+  // Bulk selection handlers
+  const handleSelectionChange = (selectedIds) => {
+    setSelectedProducts(selectedIds);
+  };
+
+  const handleBulkDelete = () => {
+    setShowBulkDeleteModal(true);
   };
 
   useEffect(() => {
@@ -456,18 +469,64 @@ const Inventory = () => {
               </div>
             </div>
 
+            {/* Bulk Actions Bar */}
+            {selectedProducts.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-red-800">
+                      {selectedProducts.length} product{selectedProducts.length !== 1 ? 's' : ''} selected
+                    </span>
+                    <button
+                      onClick={() => setSelectedProducts([])}
+                      className="text-xs text-red-600 hover:text-red-800 underline"
+                    >
+                      Clear selection
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleBulkDelete}
+                    className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Delete Selected ({selectedProducts.length})
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Conditional Rendering based on View Mode */}
             {viewMode === 'table' ? (
               <div className="w-full rounded-xl overflow-hidden border border-gray-200">
                 <InventoryTable 
                   data={filteredData} 
-                  onViewProduct={handleViewProduct} 
+                  onViewProduct={handleViewProduct}
+                  selectedProducts={selectedProducts}
+                  onSelectionChange={handleSelectionChange}
+                  showCheckboxes={true}
                 />
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredData.map((product) => (
-                  <div key={product.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+                  <div key={product.id} className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow relative ${selectedProducts.includes(product.id) ? 'ring-2 ring-orange-500' : ''}`}>
+                    {/* Selection Checkbox - positioned absolutely */}
+                    <div className="absolute top-3 left-3 z-10">
+                      <input
+                        type="checkbox"
+                        checked={selectedProducts.includes(product.id)}
+                        onChange={() => handleSelectionChange(
+                          selectedProducts.includes(product.id)
+                            ? selectedProducts.filter(id => id !== product.id)
+                            : [...selectedProducts, product.id]
+                        )}
+                        className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
+                      />
+                    </div>
+
+                    {/* Product Image */}
                     {/* Product Image */}
                     <div className="aspect-square bg-gray-100 relative">
                       {product.imageUrl ? (
@@ -506,12 +565,70 @@ const Inventory = () => {
                       <div className="space-y-1 mb-3">
                         <div className="flex justify-between text-xs">
                           <span className="text-gray-500">Stock:</span>
-                          <span className="font-medium text-gray-900">{product.quantity} {product.unit || 'pcs'}</span>
+                          <span className="font-medium text-gray-900">
+                            {product.quantity} {product.baseUnit || product.unit || 'pcs'}
+                          </span>
                         </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-gray-500">Unit Price:</span>
-                          <span className="font-medium text-gray-900">₱{product.unitPrice?.toLocaleString()}</span>
-                        </div>
+                        
+                        {/* Show measurement type badge */}
+                        {product.measurementType && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Type:</span>
+                            <span className={`px-2 py-0.5 rounded-full font-medium ${
+                              product.measurementType === 'length' ? 'bg-indigo-100 text-indigo-700' :
+                              product.measurementType === 'weight' ? 'bg-yellow-100 text-yellow-700' :
+                              product.measurementType === 'volume' ? 'bg-cyan-100 text-cyan-700' :
+                              'bg-purple-100 text-purple-700'
+                            }`}>
+                              {product.measurementType}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Show dimensions for length-based products */}
+                        {product.measurementType === 'length' && product.length && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Dimensions:</span>
+                            <span className="font-medium text-gray-900">
+                              {product.length}m × {product.width}cm × {product.thickness}mm
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Show weight for weight-based products */}
+                        {product.measurementType === 'weight' && product.unitWeightKg && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Unit Weight:</span>
+                            <span className="font-medium text-gray-900">{product.unitWeightKg} kg</span>
+                          </div>
+                        )}
+
+                        {/* Show volume for volume-based products */}
+                        {product.measurementType === 'volume' && product.unitVolumeLiters && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Unit Volume:</span>
+                            <span className="font-medium text-gray-900">{product.unitVolumeLiters} L</span>
+                          </div>
+                        )}
+
+                        {/* Show UOM conversions if available */}
+                        {product.uomConversions && product.uomConversions.length > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Packages:</span>
+                            <span className="font-medium text-purple-600 text-xs">
+                              {product.uomConversions.length} type{product.uomConversions.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                        )}
+                     
+                        {/* Regular unit price (only show if not a bundle) */}
+                        {!product.isBundle && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-500">Unit Price:</span>
+                            <span className="font-medium text-gray-900">₱{product.unitPrice?.toLocaleString()}</span>
+                          </div>
+                        )}
+                        
                         <div className="flex justify-between text-xs">
                           <span className="text-gray-500">Location:</span>
                           <span className="font-medium text-gray-900 truncate max-w-24" title={product.location}>
@@ -608,6 +725,20 @@ const Inventory = () => {
         onClose={() => setShowBulkImportModal(false)}
         suppliers={suppliers || []}
       />
+
+      {/* Bulk Delete Modal */}
+      {showBulkDeleteModal && (
+        <BulkDeleteModal
+          isOpen={showBulkDeleteModal}
+          onClose={() => setShowBulkDeleteModal(false)}
+          selectedProducts={selectedProducts}
+          products={filteredData}
+          onDeleteComplete={() => {
+            setSelectedProducts([]);
+            setShowBulkDeleteModal(false);
+          }}
+        />
+      )}
       
     </div>
   );

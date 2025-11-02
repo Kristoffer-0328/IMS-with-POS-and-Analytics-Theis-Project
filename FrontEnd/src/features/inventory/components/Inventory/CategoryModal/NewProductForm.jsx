@@ -1,64 +1,211 @@
 import React, { useState, useEffect } from 'react';
 import ProductFactory from '../../Factory/productFactory';
-import { getFirestore, doc, setDoc, collection, addDoc, getDocs, query, getDoc } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import app from '../../../../../FirebaseConfig';
-import { validateProduct, getStorageOptions, getCategorySpecificFields, updateFieldOptions } from './Utils';
 import SupplierSelector from '../../Supplier/SupplierSelector';
 import { useServices } from '../../../../../services/firebase/ProductServices';
 import ShelfViewModal from '../ShelfViewModal';
 import { uploadImage } from '../../../../../services/cloudinary/CloudinaryService';
-import { getStorageUnitData } from '../../../config/StorageUnitsConfig';
+import { getStorageUnitData, validateDimensionConstraints, getRowDimensionConstraints } from '../../../config/StorageUnitsConfig';
+import ErrorModal from '../../../../../components/modals/ErrorModal';
+
+// Category-based measurement rules
+const CATEGORY_RULES = {
+    "Steel & Heavy Materials": { measurementType: "length", baseUnit: "m", requireDimensions: true },
+    "Plywood & Sheet Materials": { measurementType: "length", baseUnit: "m", requireDimensions: true },
+    "Roofing Materials": { measurementType: "length", baseUnit: "m", requireDimensions: true },
+    "Insulation & Foam": { measurementType: "length", baseUnit: "m", requireDimensions: true },
+    "Cement & Aggregates": { measurementType: "weight", baseUnit: "kg", requireDimensions: false },
+    "Paint & Coatings": { measurementType: "volume", baseUnit: "l", requireDimensions: false },
+    "Electrical & Plumbing": { measurementType: "count", baseUnit: "pcs", requireDimensions: false },
+    "Hardware & Fasteners": { measurementType: "count", baseUnit: "pcs", requireDimensions: false },
+    "Miscellaneous": { measurementType: "count", baseUnit: "pcs", requireDimensions: false }
+};
 
 const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) => {
     const { linkProductToSupplier } = useServices();
+    
+    // Base fields - always visible
     const [productName, setProductName] = useState('');
-    const [quantity, setQuantity] = useState('');
+    const [brand, setBrand] = useState('');
     const [unitPrice, setUnitPrice] = useState('');
-    const [location, setLocation] = useState(''); // Will be set when storage location is selected
-
+    const [quantity, setQuantity] = useState('');
+    const [safetyStock, setSafetyStock] = useState('');
+    const [isBundle, setIsBundle] = useState(false);
     const [productImage, setProductImage] = useState(null);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isUploading, setIsUploading] = useState(false);
-
-    const [additionalFields, setAdditionalFields] = useState([]);
-    const [newFieldName, setNewFieldName] = useState("");
-    const [unit, setUnit] = useState('pcs');
-    const [categoryFields, setCategoryFields] = useState([]);
-    const [categoryValues, setCategoryValues] = useState({});
-    const [editingField, setEditingField] = useState(null);
-    const [newOptionValue, setNewOptionValue] = useState('');
-    const [localCategoryFields, setLocalCategoryFields] = useState([]);
     
-    // Add new state for supplier information
-    const [brand, setBrand] = useState('');
-    const [specifications, setSpecifications] = useState('');
-    const [maximumStockLevel, setMaximumStockLevel] = useState('');
-    const [size, setSize] = useState('');
-    const [supplierName, setSupplierName] = useState('');
-    const [supplierCode, setSupplierCode] = useState('');
+    // Supplier information
     const [selectedSuppliers, setSelectedSuppliers] = useState([]);
     const [supplierPrice, setSupplierPrice] = useState('');
-    const [dateStocked, setDateStocked] = useState(new Date().toISOString().split('T`')[0]);
+    const [dateStocked, setDateStocked] = useState(new Date().toISOString().split('T')[0]);
     
-    // Safety stock for ROP calculation
-    const [safetyStock, setSafetyStock] = useState('');
+    // Category-based measurement states
+    const [measurementType, setMeasurementType] = useState('count');
+    const [baseUnit, setBaseUnit] = useState('pcs');
+    const [requireDimensions, setRequireDimensions] = useState(false);
+    
+    // Measurement-specific fields
+    const [unitWeightKg, setUnitWeightKg] = useState('');
+    const [unitVolumeLiters, setUnitVolumeLiters] = useState('');
+    const [length, setLength] = useState('');
+    const [width, setWidth] = useState('');
+    const [thickness, setThickness] = useState('');
+    const [unitVolumeCm3, setUnitVolumeCm3] = useState('');
+    
+    // UOM conversions for count-based items
+    const [uomConversions, setUomConversions] = useState([]);
+    const [newUomName, setNewUomName] = useState('');
+    const [newUomQty, setNewUomQty] = useState('');
+    
+    // Bundle/Package specification
+    const [piecesPerBundle, setPiecesPerBundle] = useState('');
+    const [bundlePackagingType, setBundlePackagingType] = useState('bundle');
     
     // Storage location modal states
     const [isStorageModalOpen, setIsStorageModalOpen] = useState(false);
-    const [selectedStorageLocations, setSelectedStorageLocations] = useState([]); // Changed to array for multiple selections
-    const [selectedUnit, setSelectedUnit] = useState(selectedCategory?.name || null); // Auto-set from selectedCategory
-    const [quantityPerLocation, setQuantityPerLocation] = useState({}); // Track quantity per location
+    const [selectedStorageLocations, setSelectedStorageLocations] = useState([]);
+    const [selectedUnit, setSelectedUnit] = useState(selectedCategory?.name || null);
+    const [quantityPerLocation, setQuantityPerLocation] = useState({});
 
     // Loading state for product creation
     const [isCreatingProduct, setIsCreatingProduct] = useState(false);
+
+    // Error modal states
+    const [errorModalOpen, setErrorModalOpen] = useState(false);
+    const [errorModalData, setErrorModalData] = useState({
+        title: '',
+        message: '',
+        details: '',
+        type: 'error'
+    });
+
+    // Update measurement settings when category changes
+    useEffect(() => {
+        if (selectedCategory?.category) {
+            const categoryName = selectedCategory.category;
+            const rule = CATEGORY_RULES[categoryName] || CATEGORY_RULES["Miscellaneous"];
+            
+            setMeasurementType(rule.measurementType);
+            setBaseUnit(rule.baseUnit);
+            setRequireDimensions(rule.requireDimensions);
+            
+            // Reset measurement-specific fields when category changes
+            setUnitWeightKg('');
+            setUnitVolumeLiters('');
+            setLength('');
+            setWidth('');
+            setThickness('');
+            setUnitVolumeCm3('');
+            setUomConversions([]);
+            setPiecesPerBundle('');
+            setBundlePackagingType('bundle');
+        }
+    }, [selectedCategory]);
+
+    // Auto-calculate volume for length-based products with dimensions
+    useEffect(() => {
+        if (measurementType === 'length' && requireDimensions && length && thickness) {
+            const lengthCm = parseFloat(length) * 100; // m to cm
+            const thicknessCm = parseFloat(thickness) / 10; // mm to cm
+            
+            let calculatedVolume;
+            
+            if (width && parseFloat(width) > 0) {
+                // Sheet/panel product with width
+                const widthCm = parseFloat(width); // already in cm
+                calculatedVolume = lengthCm * widthCm * thicknessCm;
+            } else {
+                // Bar/rebar product (cylindrical) - use diameter for thickness
+                // Volume of cylinder = π * r² * h
+                const radius = thicknessCm / 2;
+                calculatedVolume = Math.PI * radius * radius * lengthCm;
+            }
+            
+            setUnitVolumeCm3(calculatedVolume.toFixed(2));
+        } else {
+            setUnitVolumeCm3('');
+        }
+    }, [length, width, thickness, measurementType, requireDimensions]);
+
+    // When supplier is provided, auto-populate
+    useEffect(() => {
+        if (supplier) {
+            setSelectedSuppliers([supplier]);
+        }
+    }, [supplier]);
     
-    // Handle storage location selection - now supports multiple locations with quantity
+    // Handle supplier selection from SupplierSelector
+    const handleSupplierSelect = (supplierData) => {
+        if (Array.isArray(supplierData)) {
+            setSelectedSuppliers(supplierData);
+        } else if (supplierData) {
+            setSelectedSuppliers([supplierData]);
+        } else {
+            setSelectedSuppliers([]);
+        }
+    };
+
+    // Add UOM conversion
+    const handleAddUomConversion = () => {
+        if (newUomName.trim() && newUomQty && parseFloat(newUomQty) > 0) {
+            setUomConversions(prev => [
+                ...prev,
+                { name: newUomName.trim(), quantity: parseFloat(newUomQty) }
+            ]);
+            setNewUomName('');
+            setNewUomQty('');
+        }
+    };
+
+    // Remove UOM conversion
+    const handleRemoveUomConversion = (index) => {
+        setUomConversions(prev => prev.filter((_, i) => i !== index));
+    };
+
+    // Handle storage location selection
     const handleStorageLocationSelect = (shelfName, rowName, columnIndex, quantity) => {
-        // If quantity is -1, this is a removal request
         if (quantity === -1) {
             const locationKey = `${selectedUnit}-${shelfName}-${rowName}-${columnIndex}`;
             handleRemoveLocation(locationKey);
             return;
+        }
+        
+        // Validate dimension constraints if product has dimensions
+        if (requireDimensions && (length || width || thickness)) {
+            const unitName = selectedUnit;
+            const rowConfig = getRowDimensionConstraints(unitName, shelfName, rowName);
+            
+            if (rowConfig) {
+                const productDimensions = {
+                    length: parseFloat(length) || 0,
+                    width: parseFloat(width) || 0,
+                    thickness: parseFloat(thickness) || 0,
+                    diameter: parseFloat(thickness) || 0  // thickness field is used for diameter (in mm)
+                };
+                
+                // Get the row object to validate
+                const unitData = getStorageUnitData(unitName);
+                const shelf = unitData.shelves.find(s => s.name === shelfName);
+                const row = shelf?.rows.find(r => r.name === rowName);
+                
+                if (row) {
+                    const validation = validateDimensionConstraints(row, productDimensions);
+                    
+                    if (!validation.isValid) {
+                        // Show error modal instead of alert
+                        setErrorModalData({
+                            title: '📏 Dimension Constraint Error',
+                            message: validation.message,
+                            details: `Row: ${rowName}\nShelf: ${shelfName}\nUnit: ${unitName}\n\nPlease select a row that fits your product dimensions or update the product dimensions.`,
+                            type: 'error'
+                        });
+                        setErrorModalOpen(true);
+                        return;
+                    }
+                }
+            }
         }
         
         const locationKey = `${selectedUnit}-${shelfName}-${rowName}-${columnIndex}`;
@@ -72,17 +219,14 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
             column: columnIndex,
             columnDisplay: columnIndex + 1,
             fullLocation: locationString,
-            quantity: quantity // Quantity is now passed directly from the modal
+            quantity: quantity
         };
         
-        // Add new location with quantity already set
         setSelectedStorageLocations(prev => [...prev, newLocation]);
         setQuantityPerLocation(prev => ({
             ...prev,
             [locationKey]: quantity
         }));
-        
-        // Don't close modal - allow multiple selections
     };
     
     // Handle removing a storage location
@@ -95,13 +239,12 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
         });
     };
     
-    // Handle quantity change for a specific location (for editing after selection)
+    // Handle quantity change for a specific location
     const handleLocationQuantityChange = (locationId, qty) => {
         setQuantityPerLocation(prev => ({
             ...prev,
             [locationId]: parseInt(qty) || 0
         }));
-        // Also update in selectedStorageLocations
         setSelectedStorageLocations(prev => prev.map(loc => 
             loc.id === locationId ? { ...loc, quantity: parseInt(qty) || 0 } : loc
         ));
@@ -116,114 +259,21 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
     const getAllocatedQuantity = () => {
         return getTotalQuantity();
     };
-
-    useEffect(() => {
-        if (selectedCategory?.name) {
-            const fields = getCategorySpecificFields(selectedCategory.name);
-            setCategoryFields(fields);
-            const initialValues = fields.reduce((acc, field) => ({
-                ...acc,
-                [field.name]: ''
-            }), {});
-            setCategoryValues(initialValues);
-        }
-    }, [selectedCategory]);
-
-
-    // When supplier is provided, we don't need supplier state variables
-    useEffect(() => {
-        if (supplier) {
-            // Automatically use the supplier's information
-            setSupplierName(supplier.name);
-            setSupplierCode(supplier.primaryCode || supplier.code);
-            setSelectedSuppliers([supplier]);
-        }
-    }, [supplier]);
-
-    // Handle supplier selection from SupplierSelector
-    const handleSupplierSelect = (supplierData) => {    
-        if (Array.isArray(supplierData)) {
-            setSelectedSuppliers(supplierData);
-            if (supplierData.length > 0) {
-                // Use the first supplier's info for the form fields
-                const firstSupplier = supplierData[0];
-                setSupplierName(firstSupplier.name);
-                setSupplierCode(firstSupplier.primaryCode || firstSupplier.code);
-            } else {
-                setSupplierName('');
-                setSupplierCode('');
-            }
-        } else if (supplierData) {
-            setSelectedSuppliers([supplierData]);
-            setSupplierName(supplierData.name);
-            setSupplierCode(supplierData.primaryCode || supplierData.code);
-        } else {
-            setSelectedSuppliers([]);
-            setSupplierName('');
-            setSupplierCode('');
-        }
+    
+    // Calculate total bundles/packages based on pieces per bundle
+    const getTotalBundles = () => {
+        const total = getTotalQuantity();
+        const perBundle = parseInt(piecesPerBundle) || 0;
+        if (perBundle === 0) return 0;
+        return Math.floor(total / perBundle);
     };
-
-    useEffect(() => {
-        if (selectedCategory?.name) {
-            const fields = getCategorySpecificFields(selectedCategory.name);
-            setLocalCategoryFields(fields);
-        }
-    }, [selectedCategory]);
-
-    const handleCategoryFieldChange = (fieldName, value) => {
-        setCategoryValues(prev => ({
-            ...prev,
-            [fieldName]: value
-        }));
-    };
-
-    const handleOptionManagement = async (fieldIndex, action, optionValue) => {
-        const updatedFields = [...localCategoryFields];
-        const field = updatedFields[fieldIndex];
-
-        if (!field) return;
-
-        try {
-            if (action === 'add') {
-                const trimmedValue = newOptionValue.trim();
-                if (trimmedValue && !field.options.includes(trimmedValue)) {
-                    const newOptions = [...field.options, trimmedValue];
-                    
-                    // Update in Firebase using Utils function
-                    await updateFieldOptions(selectedCategory.name, field.name, newOptions);
-                    
-                    // Update local state
-                    field.options = newOptions;
-                    setNewOptionValue('');
-                    setLocalCategoryFields(updatedFields);
-                    setCategoryFields(updatedFields);
-                }
-            } else if (action === 'remove' && optionValue) {
-                const newOptions = field.options.filter(opt => opt !== optionValue);
-                
-                // Update in Firebase using Utils function
-                await updateFieldOptions(selectedCategory.name, field.name, newOptions);
-                
-                // Update local state
-                field.options = newOptions;
-                setLocalCategoryFields(updatedFields);
-                setCategoryFields(updatedFields);
-            }
-        } catch (error) {
-            console.error('Error managing options:', error);
-            alert('Failed to update options');
-        }
-    };
-
-    const handleAddField = () => {
-        if (
-            newFieldName.trim() &&
-            !additionalFields.find((f) => f.name === newFieldName)
-        ) {
-            setAdditionalFields([...additionalFields, { name: newFieldName, value: "" }]);
-            setNewFieldName("");
-        }
+    
+    // Calculate remaining loose pieces
+    const getLoosePieces = () => {
+        const total = getTotalQuantity();
+        const perBundle = parseInt(piecesPerBundle) || 0;
+        if (perBundle === 0) return total;
+        return total % perBundle;
     };
 
     const handleImageUpload = async (e) => {
@@ -234,19 +284,17 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
             setIsUploading(true);
             setUploadProgress(0);
 
-            // Upload to Cloudinary with progress tracking
             const uploadResult = await uploadImage(
                 file,
                 (progress) => {
                     setUploadProgress(progress);
                 },
                 {
-                    folder: `ims-products/${selectedCategory}`,
-                    tags: [selectedCategory, productName || 'new-product'],
+                    folder: `ims-products/${selectedCategory?.category || 'general'}`,
+                    tags: [selectedCategory?.category || 'product', productName || 'new-product'],
                 }
             );
 
-            // Set the permanent Cloudinary URL
             setProductImage(uploadResult.url);
         } catch (error) {
             console.error('Error uploading image:', error);
@@ -259,11 +307,11 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
 
     const removeImage = () => {
         setProductImage(null);
-        document.getElementById("productImage").value = "";
+        const fileInput = document.getElementById("productImage");
+        if (fileInput) fileInput.value = "";
     };
 
     const handleAddProduct = async () => {
-
         // Validate required fields
         if (!productName || !brand || !unitPrice) {
             alert('Please fill in all required fields: Product Name, Brand, and Unit Price');
@@ -276,145 +324,117 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
             return;
         }
         
-        // Validate quantities for all locations
+        // Validate quantities
         const totalQty = getTotalQuantity();
         if (totalQty === 0) {
             alert('Please enter quantity for at least one storage location');
             return;
         }
         
-        // Check if all selected locations have quantities
-        const locationsWithoutQty = selectedStorageLocations.filter(
-            loc => !quantityPerLocation[loc.id] || quantityPerLocation[loc.id] === 0
-        );
-        if (locationsWithoutQty.length > 0) {
-            alert('Please enter quantity for all selected storage locations');
+        // Validate measurement-specific fields
+        if (measurementType === 'weight' && !unitWeightKg) {
+            alert('Please enter unit weight in kg');
+            return;
+        }
+        if (measurementType === 'volume' && !unitVolumeLiters) {
+            alert('Please enter unit volume in liters');
+            return;
+        }
+        if (measurementType === 'length' && requireDimensions && (!length || !thickness)) {
+            alert('Please enter length and thickness/diameter');
             return;
         }
 
         setIsCreatingProduct(true);
 
-        // Fetch storage unit's category from Firebase
-        const db = getFirestore(app);
-        const firstLocation = selectedStorageLocations[0];
-        let unitCategory = selectedCategory.name;
-        
-        try {
-            const storageUnitRef = doc(db, "Products", firstLocation.unit);
-            const storageUnitDoc = await getDoc(storageUnitRef);
-            
-            if (storageUnitDoc.exists()) {
-                const unitData = storageUnitDoc.data();
-                unitCategory = unitData.category || selectedCategory.name;
-            }
-        } catch (error) {
-            console.error('Error fetching storage unit category:', error);
-        }
-
         try {
             const db = getFirestore(app);
             const currentSuppliers = supplier ? [supplier] : selectedSuppliers;
             
-            // If multiple locations, create separate product documents for each location
-            // All will share the same base product ID but have different storage info
-            
             for (const location of selectedStorageLocations) {
                 const locationQty = quantityPerLocation[location.id] || 0;
                 
+                // Build product data based on measurement type
                 const productData = {
                     name: productName.trim(),
-                    quantity: locationQty,
+                    brand: brand.trim(),
                     unitPrice: Number(unitPrice) || 0,
-                    supplierPrice: Number(supplierPrice) || 0, // Add supplierPrice to product data
-                    category: unitCategory,
+                    category: selectedCategory?.category || 'Miscellaneous',
+                    measurementType: measurementType,
+                    baseUnit: baseUnit,
+                    quantity: locationQty,
+                    safetyStock: Number(safetyStock) || 0,
+                    isBundle: isBundle,
                     storageLocation: location.unit,
                     shelfName: location.shelf,
                     rowName: location.row,
                     columnIndex: location.column,
                     fullLocation: location.fullLocation,
-                    location: location.unit,
-                    unit: unit || 'pcs',
-                    brand: brand.trim(),
-                    size: size?.trim() || 'default',
-                    specifications: specifications?.trim() || '',
-                    maximumStockLevel: Number(maximumStockLevel) || 0,
-                    safetyStock: Number(safetyStock) || 0,
-                    dateStocked: dateStocked || new Date().toISOString().split('T')[0],
                     imageUrl: productImage || null,
-                    categoryValues: categoryValues || {},
+                    dateStocked: dateStocked || new Date().toISOString().split('T')[0],
                     suppliers: currentSuppliers.map(s => ({
                         id: s.id,
                         name: s.name,
                         code: s.primaryCode || s.code,
                         primaryCode: s.primaryCode || s.code
                     })),
-                    customFields: additionalFields.reduce((acc, field) => ({
-                        ...acc,
-                        [field.name]: field.value || ''
-                    }), {}),
-                    createdAt: new Date().toISOString(),
-                    lastUpdated: new Date().toISOString(),
-                    multiLocation: selectedStorageLocations.length > 1, // Flag for multi-location products
-                    totalQuantityAllLocations: totalQty // Store total quantity across all locations
+                    supplierPrice: Number(supplierPrice) || 0,
+                    multiLocation: selectedStorageLocations.length > 1,
+                    totalQuantityAllLocations: totalQty,
+                    createdAt: serverTimestamp(),
+                    lastUpdated: serverTimestamp()
                 };
 
-                // Calculate EOQ and ROP
-                const defaultDemand = 10; // Default demand when no historical data
-                const purchaseCost = Number(supplierPrice) || Number(unitPrice) || 1;
-                const currentDate = new Date();
-                const createdDate = new Date(productData.createdAt);
-                const holdingPeriodDays = Math.max(1, Math.ceil((currentDate - createdDate) / (1000 * 60 * 60 * 24))); // At least 1 day
-                const holdingCost = purchaseCost / holdingPeriodDays; // Holding cost per day
+                // Add measurement-specific fields
+                if (measurementType === 'weight') {
+                    productData.unitWeightKg = Number(unitWeightKg) || 0;
+                }
+                if (measurementType === 'volume') {
+                    productData.unitVolumeLiters = Number(unitVolumeLiters) || 0;
+                }
+                if (measurementType === 'length' && requireDimensions) {
+                    productData.length = Number(length) || 0;
+                    productData.width = Number(width) || 0;
+                    productData.thickness = Number(thickness) || 0;
+                    productData.unitVolumeCm3 = Number(unitVolumeCm3) || 0;
+                }
+                if (measurementType === 'count' && uomConversions.length > 0) {
+                    productData.uomConversions = uomConversions;
+                }
+                
+                // Add bundle/package information if specified
+                if (isBundle && piecesPerBundle && parseInt(piecesPerBundle) > 0) {
+                    productData.piecesPerBundle = parseInt(piecesPerBundle);
+                    productData.bundlePackagingType = bundlePackagingType;
+                    productData.totalBundles = getTotalBundles();
+                    productData.loosePieces = getLoosePieces();
+                }
 
-                // EOQ = sqrt(2 * demand * purchase_cost / holding_cost)
-                const eoq = Math.ceil(Math.sqrt(2 * defaultDemand * purchaseCost / holdingCost));
-
-                // Get lead time from supplier (assume first supplier has leadTime in days)
-                const leadTime = currentSuppliers.length > 0 ? (currentSuppliers[0].leadTime || 7) : 7; // Default 7 days
-                const avgDemand = defaultDemand;
-                const safetyStockQty = Number(safetyStock) || 0;
-
-                // ROP = (AVG demand * Lead time) + safety stock
-                const rop = Math.ceil((avgDemand * leadTime) + safetyStockQty);
-
-                // Add calculations to product data
-                productData.eoq = eoq;
-                productData.rop = rop;
-                productData.calculatedDemand = defaultDemand;
-                productData.leadTime = leadTime;
-
-                // Use ROP as the restock level (calculated reorder point)
-                productData.restockLevel = rop;
+                // Generate product ID
                 const locationSuffix = `${location.shelf}-${location.row}-${location.column}`;
                 const baseProductId = currentSuppliers.length > 0 
-                    ? ProductFactory.generateSupplierProductId(productData.name, selectedCategory.name, currentSuppliers[0].primaryCode || currentSuppliers[0].code)
-                    : ProductFactory.generateProductId(productData.name, selectedCategory.name, productData.brand);
-                
+                    ? ProductFactory.generateSupplierProductId(productData.name, selectedCategory?.category || 'Miscellaneous', currentSuppliers[0].primaryCode || currentSuppliers[0].code)
+                    : ProductFactory.generateProductId(productData.name, selectedCategory?.category || 'Miscellaneous', productData.brand);
+
                 const productId = selectedStorageLocations.length > 1 
                     ? `${baseProductId}-${locationSuffix}` 
                     : baseProductId;
 
                 const newProduct = ProductFactory.createProduct(productData);
                 newProduct.id = productId;
-            
-                // Add flat structure fields
-                newProduct.isVariant = false;
-                newProduct.parentProductId = null;
-                newProduct.variantName = 'Standard';
                 
-                // Remove any undefined values
+                // Clean product object
                 const cleanProduct = JSON.parse(JSON.stringify(newProduct));
 
-                // Write to Products/{storageLocation}/products/{productId} - NESTED BY STORAGE UNIT
+                // Write to Firestore
                 const storageUnitPath = location.unit;
                 const productRef = doc(db, 'Products', storageUnitPath, 'products', productId);
                 await setDoc(productRef, cleanProduct);
 
-
-                // If suppliers are provided, automatically link the product to each supplier
+                // Link to suppliers
                 for (const currentSupplier of currentSuppliers) {
                     try {
-                        const linkResult = await linkProductToSupplier(productId, currentSupplier.id, {
+                        await linkProductToSupplier(productId, currentSupplier.id, {
                             supplierPrice: Number(supplierPrice) || 0,
                             supplierSKU: productId,
                             lastUpdated: new Date().toISOString()
@@ -438,7 +458,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
 
     return (
         <div className="space-y-6 max-h-[85vh] overflow-y-auto modal-content px-1">
-            {/* Enhanced Header with Gradient Background */}
+            {/* Header */}
             <div className="sticky top-0 bg-gradient-to-r from-blue-50 to-indigo-50 -mx-1 px-6 py-5 z-10 rounded-t-xl border-b border-blue-100 shadow-sm">
                 {onBack && (
                     <button
@@ -460,9 +480,12 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
                     <div>
                         <h2 className="text-2xl font-bold text-gray-800">Add New Product</h2>
                         <div className="flex items-center gap-2 mt-1">
-                            <span className="text-sm text-gray-600">Storage Unit:</span>
+                            <span className="text-sm text-gray-600">Category:</span>
                             <span className="px-3 py-1 bg-white border border-blue-200 text-blue-700 rounded-full text-sm font-semibold shadow-sm">
-                                {selectedCategory?.name}
+                                {selectedCategory?.category}
+                            </span>
+                            <span className="px-2 py-1 bg-purple-100 border border-purple-200 text-purple-700 rounded-full text-xs font-medium">
+                                {measurementType} ({baseUnit})
                             </span>
                         </div>
                     </div>
@@ -470,7 +493,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
             </div>
 
             <div className="space-y-6 px-6 pb-6">
-                {/* Enhanced Product Image Upload Section */}
+                {/* Product Image Upload */}
                 <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-6 border border-gray-200">
                     <div className="flex items-center gap-2 mb-4">
                         <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -496,8 +519,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
                                 <img src={productImage} alt="Preview" className="w-full h-full object-contain p-4" />
                                 <button
                                     onClick={removeImage}
-                                    className="absolute top-3 right-3 p-2 bg-red-500 backdrop-blur-sm text-white rounded-lg 
-                                             hover:bg-red-600 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+                                    className="absolute top-3 right-3 p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all shadow-lg"
                                 >
                                     <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
                                         <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -505,21 +527,20 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
                                 </button>
                             </div>
                         ) : (
-                        <label
-                            htmlFor="productImage"
-                            className="flex flex-col items-center justify-center h-full cursor-pointer 
-                                     hover:bg-blue-50/50 transition-all group-hover:scale-[1.02]"
-                        >
-                            <div className="p-4 bg-blue-100 rounded-full mb-3 group-hover:bg-blue-200 transition-colors">
-                                <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                </svg>
-                            </div>
-                            <span className="text-base font-medium text-gray-700 mb-1">Upload Product Image</span>
-                            <span className="text-sm text-gray-500">Click to browse or drag and drop</span>
-                            <span className="text-xs text-gray-400 mt-2">PNG, JPG, GIF up to 10MB</span>
-                        </label>
-                    )}
+                            <label
+                                htmlFor="productImage"
+                                className="flex flex-col items-center justify-center h-full cursor-pointer hover:bg-blue-50/50 transition-all"
+                            >
+                                <div className="p-4 bg-blue-100 rounded-full mb-3 group-hover:bg-blue-200 transition-colors">
+                                    <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                </div>
+                                <span className="text-base font-medium text-gray-700 mb-1">Upload Product Image</span>
+                                <span className="text-sm text-gray-500">Click to browse or drag and drop</span>
+                                <span className="text-xs text-gray-400 mt-2">PNG, JPG, GIF up to 10MB</span>
+                            </label>
+                        )}
                         <input
                             type="file"
                             accept="image/*"
@@ -530,7 +551,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
                     </div>
                 </div>
 
-                {/* Enhanced Basic Product Information Section */}
+                {/* Basic Product Information */}
                 <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex items-center gap-2 mb-5">
                         <div className="p-1.5 bg-green-100 rounded-lg">
@@ -539,27 +560,25 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
                             </svg>
                         </div>
                         <h3 className="text-lg font-semibold text-gray-900">Basic Product Information</h3>
-                        <span className="ml-auto text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Required</span>
+                        <span className="ml-auto text-xs text-red-500 bg-red-50 px-2 py-1 rounded-full">Required</span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-700">
-                                Product Name
-                                <span className="text-xs text-red-500 ml-1">*</span>
+                                Product Name <span className="text-red-500">*</span>
                             </label>
                             <input
                                 type="text"
                                 value={productName}
                                 onChange={(e) => setProductName(e.target.value)}
-                                placeholder="e.g. Phillips Head Screwdriver, LED Bulb 10W"
+                                placeholder="e.g. G.I. Sheet, Portland Cement, LED Bulb 10W"
                                 className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                             />
                         </div>
 
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-700">
-                                Brand
-                                <span className="text-xs text-red-500 ml-1">*</span>
+                                Brand <span className="text-red-500">*</span>
                             </label>
                             <input
                                 type="text"
@@ -572,101 +591,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
 
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-700">
-                                Variant Type
-                                <span className="text-xs text-gray-500 ml-1">(e.g., #4, #5 for CHB; Blue, Gray for paint)</span>
-                            </label>
-                            <input
-                                type="text"
-                                value={size}
-                                onChange={(e) => setSize(e.target.value)}
-                                placeholder="Enter variant type (size, color, etc.)"
-                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-700">Specifications</label>
-                            <textarea
-                                value={specifications}
-                                onChange={(e) => setSpecifications(e.target.value)}
-                                placeholder="Enter product specifications"
-                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                                rows="2"
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Enhanced Stock Information Section */}
-                <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex items-center gap-2 mb-5">
-                        <div className="p-1.5 bg-purple-100 rounded-lg">
-                            <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                            </svg>
-                        </div>
-                        <h3 className="text-lg font-semibold text-gray-900">Stock Information</h3>
-                        <span className="ml-auto text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Required</span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-700">
-                                Initial Stock Quantity
-                                <span className="text-xs text-red-500 ml-1">*</span>
-                            </label>
-                            <input
-                                type="number"
-                                min="0"
-                                step="1"
-                                value={quantity}
-                                onChange={(e) => setQuantity(Math.max(0, parseInt(e.target.value) || 0))}
-                                placeholder="Enter initial stock quantity"
-                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-700">
-                                Unit
-                                <span className="text-xs text-gray-500 ml-1">(Select measurement unit)</span>
-                            </label>
-                            <select
-                                value={unit}
-                                onChange={(e) => setUnit(e.target.value)}
-                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                            >
-                                <option value="">Select Unit</option>
-                                <optgroup label="Count">
-                                    <option value="pcs">Pieces (pcs)</option>
-                                    <option value="box">Bag</option>
-                                    <option value="box">Box</option>
-                                    <option value="set">Set</option>
-                                    <option value="pack">Pack</option>
-                                    <option value="roll">Sheet</option>
-                                </optgroup>
-                                <optgroup label="Weight">
-                                    <option value="kg">Kilogram (kg)</option>
-                                    <option value="g">Gram (g)</option>
-                                    <option value="lbs">Pounds (lbs)</option>
-                                </optgroup>
-                                <optgroup label="Length">
-                                    <option value="m">Meter (m)</option>
-                                    <option value="cm">Centimeter (cm)</option>
-                                    <option value="ft">Feet (ft)</option>
-                                    <option value="in">Inch (in)</option>
-                                </optgroup>
-                                <optgroup label="Volume">
-                                    <option value="L">Liter (L)</option>
-                                    <option value="mL">Milliliter (mL)</option>
-                                    <option value="gal">Gallon (gal)</option>
-                                </optgroup>
-                            </select>
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-700">
-                                Unit Price (₱)
-                                <span className="text-xs text-red-500 ml-1">*</span>
+                                Unit Price (₱) <span className="text-red-500">*</span>
                             </label>
                             <div className="relative">
                                 <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">₱</span>
@@ -675,115 +600,350 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
                                     min="0"
                                     step="0.01"
                                     value={unitPrice}
-                                    onChange={(e) => setUnitPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                                    onChange={(e) => setUnitPrice(e.target.value)}
                                     placeholder="0.00"
                                     className="w-full pl-8 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                                 />
                             </div>
                         </div>
 
-                       
-
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-700">Maximum Stock Level</label>
+                            <label className="block text-sm font-medium text-gray-700">
+                                Quantity <span className="text-gray-500 text-xs">(total initial stock)</span>
+                            </label>
                             <input
                                 type="number"
-                                value={maximumStockLevel}
-                                onChange={(e) => setMaximumStockLevel(e.target.value)}
-                                placeholder="Maximum quantity"
+                                min="0"
+                                value={quantity}
+                                onChange={(e) => setQuantity(e.target.value)}
+                                placeholder="Initial quantity"
                                 className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                             />
                         </div>
 
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-700">
-                                Safety Stock
-                                <span className="text-xs text-gray-500 ml-1">(Used for reorder calculations)</span>
+                                Safety Stock <span className="text-gray-500 text-xs">(for ROP calculations)</span>
                             </label>
                             <input
                                 type="number"
+                                min="0"
                                 value={safetyStock}
                                 onChange={(e) => setSafetyStock(e.target.value)}
                                 placeholder="Buffer stock quantity"
                                 className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                             />
-                            <p className="text-xs text-gray-500">Safety stock helps prevent stockouts during supply delays</p>
                         </div>
 
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between">
+                        <div className="space-y-2">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={isBundle}
+                                    onChange={(e) => setIsBundle(e.target.checked)}
+                                    className="w-5 h-5 text-blue-600 bg-gray-50 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                                />
+                                <span className="text-sm font-medium text-gray-700">
+                                    This product comes in bundles/packages
+                                </span>
+                            </label>
+                            <p className="text-xs text-gray-500 ml-7">
+                                Check this if the product is packaged in bundles, boxes, or packs
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Bundle/Package Specification - Only show when isBundle is checked */}
+                {isBundle && (
+                    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-2 mb-5">
+                            <div className="p-1.5 bg-teal-100 rounded-lg">
+                                <svg className="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Bundle/Package Details</h3>
+                            <span className="ml-auto text-xs text-orange-500 bg-orange-50 px-2 py-1 rounded-full">Recommended</span>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
                                 <label className="block text-sm font-medium text-gray-700">
-                                    Storage Locations
-                                    <span className="text-xs text-red-500 ml-1">* Select locations with quantity</span>
+                                    Packaging Type
                                 </label>
-                                {quantity && getTotalQuantity() < parseInt(quantity) ? (
-                                    <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full font-medium">
-                                        {parseInt(quantity) - getTotalQuantity()} remaining to allocate
-                                    </span>
-                                ) : quantity && getTotalQuantity() === parseInt(quantity) ? (
-                                    <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium flex items-center gap-1">
-                                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                        </svg>
-                                        Fully allocated
-                                    </span>
-                                ) : (
-                                    <span className="text-xs text-gray-500">
-                                        {selectedStorageLocations.length} location{selectedStorageLocations.length !== 1 ? 's' : ''} selected
-                                    </span>
-                                )}
+                                <select
+                                    value={bundlePackagingType}
+                                    onChange={(e) => setBundlePackagingType(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                >
+                                    <option value="bundle">Bundle</option>
+                                    <option value="box">Box</option>
+                                    <option value="pack">Pack</option>
+                                    <option value="case">Case</option>
+                                    <option value="carton">Carton</option>
+                                    <option value="pallet">Pallet</option>
+                                    <option value="crate">Crate</option>
+                                    <option value="bag">Bag</option>
+                                </select>
                             </div>
                             
-                            {/* Show selected unit if any */}
-                            {selectedUnit && (
-                                <div className="p-2 bg-blue-50 rounded-lg border border-blue-200">
-                                    <span className="text-sm font-medium text-blue-700">Storage Unit: {selectedUnit}</span>
-                                </div>
-                            )}
-                            
-                            <button
-                                type="button"
-                                onClick={() => setIsStorageModalOpen(true)}
-                                className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all text-left font-medium shadow-sm flex items-center justify-between"
-                            >
-                                <span>
-                                    {selectedStorageLocations.length > 0 
-                                        ? `${selectedStorageLocations.length} location${selectedStorageLocations.length > 1 ? 's' : ''} selected` 
-                                        : `Select shelf locations in ${selectedUnit}`}
-                                </span>
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                </svg>
-                            </button>
-                            
-                            {/* Show selected locations with quantity inputs */}
-                            {selectedStorageLocations.length > 0 && (
-                                <div className="space-y-2 mt-3 max-h-64 overflow-y-auto">
-                                    <div className="flex items-center justify-between text-xs font-medium text-gray-600 px-2">
-                                        <span>Location</span>
-                                        <span>Quantity</span>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Pieces per {bundlePackagingType}
+                                </label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={piecesPerBundle}
+                                    onChange={(e) => setPiecesPerBundle(e.target.value)}
+                                    placeholder={`e.g., 20 pieces per ${bundlePackagingType}`}
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                            </div>
+                        </div>
+                        
+                        {/* Bundle Calculation Display */}
+                        {piecesPerBundle && parseInt(piecesPerBundle) > 0 && getTotalQuantity() > 0 && (
+                            <div className="mt-4 p-4 bg-gradient-to-r from-teal-50 to-cyan-50 border border-teal-200 rounded-lg">
+                                <div className="flex items-start gap-3">
+                                    <div className="p-2 bg-teal-100 rounded-lg">
+                                        <svg className="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                        </svg>
                                     </div>
-                                    {selectedStorageLocations.map((location) => (
-                                        <div key={location.id} className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-gray-900 truncate">
-                                                    {location.shelf} → {location.row} → Col {location.columnDisplay}
-                                                </p>
-                                                <p className="text-xs text-gray-600">{location.unit}</p>
+                                    <div className="flex-1 space-y-2">
+                                        <p className="text-sm font-semibold text-gray-800">Package Breakdown:</p>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="p-3 bg-white rounded-lg border border-teal-200">
+                                                <p className="text-xs text-gray-600 mb-1">Total {bundlePackagingType}s</p>
+                                                <p className="text-2xl font-bold text-teal-600">{getTotalBundles()}</p>
                                             </div>
-                                            <input
-                                                type="number"
-                                                min="1"
-                                                value={quantityPerLocation[location.id] || ''}
-                                                onChange={(e) => handleLocationQuantityChange(location.id, e.target.value)}
-                                                placeholder="Qty"
-                                                className="w-20 px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            />
+                                            <div className="p-3 bg-white rounded-lg border border-teal-200">
+                                                <p className="text-xs text-gray-600 mb-1">Loose Pieces</p>
+                                                <p className="text-2xl font-bold text-orange-600">{getLoosePieces()}</p>
+                                            </div>
+                                        </div>
+                                        <div className="p-3 bg-white rounded-lg border border-teal-200">
+                                            <p className="text-sm text-gray-700">
+                                                <span className="font-semibold">{getTotalQuantity()}</span> {baseUnit} = 
+                                                <span className="font-semibold text-teal-600"> {getTotalBundles()} {bundlePackagingType}s</span>
+                                                {getLoosePieces() > 0 && (
+                                                    <span className="text-orange-600"> + {getLoosePieces()} loose {baseUnit}</span>
+                                                )}
+                                            </p>
+                                            <p className="text-xs text-gray-500 mt-1">
+                                                ({piecesPerBundle} {baseUnit} per {bundlePackagingType})
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Measurement-Specific Fields */}
+                {measurementType === 'weight' && (
+                    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-2 mb-5">
+                            <div className="p-1.5 bg-yellow-100 rounded-lg">
+                                <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Weight Information</h3>
+                            <span className="ml-auto text-xs text-red-500 bg-red-50 px-2 py-1 rounded-full">Required</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Unit Weight (kg) <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={unitWeightKg}
+                                    onChange={(e) => setUnitWeightKg(e.target.value)}
+                                    placeholder="Weight per unit in kilograms"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {measurementType === 'volume' && (
+                    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-2 mb-5">
+                            <div className="p-1.5 bg-cyan-100 rounded-lg">
+                                <svg className="w-5 h-5 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Volume Information</h3>
+                            <span className="ml-auto text-xs text-red-500 bg-red-50 px-2 py-1 rounded-full">Required</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Unit Volume (Liters) <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={unitVolumeLiters}
+                                    onChange={(e) => setUnitVolumeLiters(e.target.value)}
+                                    placeholder="Volume per unit in liters"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {measurementType === 'length' && requireDimensions && (
+                    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-2 mb-5">
+                            <div className="p-1.5 bg-indigo-100 rounded-lg">
+                                <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Dimension Information</h3>
+                            <span className="ml-auto text-xs text-red-500 bg-red-50 px-2 py-1 rounded-full">Required</span>
+                        </div>
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                            <p className="text-xs text-blue-700">
+                                <span className="font-semibold">Tip:</span> For steel bars/rebars, only enter <strong>Length</strong> and <strong>Thickness (diameter)</strong>. For sheets/panels, enter all three dimensions.
+                            </p>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Length (m) <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={length}
+                                    onChange={(e) => setLength(e.target.value)}
+                                    placeholder="Length in meters"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                                <p className="text-xs text-gray-500">Main dimension of the product</p>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Width (cm) <span className="text-gray-400">(Optional)</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.1"
+                                    value={width}
+                                    onChange={(e) => setWidth(e.target.value)}
+                                    placeholder="Leave empty for bars/rebars"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                                <p className="text-xs text-gray-500">For sheets only, skip for bars</p>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Thickness/Diameter (mm) <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.1"
+                                    value={thickness}
+                                    onChange={(e) => setThickness(e.target.value)}
+                                    placeholder="Thickness or diameter"
+                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                                <p className="text-xs text-gray-500">Thickness for sheets, diameter for bars</p>
+                            </div>
+                        </div>
+                        {unitVolumeCm3 && (
+                            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                    </svg>
+                                    <span className="text-sm font-medium text-green-800">
+                                        Calculated Volume: {unitVolumeCm3} cm³
+                                    </span>
+                                </div>
+                                <p className="text-xs text-green-700 mt-2">
+                                    {width && parseFloat(width) > 0 
+                                        ? `📐 Box/Sheet: ${length}m × ${width}cm × ${thickness}mm` 
+                                        : `⭕ Cylindrical (Bar): π × (${thickness}mm ÷ 2)² × ${length}m`
+                                    }
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {measurementType === 'count' && (
+                    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-2 mb-5">
+                            <div className="p-1.5 bg-purple-100 rounded-lg">
+                                <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Unit of Measure Conversions</h3>
+                            <span className="ml-auto text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Optional</span>
+                        </div>
+                        <div className="space-y-4">
+                            <p className="text-sm text-gray-600">
+                                Define how different packaging units relate to the base unit ({baseUnit})
+                            </p>
+                            
+                            {/* Add UOM Conversion Form */}
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={newUomName}
+                                    onChange={(e) => setNewUomName(e.target.value)}
+                                    placeholder="Unit name (e.g., box, pack)"
+                                    className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={newUomQty}
+                                    onChange={(e) => setNewUomQty(e.target.value)}
+                                    placeholder={`Qty in ${baseUnit}`}
+                                    className="w-32 px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleAddUomConversion}
+                                    className="px-4 py-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                                >
+                                    Add
+                                </button>
+                            </div>
+
+                            {/* Display UOM Conversions */}
+                            {uomConversions.length > 0 && (
+                                <div className="space-y-2">
+                                    <p className="text-sm font-medium text-gray-700">Defined Conversions:</p>
+                                    {uomConversions.map((uom, index) => (
+                                        <div key={index} className="flex items-center justify-between p-3 bg-purple-50 rounded-lg border border-purple-200">
+                                            <span className="text-sm text-gray-900">
+                                                1 {uom.name} = {uom.quantity} {baseUnit}
+                                            </span>
                                             <button
                                                 type="button"
-                                                onClick={() => handleRemoveLocation(location.id)}
-                                                className="p-1.5 text-red-500 hover:bg-red-100 rounded transition-colors"
-                                                title="Remove location"
+                                                onClick={() => handleRemoveUomConversion(index)}
+                                                className="p-1 text-red-500 hover:bg-red-100 rounded transition-colors"
                                             >
                                                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                                     <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -791,133 +951,104 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
                                             </button>
                                         </div>
                                     ))}
-                                    
-                                    {/* Total Quantity Summary */}
-                                    <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200 font-medium">
-                                        <span className="text-sm text-green-900">Total Quantity:</span>
-                                        <span className="text-lg text-green-600">{getTotalQuantity()} {unit || 'pcs'}</span>
-                                    </div>
                                 </div>
                             )}
-                            
-                            {selectedStorageLocations.length === 0 && (
-                                <div className="p-4 bg-gray-50 rounded-lg border border-dashed border-gray-300 text-center">
-                                    <svg className="w-12 h-12 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                                    </svg>
-                                    <p className="text-sm text-gray-600">No storage locations selected</p>
-                                    <p className="text-xs text-gray-500 mt-1">Click the button above to select locations</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                </div>
-
-                {/* Enhanced Category-Specific Fields Section */}
-                {localCategoryFields.length > 0 && (
-                    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex items-center gap-2 mb-5">
-                            <div className="p-1.5 bg-orange-100 rounded-lg">
-                                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                                </svg>
-                            </div>
-                            <h3 className="text-lg font-semibold text-gray-900">Category-Specific Fields</h3>
-                            <span className="ml-auto text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Optional</span>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {localCategoryFields.map((field, index) => (
-                                <div key={index} className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <label className="block text-sm font-medium text-gray-700">
-                                            {field.name.charAt(0).toUpperCase() + field.name.slice(1)}
-                                        </label>
-                                        {field.editable && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setEditingField(editingField === index ? null : index)}
-                                                className="text-sm text-blue-600 hover:text-blue-700"
-                                            >
-                                                {editingField === index ? 'Done' : 'Edit Options'}
-                                            </button>
-                                        )}
-                                    </div>
-                                    
-                                    {field.type === 'select' && (
-                                        <>
-                                            <select
-                                                value={categoryValues[field.name] || ''}
-                                                onChange={(e) => handleCategoryFieldChange(field.name, e.target.value)}
-                                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg 
-                                                         focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                                            >
-                                                <option value="">Select {field.name}</option>
-                                                {field.options.map((option, idx) => (
-                                                    <option key={idx} value={option}>{option}</option>
-                                                ))}
-                                            </select>
-
-                                            {editingField === index && (
-                                                <div className="mt-2 space-y-2">
-                                                    <div className="flex gap-2">
-                                                        <input
-                                                            type="text"
-                                                            value={newOptionValue}
-                                                            onChange={(e) => setNewOptionValue(e.target.value)}
-                                                            onKeyPress={(e) => {
-                                                                if (e.key === 'Enter') {
-                                                                    e.preventDefault();
-                                                                    handleOptionManagement(index, 'add');
-                                                                }
-                                                            }}
-                                                            placeholder={`Add new ${field.name} option`}
-                                                            className="flex-1 px-3 py-1 border rounded-lg text-sm"
-                                                        />
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleOptionManagement(index, 'add')}
-                                                            disabled={!newOptionValue.trim()}
-                                                            className={`px-3 py-1 text-white rounded-lg text-sm transition-colors ${
-                                                                newOptionValue.trim() 
-                                                                    ? 'bg-blue-500 hover:bg-blue-600' 
-                                                                    : 'bg-gray-400 cursor-not-allowed'
-                                                            }`}
-                                                        >
-                                                            Add
-                                                        </button>
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {field.options.map((option, optIndex) => (
-                                                            <span 
-                                                                key={optIndex}
-                                                                className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-sm"
-                                                            >
-                                                                {option}
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleOptionManagement(index, 'remove', option)}
-                                                                    className="text-red-500 hover:text-red-700"
-                                                                >
-                                                                    ×
-                                                                </button>
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </>
-                                    )}
-                                </div>
-                            ))}
                         </div>
                     </div>
                 )}
 
                 
-             
+                {/* Storage Location Selection */}
+                <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-2 mb-5">
+                        <div className="p-1.5 bg-blue-100 rounded-lg">
+                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                            </svg>
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900">Storage Locations</h3>
+                        <span className="ml-auto text-xs text-red-500 bg-red-50 px-2 py-1 rounded-full">Required</span>
+                    </div>
+                    
+                    <div className="space-y-4">
+                        {selectedUnit && (
+                            <div className="p-2 bg-blue-50 rounded-lg border border-blue-200">
+                                <span className="text-sm font-medium text-blue-700">Storage Unit: {selectedUnit}</span>
+                            </div>
+                        )}
+                        
+                        <button
+                            type="button"
+                            onClick={() => setIsStorageModalOpen(true)}
+                            className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all font-medium shadow-sm flex items-center justify-between"
+                        >
+                            <span>
+                                {selectedStorageLocations.length > 0 
+                                    ? `${selectedStorageLocations.length} location${selectedStorageLocations.length > 1 ? 's' : ''} selected` 
+                                    : `Select shelf locations in ${selectedUnit}`}
+                            </span>
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                            </svg>
+                        </button>
+                        
+                        {/* Show selected locations */}
+                        {selectedStorageLocations.length > 0 && (
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between text-xs font-medium text-gray-600 px-2">
+                                    <span>Location</span>
+                                    <span>Quantity</span>
+                                </div>
+                                {selectedStorageLocations.map((location) => (
+                                    <div key={location.id} className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-gray-900 truncate">
+                                                {location.shelf} → {location.row} → Col {location.columnDisplay}
+                                            </p>
+                                            <p className="text-xs text-gray-600">{location.unit}</p>
+                                        </div>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            value={quantityPerLocation[location.id] || ''}
+                                            onChange={(e) => handleLocationQuantityChange(location.id, e.target.value)}
+                                            placeholder="Qty"
+                                            className="w-20 px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemoveLocation(location.id)}
+                                            className="p-1.5 text-red-500 hover:bg-red-100 rounded transition-colors"
+                                            title="Remove location"
+                                        >
+                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                ))}
+                                
+                                {/* Total Quantity Summary */}
+                                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200 font-medium">
+                                    <span className="text-sm text-green-900">Total Quantity:</span>
+                                    <span className="text-lg text-green-600">{getTotalQuantity()} {baseUnit}</span>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {selectedStorageLocations.length === 0 && (
+                            <div className="p-4 bg-gray-50 rounded-lg border border-dashed border-gray-300 text-center">
+                                <svg className="w-12 h-12 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                </svg>
+                                <p className="text-sm text-gray-600">No storage locations selected</p>
+                                <p className="text-xs text-gray-500 mt-1">Click the button above to select locations</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
 
-                {/* Enhanced Submit Button */}
+                {/* Submit Button */}
                 <div className="sticky bottom-0 bg-white pt-6 pb-2 -mx-1 px-6 border-t border-gray-200 shadow-lg">
                     <button
                         onClick={handleAddProduct}
@@ -958,6 +1089,16 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
                 totalQuantity={parseInt(quantity) || 0}
                 allocatedQuantity={getAllocatedQuantity()}
                 cellCapacity={100}
+            />
+
+            {/* Dimension Error Modal */}
+            <ErrorModal
+                isOpen={errorModalOpen}
+                onClose={() => setErrorModalOpen(false)}
+                title={errorModalData.title}
+                message={errorModalData.message}
+                details={errorModalData.details}
+                type={errorModalData.type}
             />
         </div>
     );

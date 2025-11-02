@@ -1,0 +1,385 @@
+{
+  "metadata": {
+    "reportDate": "2025-11-01",
+    "reviewer": "GitHub Copilot",
+    "totalIssues": 22,
+    "criticalIssues": 7,
+    "highIssues": 6,
+    "mediumIssues": 6,
+    "lowIssues": 3
+  },
+  "issues": [
+    {
+      "id": "CRITICAL-1",
+      "file": "src/features/inventory/components/Inventory/CategoryModal/NewProductForm.jsx",
+      "severity": "CRITICAL",
+      "category": "Logic Error",
+      "title": "EOQ Calculation Uses Incorrect Formula",
+      "description": "holdingPeriodDays calculation can be 0 or 1 on first creation, causing division by near-zero and inflated EOQ values",
+      "lineNumber": "356-360",
+      "function": "handleAddProduct",
+      "impact": "EOQ will be incorrectly high for new products, leading to over-ordering and capital waste",
+      "suggestedFix": "Use default annual holding cost percentage (industry standard 20-30% of item cost) instead of time-based calculation",
+      "codeSnippet": "const holdingPeriodDays = Math.max(1, Math.ceil((currentDate - createdDate) / (1000 * 60 * 60 * 24)));\nconst holdingCost = purchaseCost / holdingPeriodDays;",
+      "fixSnippet": "const annualHoldingCostPercentage = 0.25; // 25% industry standard\nconst holdingCost = purchaseCost * annualHoldingCostPercentage;"
+    },
+    {
+      "id": "CRITICAL-2",
+      "file": "src/features/inventory/components/BulkProductImport.jsx",
+      "severity": "CRITICAL",
+      "category": "Error Handling",
+      "title": "Batch Commit Without Per-Product Error Handling",
+      "description": "saveProductsToFirestore commits batch without catching individual product validation errors, causing entire import to fail with cryptic error message",
+      "lineNumber": "186-201",
+      "function": "saveProductsToFirestore",
+      "impact": "If any single product in batch has invalid data, entire import fails, wasting user time",
+      "suggestedFix": "Validate each product before adding to batch, provide detailed error report showing which products failed and why",
+      "codeSnippet": "batch.set(productRef, product);\nawait batch.commit();",
+      "fixSnippet": "// Validate before batch\nconst validationErrors = products.map(p => validateProductData(p)).filter(e => e);\nif (validationErrors.length > 0) throw new Error(`Validation failed: ${validationErrors.join(', ')}`);\n// Then batch"
+    },
+    {
+      "id": "CRITICAL-3",
+      "file": "src/features/pos/pages/Pos_NewSale.jsx",
+      "severity": "CRITICAL",
+      "category": "Data Integrity",
+      "title": "Release Logs Created Outside Transaction Boundary",
+      "description": "release_logs written after inventory deduction succeeds but errors are ignored, creating audit trail gaps if logging fails",
+      "lineNumber": "1683-1702",
+      "function": "handlePrintAndSave",
+      "impact": "If release_logs write fails, legacy mobile app won't see sale data, audit trail broken, regulatory compliance risk",
+      "suggestedFix": "Include release_logs in same batch as stock deduction to ensure atomic commit",
+      "codeSnippet": "await Promise.all(releaseLogPromises);\n} catch (releaseLogError) {\n  console.error('Error creating release logs:', releaseLogError);\n  // Don't fail the transaction if release log creation fails\n}",
+      "fixSnippet": "const batch = writeBatch(db);\nbatch.set(movementRef, movementData);\nbatch.set(releaseLogRef, releaseLogData);\nawait batch.commit(); // Atomic - both succeed or both fail"
+    },
+    {
+      "id": "CRITICAL-4",
+      "file": "src/features/pos/pages/Pos_NewSale.jsx",
+      "severity": "CRITICAL",
+      "category": "Race Condition",
+      "title": "Multi-Location Deduction Race Condition",
+      "description": "updateInventoryQuantities uses batched writes but searches across storage units without transaction locks, allowing concurrent sales to cause double-deduction",
+      "lineNumber": "1015-1168",
+      "function": "updateInventoryQuantities",
+      "impact": "Two concurrent sales can deduct from same product, causing inventory discrepancies and negative stock levels",
+      "suggestedFix": "Use runTransaction instead of batch writes to read and update quantities atomically",
+      "codeSnippet": "const allLocations = await findAllProductLocations(...);\n// ... time passes ...\nconst docSnap = await getDoc(location.productRef);\nconst currentQty = Number(productData.quantity) || 0;\nconst newQty = currentQty - deductQty;\ncurrentBatch.update(location.productRef, { quantity: Math.max(0, newQty) });",
+      "fixSnippet": "await runTransaction(db, async (transaction) => {\n  const productDoc = await transaction.get(productRef);\n  const currentQty = productDoc.data().quantity;\n  transaction.update(productRef, { quantity: currentQty - deductQty });\n});"
+    },
+    {
+      "id": "CRITICAL-5",
+      "file": "src/features/pos/pages/Pos_NewSale.jsx",
+      "severity": "CRITICAL",
+      "category": "Type Error",
+      "title": "Missing Validation for safetyStock Field",
+      "description": "Code assumes safetyStock exists but field may be undefined on older products, causing Number(undefined) to return NaN and break ROP calculations",
+      "lineNumber": "156, 257",
+      "function": "checkRestockingThreshold",
+      "impact": "ROP calculation fails with NaN, preventing restocking alerts for products without safetyStock field",
+      "suggestedFix": "Always validate safetyStock exists and use || 0 fallback before arithmetic operations",
+      "codeSnippet": "const safetyStock = Number(productData.safetyStock) || Number(variant.safetyStock) || 0;",
+      "fixSnippet": "const safetyStock = Number(productData?.safetyStock || variant?.safetyStock || 0);"
+    },
+    {
+      "id": "CRITICAL-6",
+      "file": "src/features/inventory/components/Admin/RestockingAlertModal.jsx",
+      "severity": "CRITICAL",
+      "category": "Logic Error",
+      "title": "Status Value Mismatch in Query",
+      "description": "Modal sets status to 'resolved_safety_stock' but query only fetches ['pending', 'acknowledged'], causing resolved requests to remain visible in UI",
+      "lineNumber": "36, 287-292",
+      "function": "useEffect (query), handleReplenish",
+      "impact": "Resolved requests never disappear from modal, confusing users and cluttering UI",
+      "suggestedFix": "Change query to use 'not-in' operator to exclude resolved statuses",
+      "codeSnippet": "where('status', 'in', ['pending', 'acknowledged'])",
+      "fixSnippet": "where('status', 'not-in', ['dismissed', 'resolved_safety_stock', 'resolved_po'])"
+    },
+    {
+      "id": "CRITICAL-7",
+      "file": "src/features/inventory/components/Admin/RestockingAlertModal.jsx",
+      "severity": "CRITICAL",
+      "category": "Transaction Error",
+      "title": "Transaction Searches Product Outside Transaction Boundary",
+      "description": "runTransaction calls getDocs() inside transaction callback but doesn't use transaction.get(), violating Firestore transaction rules and allowing stale reads",
+      "lineNumber": "216-238",
+      "function": "handleReplenish",
+      "impact": "Product could be updated by another transaction between getDocs and update, causing data corruption or update conflicts",
+      "suggestedFix": "Move product search outside transaction, use transaction.get(productRef) for reads inside transaction",
+      "codeSnippet": "await runTransaction(db, async (transaction) => {\n  const storageUnitsSnapshot = await getDocs(productsRef);\n  // ... find product ...\n  transaction.update(productRef, { ... });\n});",
+      "fixSnippet": "// Search outside transaction\nconst productRef = await findProductRef(productId);\n// Then use transaction.get inside\nawait runTransaction(db, async (transaction) => {\n  const productSnap = await transaction.get(productRef);\n  transaction.update(productRef, { ... });\n});"
+    },
+    {
+      "id": "HIGH-1",
+      "file": "src/features/inventory/components/Inventory/CategoryModal/NewProductForm.jsx",
+      "severity": "HIGH",
+      "category": "Validation",
+      "title": "No Validation for Supplier Existence",
+      "description": "Code assumes selectedSuppliers array contains valid suppliers but doesn't verify suppliers exist in database before creating product",
+      "lineNumber": "326",
+      "function": "handleAddProduct",
+      "impact": "Can create products with invalid supplier references, breaking Purchase Order flow",
+      "suggestedFix": "Query suppliers collection to validate all selectedSupplier IDs exist before product creation",
+      "codeSnippet": "const currentSuppliers = supplier ? [supplier] : selectedSuppliers;",
+      "fixSnippet": "// Validate suppliers exist\nfor (const sup of selectedSuppliers) {\n  const supDoc = await getDoc(doc(db, 'Suppliers', sup.id));\n  if (!supDoc.exists()) throw new Error(`Supplier ${sup.name} not found`);\n}\nconst currentSuppliers = supplier ? [supplier] : selectedSuppliers;"
+    },
+    {
+      "id": "HIGH-2",
+      "file": "src/features/inventory/components/BulkProductImport.jsx",
+      "severity": "HIGH",
+      "category": "Error Handling",
+      "title": "Supplier Linking Loop Doesn't Stop on Failure",
+      "description": "Loop continues linking products to supplier even if some products fail, no summary of failures provided to user",
+      "lineNumber": "204-218",
+      "function": "saveProductsToFirestore",
+      "impact": "User sees 'success' message but some products aren't linked to supplier, causing data inconsistency",
+      "suggestedFix": "Track failures in array, show detailed error report with failed product names",
+      "codeSnippet": "} catch (error) {\n  console.error(`Failed to link product ${product.name} to supplier:`, error);\n  // Continue with other products even if one fails\n}",
+      "fixSnippet": "const linkErrors = [];\n// ... in catch:\nlinkErrors.push({ product: product.name, error: error.message });\n// After loop:\nif (linkErrors.length > 0) alert(`Failed to link: ${linkErrors.map(e => e.product).join(', ')}`);"
+    },
+    {
+      "id": "HIGH-3",
+      "file": "src/features/pos/pages/Pos_NewSale.jsx",
+      "severity": "HIGH",
+      "category": "Async Error",
+      "title": "Restock Request Not Awaited",
+      "description": "generateRestockingRequest() called but not awaited in variant update path, causing potential data loss if process crashes before request saved",
+      "lineNumber": "321-330",
+      "function": "updateInventoryQuantities",
+      "impact": "Sale completes before restock request saved, inventory manager may not receive low-stock alert",
+      "suggestedFix": "Add await to all generateRestockingRequest() calls",
+      "codeSnippet": "generateRestockingRequest(updatedProductData, location.variantIndex, location.location, currentUser);",
+      "fixSnippet": "await generateRestockingRequest(updatedProductData, location.variantIndex, location.location, currentUser);"
+    },
+    {
+      "id": "HIGH-4",
+      "file": "src/features/pos/pages/Pos_NewSale.jsx",
+      "severity": "HIGH",
+      "category": "Validation",
+      "title": "No Validation for Product Existence Before Transaction",
+      "description": "validateStockBeforeTransaction checks stock levels but doesn't verify products still exist in database (could be deleted mid-session)",
+      "lineNumber": "1591-1619",
+      "function": "validateStockBeforeTransaction",
+      "impact": "Transaction fails with cryptic error if product deleted between adding to cart and checkout",
+      "suggestedFix": "Check product existence in validation step, provide clear error message if product deleted",
+      "codeSnippet": "if (allLocations.length === 0) {\n  invalidItems.push(`${item.name} - Product not found in any inventory location`);\n}",
+      "fixSnippet": "// First check if product doc exists at all\nconst productExists = await getDoc(productRef);\nif (!productExists.exists()) {\n  throw new Error(`Product ${item.name} was deleted. Please refresh your cart.`);\n}"
+    },
+    {
+      "id": "HIGH-5",
+      "file": "src/features/inventory/components/Admin/RestockingAlertModal.jsx",
+      "severity": "HIGH",
+      "category": "Validation",
+      "title": "Missing Validation for safetyStock in Replenishment",
+      "description": "Code checks safetyStockAmount <= 0 but doesn't validate product actually has that much safety stock available (could be used by concurrent operation)",
+      "lineNumber": "195",
+      "function": "handleReplenish",
+      "impact": "User confirms replenishment, but if concurrent sale used safety stock, replenishment fails mid-transaction with unclear error",
+      "suggestedFix": "Read current safetyStock inside transaction and validate before update",
+      "codeSnippet": "if (safetyStockAmount <= 0) {\n  alert('Cannot replenish: No safety stock available for this product.');\n  return;\n}",
+      "fixSnippet": "// Inside transaction:\nconst currentSafetyStock = productData.safetyStock || 0;\nif (currentSafetyStock < safetyStockAmount) {\n  throw new Error(`Insufficient safety stock. Available: ${currentSafetyStock}, requested: ${safetyStockAmount}`);\n}"
+    },
+    {
+      "id": "HIGH-6",
+      "file": "src/services/firebase/ProductServices.jsx",
+      "severity": "HIGH",
+      "category": "Atomicity",
+      "title": "No Atomic Link/Unlink for Supplier Products",
+      "description": "linkProductToSupplier writes to supplier_products and product variants in separate operations without transaction, can create inconsistent state",
+      "lineNumber": "113-120, 158-165",
+      "function": "linkProductToSupplier, unlinkProductFromSupplier",
+      "impact": "Supplier link created but product not updated (or vice versa), breaking purchase order workflow",
+      "suggestedFix": "Use transaction or batch to write both supplier_products and product variants atomically",
+      "codeSnippet": "await setDoc(supplierProductRef, { ... });\nawait updateProductVariantsWithSupplier(productId, supplierId, supplierData);",
+      "fixSnippet": "await runTransaction(db, async (transaction) => {\n  transaction.set(supplierProductRef, { ... });\n  // ... also update product in same transaction\n});"
+    },
+    {
+      "id": "MEDIUM-1",
+      "file": "src/features/inventory/components/Inventory/CategoryModal/NewProductForm.jsx",
+      "severity": "MEDIUM",
+      "category": "Error Handling",
+      "title": "Supplier Linking Errors Not Propagated",
+      "description": "linkProductToSupplier failures are caught and logged but don't fail the overall product creation, user not notified of partial failure",
+      "lineNumber": "408-411",
+      "function": "handleAddProduct",
+      "impact": "Product created without supplier link, user assumes success but Purchase Order page won't show product",
+      "suggestedFix": "Collect all supplier linking errors and alert user with specific failure details",
+      "codeSnippet": "} catch (error) {\n  console.error('Error linking product to supplier:', error);\n}",
+      "fixSnippet": "const linkErrors = [];\ntry {\n  await linkProductToSupplier(...);\n} catch (error) {\n  linkErrors.push(currentSupplier.name);\n}\nif (linkErrors.length > 0) alert(`Warning: Product created but failed to link to: ${linkErrors.join(', ')}`);"
+    },
+    {
+      "id": "MEDIUM-2",
+      "file": "src/features/inventory/components/Inventory/CategoryModal/NewProductForm.jsx",
+      "severity": "MEDIUM",
+      "category": "Atomicity",
+      "title": "Missing Transaction for Multi-Location Creation",
+      "description": "Loop creates separate product documents for each storage location without transaction, partial failure leaves inconsistent state",
+      "lineNumber": "319-415",
+      "function": "handleAddProduct",
+      "impact": "If creation fails mid-loop, some locations have product but others don't, inventory data inconsistent",
+      "suggestedFix": "Use Firestore batch or transaction for all location writes to ensure all-or-nothing creation",
+      "codeSnippet": "for (const location of selectedStorageLocations) {\n  // ...\n  await setDoc(productRef, cleanProduct);\n}",
+      "fixSnippet": "const batch = writeBatch(db);\nfor (const location of selectedStorageLocations) {\n  batch.set(productRef, cleanProduct);\n}\nawait batch.commit();"
+    },
+    {
+      "id": "MEDIUM-3",
+      "file": "src/features/inventory/components/BulkProductImport.jsx",
+      "severity": "MEDIUM",
+      "category": "Validation",
+      "title": "No Validation for StorageLocation Existence",
+      "description": "Parses storage location string from CSV but doesn't verify location exists in Products collection before creating product",
+      "lineNumber": "99-104",
+      "function": "parseStorageLocation",
+      "impact": "Products created with invalid storage references, won't appear in storage facility map",
+      "suggestedFix": "Query Products collection to validate storage unit exists before adding to batch",
+      "codeSnippet": "return {\n  storageLocation: parts[0],\n  shelfName: parts[1],\n  // ...\n};",
+      "fixSnippet": "const storageUnitRef = doc(db, 'Products', parts[0]);\nconst unitExists = await getDoc(storageUnitRef);\nif (!unitExists.exists()) throw new Error(`Invalid storage location: ${parts[0]}`);"
+    },
+    {
+      "id": "MEDIUM-4",
+      "file": "src/features/pos/pages/Pos_NewSale.jsx",
+      "severity": "MEDIUM",
+      "category": "Business Logic",
+      "title": "Quotation Products Allow Negative Inventory",
+      "description": "Products with IDs starting with 'quotation-' allowed to have negative inventory, compromising inventory accuracy",
+      "lineNumber": "1060, 1100, 1121",
+      "function": "updateInventoryQuantities",
+      "impact": "Inventory reports show incorrect stock levels for quotation-based sales",
+      "suggestedFix": "Either disallow quotation products with negative stock, or track them in separate 'pending_stock' collection",
+      "codeSnippet": "const isQuotationProduct = product.productId && product.productId.startsWith('quotation-');\nif (isQuotationProduct) {\n  console.warn(`⚠️ Allowing negative inventory for quotation product`);\n}",
+      "fixSnippet": "// Option 1: Disallow negative\nif (newQty < 0) throw new Error('Insufficient stock');\n// Option 2: Track separately\nif (isQuotationProduct && newQty < 0) {\n  await createPendingStockRecord(product, Math.abs(newQty));\n}"
+    },
+    {
+      "id": "MEDIUM-5",
+      "file": "src/features/inventory/components/Admin/RestockingAlertModal.jsx",
+      "severity": "MEDIUM",
+      "category": "Error Handling",
+      "title": "No Error Handling for Multiple Location Updates",
+      "description": "Loop updates all locations in group but doesn't validate each location's product still exists before update",
+      "lineNumber": "283-291",
+      "function": "handleReplenish",
+      "impact": "If some requests reference deleted products, transaction fails with unclear error after partial processing",
+      "suggestedFix": "Validate all locations exist before starting transaction, provide clear error message if any missing",
+      "codeSnippet": "for (const loc of group.locations) {\n  const requestRef = doc(db, 'RestockingRequests', loc.id);\n  transaction.update(requestRef, { ... });\n}",
+      "fixSnippet": "// Before transaction:\nfor (const loc of group.locations) {\n  const reqDoc = await getDoc(doc(db, 'RestockingRequests', loc.id));\n  if (!reqDoc.exists()) throw new Error(`Request ${loc.id} no longer exists`);\n}"
+    },
+    {
+      "id": "MEDIUM-6",
+      "file": "src/services/firebase/ProductServices.jsx",
+      "severity": "MEDIUM",
+      "category": "Data Integrity",
+      "title": "updateProductVariantsWithSupplier Doesn't Validate Variant Exists",
+      "description": "Maps over variants array without checking if requested variant index is valid, can update wrong variant if array structure changed",
+      "lineNumber": "127-174",
+      "function": "updateProductVariantsWithSupplier",
+      "impact": "Can add supplier info to wrong variant if variants array was reordered",
+      "suggestedFix": "Match variants by unique ID or composite key (size+unit), not array index",
+      "codeSnippet": "const updatedVariants = productData.variants.map(variant => ({\n  ...variant,\n  supplier: { ... }\n}));",
+      "fixSnippet": "// Match by variant ID instead of index\nconst updatedVariants = productData.variants.map(v => {\n  if (v.id === targetVariantId) return { ...v, supplier: { ... } };\n  return v;\n});"
+    },
+    {
+      "id": "LOW-1",
+      "file": "src/features/pos/pages/Pos_NewSale.jsx",
+      "severity": "LOW",
+      "category": "Code Quality",
+      "title": "Inconsistent Field Naming - releasedBy vs performedBy",
+      "description": "release_logs uses 'releasedBy' and 'releasedByName' while stock_movements uses 'performedBy' and 'performedByName'",
+      "lineNumber": "1686-1691",
+      "function": "handlePrintAndSave",
+      "impact": "Inconsistent schema makes queries more difficult, harder to maintain",
+      "suggestedFix": "Standardize on 'performedBy' and 'performedByName' for all audit log collections",
+      "codeSnippet": "releasedBy: currentUser?.uid || 'unknown',\nreleasedByName: currentUser?.name || currentUser?.email || 'Unknown',",
+      "fixSnippet": "performedBy: currentUser?.uid || 'unknown',\nperformedByName: currentUser?.name || currentUser?.email || 'Unknown',"
+    },
+    {
+      "id": "LOW-2",
+      "file": "src/features/inventory/components/Admin/RestockingAlertModal.jsx",
+      "severity": "LOW",
+      "category": "Naming Convention",
+      "title": "Inconsistent Status String Format",
+      "description": "Status values use snake_case ('resolved_safety_stock') while code convention is camelCase",
+      "lineNumber": "287",
+      "function": "handleReplenish",
+      "impact": "Minor - inconsistent naming makes code harder to read",
+      "suggestedFix": "Use consistent naming convention: either all snake_case or all camelCase for status strings",
+      "codeSnippet": "status: 'resolved_safety_stock',",
+      "fixSnippet": "status: 'resolvedSafetyStock', // OR keep snake_case for all statuses"
+    },
+    {
+      "id": "LOW-3",
+      "file": "src/features/pos/pages/Pos_NewSale.jsx",
+      "severity": "LOW",
+      "category": "Code Quality",
+      "title": "Repeated Code for Stock Movement Logging",
+      "description": "Stock movement logging logic duplicated across POS, Receiving, and RestockingAlert files",
+      "lineNumber": "1642-1675",
+      "function": "handlePrintAndSave",
+      "impact": "Code duplication makes maintenance harder, increases risk of inconsistencies",
+      "suggestedFix": "Extract to shared helper function in AuditLogService",
+      "codeSnippet": "const movementRef = doc(collection(db, 'stock_movements'));\nconst movementData = { ... };\nawait setDoc(movementRef, movementData);",
+      "fixSnippet": "// Use shared helper\nimport { logStockMovement } from '../../../services/firebase/AuditLogService';\nawait logStockMovement({ movementType: 'OUT', ... });"
+    }
+  ],
+  "canonicalValues": {
+    "restockingRequestStatuses": [
+      "pending",
+      "acknowledged",
+      "dismissed",
+      "resolved_safety_stock",
+      "resolved_po",
+      "expired"
+    ],
+    "purchaseOrderStatuses": [
+      "draft",
+      "pending_approval",
+      "approved",
+      "rejected",
+      "completed"
+    ],
+    "movementTypes": [
+      "IN",
+      "OUT",
+      "TRANSFER_IN",
+      "TRANSFER_OUT",
+      "ADJUSTMENT_IN",
+      "ADJUSTMENT_OUT",
+      "DAMAGED",
+      "safety_stock_replenishment",
+      "RETURN_IN",
+      "RETURN_OUT"
+    ]
+  },
+  "recommendations": {
+    "immediate": [
+      "Apply Patch 1 (Release Logs) to ensure audit trail integrity",
+      "Apply Patch 2 (Status Query) to fix UI behavior for resolved requests",
+      "Apply Patch 3 (Race Condition) before deploying to production with concurrent users"
+    ],
+    "shortTerm": [
+      "Create AuditLogService helper to consolidate stock movement logging",
+      "Add validation for all supplier and product references before writes",
+      "Implement optimistic locking or version fields for concurrent update protection"
+    ],
+    "longTerm": [
+      "Migrate to Firestore Security Rules to enforce schema validation",
+      "Add Cloud Functions triggers for automatic audit log creation",
+      "Implement comprehensive integration tests for all transaction flows"
+    ]
+  },
+  "estimatedEffort": {
+    "criticalFixes": {
+      "hours": 20,
+      "description": "Fix all critical race conditions, transaction errors, and data integrity issues"
+    },
+    "highFixes": {
+      "hours": 10,
+      "description": "Add validation and proper error handling for all high-severity issues"
+    },
+    "mediumFixes": {
+      "hours": 6,
+      "description": "Improve error handling and add missing validations"
+    },
+    "totalEstimate": {
+      "hours": 36,
+      "days": "4-5 working days for experienced Firebase developer"
+    }
+  }
+}

@@ -11,12 +11,16 @@ const formatCurrency = (number) => {
   }).format(number);
 };
 
-function OrderSummary({ subTotal, tax, total, taxRate = DEFAULT_TAX_RATE }) {
+function OrderSummary({ subTotal, tax, total, discount, discountType, finalTotal, taxRate = DEFAULT_TAX_RATE }) {
   // Ensure values are numbers for display
   const displaySubTotal = typeof subTotal === 'number' ? subTotal : 0;
   const displayTax = typeof tax === 'number' ? tax : 0;
   const displayTotal = typeof total === 'number' ? total : 0;
+  const displayDiscount = typeof discount === 'number' ? discount : 0;
+  const displayFinalTotal = typeof finalTotal === 'number' ? finalTotal : 0;
   const displayTaxRate = typeof taxRate === 'number' ? taxRate * 100 : DEFAULT_TAX_RATE * 100;
+
+  const hasDiscount = displayDiscount > 0;
 
   return (
     <div className="p-4 bg-gray-50 space-y-3">
@@ -28,10 +32,22 @@ function OrderSummary({ subTotal, tax, total, taxRate = DEFAULT_TAX_RATE }) {
         <span className="text-gray-600">VAT ({displayTaxRate.toFixed(0)}%):</span>
         <span className="font-medium">₱{formatCurrency(displayTax)}</span>
       </div>
-      <div className="flex justify-between text-base font-semibold pt-2 border-t border-gray-300">
+      <div className={`flex justify-between text-base font-semibold pt-2 border-t border-gray-300 ${hasDiscount ? '' : 'pb-0'}`}>
         <span className="text-gray-900">Total:</span>
-        <span className="text-green-600">₱{formatCurrency(displayTotal)}</span>
+        <span className={hasDiscount ? "text-gray-600" : "text-green-600"}>₱{formatCurrency(displayTotal)}</span>
       </div>
+      {hasDiscount && (
+        <>
+          <div className="flex justify-between text-sm text-orange-600">
+            <span className="font-medium">Discount:</span>
+            <span className="font-medium">- ₱{formatCurrency(displayDiscount)}</span>
+          </div>
+          <div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-300">
+            <span className="text-gray-900">Final Total:</span>
+            <span className="text-green-600">₱{formatCurrency(displayFinalTotal)}</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -46,14 +46,17 @@ export const ProductFactory = {
                 primaryCode: data.supplier?.primaryCode || data.SupplierCode || ''
             },
             
-            // Stock levels
-            restockLevel: Number(data.RestockLevel || data.restockLevel || 0),
-            maximumStockLevel: Number(data.MaximumStockLevel || data.maximumStockLevel || 0),
-            
             // Product details
             imageUrl: data.imageUrl || null,
             size: data.Size || data.size || 'default',
             unit: data.Unit || data.unit || 'pcs',
+            
+            // Bundle/Package information
+            isBundle: data.isBundle || false,
+            piecesPerBundle: data.piecesPerBundle || null,
+            bundlePackagingType: data.bundlePackagingType || null,
+            totalBundles: data.totalBundles || null,
+            loosePieces: data.loosePieces || null,
             
             customFields: {
                 ...(data.TotalValue && { totalValue: Number(data.TotalValue) }),
@@ -91,10 +94,6 @@ export const ProductFactory = {
             fullLocation: data.fullLocation || '',
             location: data.location || data.storageLocation || '', // Backward compatibility
             
-            // Stock levels
-            restockLevel: Number(data.restockLevel) || 0,
-            maximumStockLevel: Number(data.maximumStockLevel) || 0,
-            
             // Product details
             size: data.size || 'default',
             specifications: data.specifications || '',
@@ -107,6 +106,39 @@ export const ProductFactory = {
                 primaryCode: ''
             },
             suppliers: data.suppliers || (data.supplier ? [data.supplier] : []),
+            supplierPrice: Number(data.supplierPrice) || 0,
+            
+            // Measurement type and unit information
+            measurementType: data.measurementType || 'count',
+            baseUnit: data.baseUnit || 'pcs',
+            
+            // Safety stock and inventory management
+            safetyStock: Number(data.safetyStock) || 0,
+            multiLocation: data.multiLocation || false,
+            totalQuantityAllLocations: Number(data.totalQuantityAllLocations) || 0,
+            
+            // Measurement-specific fields for weight-based products
+            ...(data.measurementType === 'weight' && data.unitWeightKg ? {
+                unitWeightKg: Number(data.unitWeightKg)
+            } : {}),
+            
+            // Measurement-specific fields for volume-based products
+            ...(data.measurementType === 'volume' && data.unitVolumeLiters ? {
+                unitVolumeLiters: Number(data.unitVolumeLiters)
+            } : {}),
+            
+            // Measurement-specific fields for length-based products with dimensions
+            ...(data.measurementType === 'length' && data.length ? {
+                length: Number(data.length),
+                width: Number(data.width) || 0,
+                thickness: Number(data.thickness) || 0,
+                unitVolumeCm3: Number(data.unitVolumeCm3) || 0
+            } : {}),
+            
+            // UOM conversions for count-based products
+            ...(data.measurementType === 'count' && data.uomConversions ? {
+                uomConversions: data.uomConversions
+            } : {}),
             
             // Additional fields
             categoryValues: data.categoryValues || {},
@@ -116,6 +148,15 @@ export const ProductFactory = {
             isVariant: data.isVariant || false,
             parentProductId: data.parentProductId || null,
             variantName: data.variantName || 'Standard',
+            
+            // Bundle/Package information
+            isBundle: data.isBundle || false,
+            ...(data.isBundle && data.piecesPerBundle ? {
+                piecesPerBundle: Number(data.piecesPerBundle),
+                bundlePackagingType: data.bundlePackagingType || 'bundle',
+                totalBundles: Number(data.totalBundles) || 0,
+                loosePieces: Number(data.loosePieces) || 0
+            } : {}),
             
             // Timestamps
             dateStocked: data.dateStocked || new Date().toISOString().split('T')[0],
@@ -162,6 +203,15 @@ export const ProductFactory = {
             // Flat structure flags
             isVariant: true,
             variantName: variantData.size || variantData.specifications || 'Variant',
+            
+            // Bundle/Package information
+            isBundle: variantData.isBundle || parentProduct.isBundle || false,
+            ...(variantData.isBundle && variantData.piecesPerBundle ? {
+                piecesPerBundle: Number(variantData.piecesPerBundle),
+                bundlePackagingType: variantData.bundlePackagingType || 'bundle',
+                totalBundles: Number(variantData.totalBundles) || 0,
+                loosePieces: Number(variantData.loosePieces) || 0
+            } : {}),
             
             createdAt: new Date().toISOString(),
             lastUpdated: new Date().toISOString()

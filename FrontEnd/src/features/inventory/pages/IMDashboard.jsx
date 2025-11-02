@@ -24,6 +24,10 @@ import InfoModal from '../components/Dashboard/InfoModal';
 import InventoryTrendChart from '../components/Inventory/InventoryTrendChart';
 import { useServices } from '../../../services/firebase/ProductServices';
 
+// Import Restocking Alert Components
+import RestockingAlertModal from '../components/Admin/RestockingAlertModal';
+import RestockingAlertBadge from '../components/Admin/RestockingAlertBadge';
+
 const IMDashboard = () => {
   const [currentMonth, setCurrentMonth] = useState('October');
   const { listenToProducts, fetchRestockRequests } = useServices(); 
@@ -33,6 +37,7 @@ const IMDashboard = () => {
   
   // Modal states
   const [activeModal, setActiveModal] = useState(null);
+  const [showRestockingAlerts, setShowRestockingAlerts] = useState(false);
 
   // Chart information content
   const chartInfo = {
@@ -277,6 +282,17 @@ const IMDashboard = () => {
         onClose={() => setActiveModal(null)}
         title={chartInfo.stockLog.title}
         content={chartInfo.stockLog.content}
+      />
+
+      {/* Restocking Alert Modal */}
+      <RestockingAlertModal
+        isOpen={showRestockingAlerts}
+        onClose={() => setShowRestockingAlerts(false)}
+      />
+
+      {/* Floating Restocking Alert Badge */}
+      <RestockingAlertBadge
+        onClick={() => setShowRestockingAlerts(true)}
       />
     </div>
   );

@@ -1,0 +1,636 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  doc, 
+  updateDoc, 
+  addDoc,
+  serverTimestamp,
+  orderBy,
+  getDocs,
+  runTransaction
+} from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
+import app from '../../../../FirebaseConfig';
+import { useAuth } from '../../../auth/services/FirebaseAuth';
+
+const db = getFirestore(app);
+
+const RestockingAlertModal = ({ isOpen, onClose }) => {
+  const { currentUser } = useAuth();
+  const [restockingRequests, setRestockingRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [processingId, setProcessingId] = useState(null);
+  const [filter, setFilter] = useState('all');
+  const [expandedGroups, setExpandedGroups] = useState({});
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    setLoading(true);
+
+    const q = query(
+      collection(db, 'RestockingRequests'),
+      where('status', 'in', ['pending', 'acknowledged']),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const requests = [];
+        snapshot.forEach((doc) => {
+          requests.push({
+            id: doc.id,
+            ...doc.data()
+          });
+        });
+
+        const priorityOrder = { critical: 0, urgent: 1, high: 2, medium: 3, normal: 4 };
+        requests.sort((a, b) => {
+          const priorityA = priorityOrder[a.priority] || 999;
+          const priorityB = priorityOrder[b.priority] || 999;
+          return priorityA - priorityB;
+        });
+
+        setRestockingRequests(requests);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error fetching restocking requests:', error);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isOpen]);
+
+  // Group requests by product ID and variant details (to combine same product across locations)
+  const groupedRequests = useMemo(() => {
+    const groups = {};
+    
+    restockingRequests.forEach(request => {
+      // Create a unique key combining productId and variant details
+      // This ensures same product with same variant but different locations are grouped
+      const variantKey = request.variantDetails 
+        ? `${request.variantDetails.size || 'default'}_${request.variantDetails.unit || 'pcs'}`
+        : 'no_variant';
+      
+      const key = `${request.productId}_${variantKey}`;
+      
+      if (!groups[key]) {
+        groups[key] = {
+          productId: request.productId,
+          productName: request.productName,
+          category: request.category,
+          priority: request.priority,
+          variantDetails: request.variantDetails,
+          locations: [],
+          totalCurrentQty: 0,
+          highestROP: 0,
+          totalSafetyStock: 0
+        };
+      }
+      
+      groups[key].locations.push(request);
+      groups[key].totalCurrentQty += request.currentQuantity || 0;
+      groups[key].highestROP = Math.max(groups[key].highestROP, request.restockLevel || 0);
+      
+      if (request.safetyStock && request.safetyStock > 0) {
+        groups[key].totalSafetyStock += request.safetyStock;
+      }
+      
+      // Use highest priority from all locations
+      const priorityOrder = { critical: 0, urgent: 1, high: 2, medium: 3, normal: 4 };
+      const currentPriorityValue = priorityOrder[groups[key].priority] || 999;
+      const newPriorityValue = priorityOrder[request.priority] || 999;
+      if (newPriorityValue < currentPriorityValue) {
+        groups[key].priority = request.priority;
+      }
+    });
+    
+    return Object.values(groups).sort((a, b) => {
+      const priorityOrder = { critical: 0, urgent: 1, high: 2, medium: 3, normal: 4 };
+      return (priorityOrder[a.priority] || 999) - (priorityOrder[b.priority] || 999);
+    });
+  }, [restockingRequests]);
+
+  // Filter groups by priority
+  const filteredGroups = useMemo(() => {
+    if (filter === 'all') return groupedRequests;
+    return groupedRequests.filter(group => group.priority === filter);
+  }, [groupedRequests, filter]);
+
+  // Count by priority
+  const counts = useMemo(() => {
+    return {
+      critical: groupedRequests.filter(g => g.priority === 'critical').length,
+      urgent: groupedRequests.filter(g => g.priority === 'urgent').length,
+      high: groupedRequests.filter(g => g.priority === 'high').length,
+      all: groupedRequests.length
+    };
+  }, [groupedRequests]);
+
+  // Toggle group expansion
+  const toggleGroup = (groupKey) => {
+    setExpandedGroups(prev => ({
+      ...prev,
+      [groupKey]: !prev[groupKey]
+    }));
+  };
+
+  // Get priority icon and color
+  const getPriorityDisplay = (priority) => {
+    const displays = {
+      critical: { label: 'CRITICAL', color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-300', badgeBg: 'bg-red-600' },
+      urgent: { label: 'URGENT', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-300', badgeBg: 'bg-orange-600' },
+      high: { label: 'HIGH', color: 'text-yellow-600', bg: 'bg-yellow-50', border: 'border-yellow-300', badgeBg: 'bg-yellow-600' },
+      medium: { label: 'MEDIUM', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-300', badgeBg: 'bg-blue-600' },
+      normal: { label: 'NORMAL', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-300', badgeBg: 'bg-green-600' }
+    };
+    return displays[priority] || displays.normal;
+  };
+
+  /**
+   * Replenish stock using safety stock
+   * Status behavior:
+   * - pending: New request, shows in modal
+   * - acknowledged: User saw it, remains visible
+   * - resolved_safety_stock: Resolved by safety stock replenishment (removed from modal)
+   * - dismissed: Ignored/removed (removed from modal)
+   */
+  const handleReplenish = async (group) => {
+    if (processingId) return;
+
+    // Use the first location's request data as representative
+    const request = group.locations[0];
+    const safetyStockAmount = request.safetyStock || 0;
+
+    if (safetyStockAmount <= 0) {
+      alert('Cannot replenish: No safety stock available for this product.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Replenish stock using safety stock?\n\n` +
+      `Product: ${group.productName}\n` +
+      `Current Stock: ${group.totalCurrentQty} units\n` +
+      `Safety Stock Available: ${group.totalSafetyStock} units\n` +
+      `Amount to Replenish: ${safetyStockAmount} units\n\n` +
+      `This will move ${safetyStockAmount} units from safety stock to normal stock.`
+    );
+
+    if (!confirmed) return;
+
+    setProcessingId(request.id);
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        // Find the product document
+        const productsRef = collection(db, 'Products');
+        const storageUnitsSnapshot = await getDocs(productsRef);
+        
+        let productFound = false;
+        let productRef = null;
+        let productData = null;
+
+        for (const unitDoc of storageUnitsSnapshot.docs) {
+          const unitId = unitDoc.id;
+          if (!unitId.startsWith('Unit ')) continue;
+
+          const unitProductsRef = collection(db, 'Products', unitId, 'products');
+          const productsSnapshot = await getDocs(unitProductsRef);
+
+          for (const prodDoc of productsSnapshot.docs) {
+            const data = prodDoc.data();
+            
+            if (data.id === request.productId || data.productId === request.productId) {
+              productRef = prodDoc.ref;
+              productData = data;
+              productFound = true;
+              break;
+            }
+          }
+
+          if (productFound) break;
+        }
+
+        if (!productFound || !productRef) {
+          throw new Error('Product not found in inventory');
+        }
+
+        const previousQuantity = request.currentQuantity;
+        const newQuantity = previousQuantity + safetyStockAmount;
+        const newSafetyStock = Math.max(0, (productData.safetyStock || 0) - safetyStockAmount);
+
+        // Update product quantity and safety stock
+        if (request.variantIndex >= 0 && productData.variants) {
+          const updatedVariants = [...productData.variants];
+          updatedVariants[request.variantIndex] = {
+            ...updatedVariants[request.variantIndex],
+            quantity: newQuantity,
+            safetyStock: newSafetyStock
+          };
+          
+          transaction.update(productRef, {
+            variants: updatedVariants,
+            lastUpdated: serverTimestamp()
+          });
+        } else {
+          transaction.update(productRef, {
+            quantity: newQuantity,
+            safetyStock: newSafetyStock,
+            lastUpdated: serverTimestamp()
+          });
+        }
+
+        // Create stock movement record
+        const movementRef = doc(collection(db, 'stock_movements'));
+        transaction.set(movementRef, {
+          movementType: 'safety_stock_replenishment',
+          productId: request.productId,
+          productName: request.productName,
+          previousQuantity: previousQuantity,
+          newQuantity: newQuantity,
+          usedSafetyStock: safetyStockAmount,
+          location: request.location,
+          reason: 'Replenished from safety stock',
+          performedBy: currentUser?.uid || 'unknown',
+          performedByName: currentUser?.displayName || currentUser?.email || 'Unknown',
+          timestamp: serverTimestamp()
+        });
+
+        // Create release log for legacy mobile build integration
+        const releaseLogRef = doc(collection(db, 'release_logs'));
+        transaction.set(releaseLogRef, {
+          productId: request.productId,
+          productName: request.productName,
+          quantityReleased: safetyStockAmount,
+          relatedRequestId: request.id,
+          releasedBy: currentUser?.uid || 'unknown',
+          releasedByName: currentUser?.displayName || currentUser?.email || 'Unknown',
+          timestamp: serverTimestamp()
+        });
+
+        // Update all requests in this group to resolved
+        for (const loc of group.locations) {
+          const requestRef = doc(db, 'RestockingRequests', loc.id);
+          transaction.update(requestRef, {
+            status: 'resolved_safety_stock',
+            resolvedAt: serverTimestamp(),
+            resolvedBy: currentUser?.uid || 'unknown',
+            resolvedByName: currentUser?.displayName || currentUser?.email || 'Unknown',
+            updatedAt: serverTimestamp()
+          });
+        }
+      });
+
+      alert(
+        `Replenishment Successful!\n\n` +
+        `${group.productName} has been replenished from safety stock.\n\n` +
+        `Added: ${safetyStockAmount} units\n` +
+        `New Stock: ${group.totalCurrentQty + safetyStockAmount} units`
+      );
+
+    } catch (error) {
+      console.error('Replenishment error:', error);
+      alert(`Replenishment failed: ${error.message}`);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  // Acknowledge alert (mark as seen)
+  const handleAcknowledge = async (requestId) => {
+    try {
+      const requestRef = doc(db, 'RestockingRequests', requestId);
+      await updateDoc(requestRef, {
+        status: 'acknowledged',
+        acknowledgedBy: currentUser?.uid || 'unknown',
+        acknowledgedByName: currentUser?.displayName || currentUser?.email || 'Unknown',
+        acknowledgedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Error acknowledging request:', error);
+      alert('Failed to acknowledge alert');
+    }
+  };
+
+  // Dismiss alert
+  const handleDismiss = async (requestId) => {
+    const confirmed = window.confirm(
+      'Are you sure you want to dismiss this alert?\n\n' +
+      'The alert will be marked as dismissed and removed from the list.'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const requestRef = doc(db, 'RestockingRequests', requestId);
+      await updateDoc(requestRef, {
+        status: 'dismissed',
+        dismissedBy: currentUser?.uid || 'unknown',
+        dismissedByName: currentUser?.displayName || currentUser?.email || 'Unknown',
+        dismissedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Error dismissing request:', error);
+      alert('Failed to dismiss alert');
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+        <div 
+          className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75"
+          onClick={onClose}
+        />
+
+        <div className="inline-block w-full max-w-6xl my-8 overflow-hidden text-left align-middle transition-all transform bg-white rounded-lg shadow-xl">
+          <div className="px-6 py-4 bg-gradient-to-r from-orange-500 to-red-500">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center justify-center w-10 h-10 bg-white rounded-full">
+                  <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">
+                    Restocking Alerts
+                  </h3>
+                  <p className="text-sm text-orange-100">
+                    {counts.all} product{counts.all !== 1 ? 's' : ''} need attention
+                    {counts.critical > 0 && ` • ${counts.critical} critical`}
+                    {counts.urgent > 0 && ` • ${counts.urgent} urgent`}
+                    {counts.high > 0 && ` • ${counts.high} high`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={onClose}
+                className="text-white transition-colors hover:text-gray-200"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div className="border-b border-gray-200 bg-gray-50">
+            <div className="flex px-6 space-x-2">
+              <button
+                onClick={() => setFilter('all')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  filter === 'all'
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                All ({counts.all})
+              </button>
+              <button
+                onClick={() => setFilter('critical')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  filter === 'critical'
+                    ? 'border-red-500 text-red-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Critical ({counts.critical})
+              </button>
+              <button
+                onClick={() => setFilter('urgent')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  filter === 'urgent'
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Urgent ({counts.urgent})
+              </button>
+              <button
+                onClick={() => setFilter('high')}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  filter === 'high'
+                    ? 'border-yellow-500 text-yellow-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                High ({counts.high})
+              </button>
+            </div>
+          </div>
+
+          <div className="px-6 py-4 max-h-[600px] overflow-y-auto">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                  <div className="inline-block w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                  <p className="text-gray-600">Loading alerts...</p>
+                </div>
+              </div>
+            ) : filteredGroups.length === 0 ? (
+              <div className="py-12 text-center">
+                <svg className="w-16 h-16 mx-auto text-green-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <h4 className="text-lg font-semibold text-gray-700 mb-2">
+                  No Alerts
+                </h4>
+                <p className="text-gray-500">
+                  {filter === 'all' 
+                    ? 'All inventory levels are healthy!'
+                    : `No ${filter} priority alerts at this time.`
+                  }
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredGroups.map((group) => {
+                  // Create the same key format used in grouping
+                  const variantKey = group.variantDetails 
+                    ? `${group.variantDetails.size || 'default'}_${group.variantDetails.unit || 'pcs'}`
+                    : 'no_variant';
+                  const groupKey = `${group.productId}_${variantKey}`;
+                  
+                  const display = getPriorityDisplay(group.priority);
+                  const isExpanded = expandedGroups[groupKey];
+                  const hasMultipleLocations = group.locations.length > 1;
+                  
+                  // Create display name with variant info if exists
+                  const displayName = group.variantDetails && group.variantDetails.size !== 'N/A'
+                    ? `${group.productName} (${group.variantDetails.size} ${group.variantDetails.unit})`
+                    : group.productName;
+                  
+                  return (
+                    <div
+                      key={groupKey}
+                      className={`border-2 rounded-lg ${display.border} ${display.bg} transition-all hover:shadow-md`}
+                    >
+                      <div className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-3">
+                              <span className={`px-3 py-1 rounded-full text-xs font-bold text-white ${display.badgeBg}`}>
+                                {display.label}
+                              </span>
+                              <div className="flex-1">
+                                <h4 className="text-lg font-bold text-gray-800">
+                                  {displayName}
+                                </h4>
+                                <p className="text-sm text-gray-600">{group.category}</p>
+                              </div>
+                              {hasMultipleLocations && (
+                                <button
+                                  onClick={() => toggleGroup(groupKey)}
+                                  className="px-3 py-1 text-sm text-blue-600 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-1"
+                                >
+                                  <span>{group.locations.length} locations</span>
+                                  <svg 
+                                    className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} 
+                                    fill="none" 
+                                    stroke="currentColor" 
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-4 mb-3">
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">Total Current Stock</p>
+                                <p className={`text-lg font-bold ${display.color}`}>
+                                  {group.totalCurrentQty}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">Reorder Point</p>
+                                <p className="text-lg font-semibold text-gray-700">
+                                  {group.highestROP}
+                                </p>
+                              </div>
+                              {group.totalSafetyStock > 0 && (
+                                <div>
+                                  <p className="text-xs text-gray-500 mb-1">Safety Stock Available</p>
+                                  <p className="text-lg font-bold text-blue-600">
+                                    {group.totalSafetyStock}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+
+                            {isExpanded && hasMultipleLocations && (
+                              <div className="mt-3 border-t border-gray-300 pt-3">
+                                <h5 className="text-sm font-semibold text-gray-700 mb-2">Location Breakdown:</h5>
+                                <div className="space-y-2">
+                                  {group.locations.map((location) => (
+                                    <div key={location.id} className="flex justify-between items-center bg-white p-2 rounded border border-gray-200">
+                                      <div className="flex-1">
+                                        <p className="text-sm font-medium text-gray-800">
+                                          {location.location?.fullPath || location.fullLocation || 'Unknown Location'}
+                                        </p>
+                                        <p className="text-xs text-gray-500">
+                                          Stock: {location.currentQuantity} | ROP: {location.restockLevel}
+                                          {location.safetyStock > 0 && ` | Safety: ${location.safetyStock}`}
+                                        </p>
+                                      </div>
+                                      <div className="flex gap-2">
+                                        <button
+                                          onClick={() => handleAcknowledge(location.id)}
+                                          className="px-2 py-1 text-xs bg-yellow-500 text-white rounded hover:bg-yellow-600 transition-colors"
+                                        >
+                                          Acknowledge
+                                        </button>
+                                        <button
+                                          onClick={() => handleDismiss(location.id)}
+                                          className="px-2 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors"
+                                        >
+                                          Dismiss
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex flex-col gap-2 ml-4">
+                            {group.totalSafetyStock > 0 && (
+                              <button
+                                onClick={() => handleReplenish(group)}
+                                disabled={processingId}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm font-medium whitespace-nowrap flex items-center gap-2"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                {processingId ? 'Processing...' : 'Replenish'}
+                              </button>
+                            )}
+
+                            {!hasMultipleLocations && group.locations[0]?.status === 'pending' && (
+                              <button
+                                onClick={() => handleAcknowledge(group.locations[0].id)}
+                                className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors text-sm font-medium whitespace-nowrap flex items-center gap-2"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                                Acknowledge
+                              </button>
+                            )}
+
+                            {!hasMultipleLocations && (
+                              <button
+                                onClick={() => handleDismiss(group.locations[0].id)}
+                                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm font-medium whitespace-nowrap flex items-center gap-2"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                Dismiss
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                Real-time monitoring - Updates automatically
+              </p>
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default RestockingAlertModal;

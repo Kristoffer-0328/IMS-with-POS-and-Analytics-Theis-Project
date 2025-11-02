@@ -13,6 +13,7 @@ export const ServicesProvider = ({ children }) => {
   const listenToProducts = useCallback((onUpdate) => {
     const allProducts = [];
     let isFirstLoad = true;
+    const unsubscribers = [];
 
     // Fetch products from nested structure: Products/{storageUnit}/products/{productId}
     const fetchAllProducts = async () => {
@@ -66,6 +67,14 @@ export const ServicesProvider = ({ children }) => {
               isVariant: data.isVariant || false,
               parentProductId: data.parentProductId || null,
               variantName: data.variantName || data.size || 'Standard',
+              
+              // Bundle/Package information
+              isBundle: data.isBundle || false,
+              piecesPerBundle: data.piecesPerBundle || null,
+              bundlePackagingType: data.bundlePackagingType || null,
+              totalBundles: data.totalBundles || null,
+              loosePieces: data.loosePieces || null,
+              
               totalvalue: (typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice) || 0) * 
                          (typeof data.quantity === 'number' ? data.quantity : parseInt(data.quantity) || 0)
             });
@@ -83,26 +92,51 @@ export const ServicesProvider = ({ children }) => {
       }
     };
 
+    // Setup listeners for each storage unit's products subcollection
+    const setupListeners = async () => {
+      try {
+        const productsRef = collection(db, "Products");
+        const storageUnitsSnapshot = await getDocs(productsRef);
+        
+        // Set up a listener for each storage unit's products subcollection
+        for (const storageUnitDoc of storageUnitsSnapshot.docs) {
+          const unitId = storageUnitDoc.id;
+          
+          if (!unitId.startsWith('Unit ')) {
+            continue;
+          }
+          
+          const productsSubcollectionRef = collection(db, "Products", unitId, "products");
+          const unsubscribe = onSnapshot(
+            productsSubcollectionRef,
+            (snapshot) => {
+              if (!isFirstLoad) {
+                fetchAllProducts();
+              }
+            },
+            (error) => {
+              console.error(`Error listening to Products/${unitId}/products:`, error);
+            }
+          );
+          
+          unsubscribers.push(unsubscribe);
+        }
+        
+        isFirstLoad = false;
+      } catch (error) {
+        console.error('Error setting up listeners:', error);
+      }
+    };
+
     // Initial fetch
     fetchAllProducts();
-
-    // Set up a listener on the Products collection to detect changes
-    const unsubscribe = onSnapshot(
-      collection(db, "Products"),
-      (snapshot) => {
-        if (!isFirstLoad) {
-          fetchAllProducts();
-        }
-        isFirstLoad = false;
-      },
-      (error) => {
-        console.error('Error listening to Products collection:', error);
-      }
-    );
+    
+    // Setup listeners after initial fetch
+    setupListeners();
 
     // Return cleanup function
     return () => {
-      unsubscribe();
+      unsubscribers.forEach(unsub => unsub());
     };
   }, []); // Empty dependency array since it doesn't depend on any external values
 
@@ -190,8 +224,15 @@ const updateProductVariantsWithSupplier = async (productId, supplierId, supplier
     const storageLocationsRef = collection(db, 'Products');
     const storageLocationsSnapshot = await getDocs(storageLocationsRef);
     
+    let productFound = false;
+    
     for (const storageLocationDoc of storageLocationsSnapshot.docs) {
       const storageLocation = storageLocationDoc.id;
+      
+      // Skip non-storage unit documents
+      if (!storageLocation.startsWith('Unit ')) {
+        continue;
+      }
       
       // Check if this storage location has a products subcollection
       const productsRef = collection(db, 'Products', storageLocation, 'products');
@@ -200,37 +241,107 @@ const updateProductVariantsWithSupplier = async (productId, supplierId, supplier
         const productsSnapshot = await getDocs(productsRef);
         
         for (const productDoc of productsSnapshot.docs) {
-          if (productDoc.id === productId) {
+          if (productDoc.id === productId || productDoc.id.startsWith(productId)) {
             const productData = productDoc.data();
+            const productRef = doc(db, 'Products', storageLocation, 'products', productDoc.id);
             
-            // Update variants with supplier information
+            // Prepare supplier information
+            const supplierInfo = {
+              name: supplierData.supplierName || 'Unknown',
+              code: supplierData.supplierCode || supplierData.supplierSKU || '',
+              primaryCode: supplierData.supplierCode || supplierData.supplierSKU || '',
+              id: supplierId,
+              price: supplierData.supplierPrice || 0,
+              sku: supplierData.supplierSKU || ''
+            };
+            
+            // Check if product has variants structure
             if (productData.variants && Array.isArray(productData.variants)) {
-              const updatedVariants = productData.variants.map(variant => ({
-                ...variant,
-                supplier: {
-                  name: supplierData.supplierName || 'Unknown',
-                  code: supplierData.supplierCode || supplierData.supplierSKU || '',
-                  id: supplierId,
-                  price: supplierData.supplierPrice || variant.unitPrice || 0,
-                  sku: supplierData.supplierSKU || ''
-                }
-              }));
+              // Get existing suppliers array or initialize empty array
+              const existingSuppliers = productData.suppliers || [];
               
-              // Update the product document with the new variants
-              const productRef = doc(db, 'Products', storageLocation, 'products', productId);
-              await updateDoc(productRef, {
+              // Check if supplier already exists
+              const supplierExists = existingSuppliers.some(s => s.id === supplierId);
+              
+              // Update variants with supplier information
+              const updatedVariants = productData.variants.map(variant => {
+                const variantSuppliers = variant.suppliers || [];
+                const variantSupplierExists = variantSuppliers.some(s => s.id === supplierId);
+                
+                if (variantSupplierExists) {
+                  // Update existing supplier in variant
+                  return {
+                    ...variant,
+                    suppliers: variantSuppliers.map(s => 
+                      s.id === supplierId 
+                        ? { ...supplierInfo, price: supplierData.supplierPrice || variant.unitPrice || 0 }
+                        : s
+                    )
+                  };
+                } else {
+                  // Add new supplier to variant
+                  return {
+                    ...variant,
+                    suppliers: [...variantSuppliers, {
+                      ...supplierInfo,
+                      price: supplierData.supplierPrice || variant.unitPrice || 0,
+                      sku: supplierData.supplierSKU || ''
+                    }]
+                  };
+                }
+              });
+              
+              // Prepare update object
+              const updateData = {
                 variants: updatedVariants,
                 updatedAt: new Date().toISOString()
-              });
-
-              return; // Found and updated, no need to continue searching
+              };
+              
+              // Add or update supplier in product-level suppliers array
+              if (supplierExists) {
+                updateData.suppliers = existingSuppliers.map(s => 
+                  s.id === supplierId ? supplierInfo : s
+                );
+              } else {
+                updateData.suppliers = [...existingSuppliers, supplierInfo];
+              }
+              
+              // Update the product document
+              await updateDoc(productRef, updateData);
+            } else {
+              // Product doesn't have variants - update product directly
+              const existingSuppliers = productData.suppliers || [];
+              const supplierExists = existingSuppliers.some(s => s.id === supplierId);
+              
+              const updateData = {
+                updatedAt: new Date().toISOString()
+              };
+              
+              if (supplierExists) {
+                // Update existing supplier
+                updateData.suppliers = existingSuppliers.map(s => 
+                  s.id === supplierId ? supplierInfo : s
+                );
+              } else {
+                // Add new supplier
+                updateData.suppliers = [...existingSuppliers, supplierInfo];
+              }
+              
+              await updateDoc(productRef, updateData);
             }
+            
+            productFound = true;
           }
         }
       } catch (err) {
         // Continue to next storage location if this one fails
+        console.error(`Error updating products in ${storageLocation}:`, err);
         continue;
       }
+    }
+    
+    if (!productFound) {
+      console.warn(`Product ${productId} not found in any storage location`);
     }
   } catch (error) {
     console.error('Error updating product variants with supplier:', error);
@@ -261,8 +372,15 @@ const removeSupplierFromProductVariants = async (productId, supplierId) => {
     const storageLocationsRef = collection(db, 'Products');
     const storageLocationsSnapshot = await getDocs(storageLocationsRef);
     
+    let productFound = false;
+    
     for (const storageLocationDoc of storageLocationsSnapshot.docs) {
       const storageLocation = storageLocationDoc.id;
+      
+      // Skip non-storage unit documents
+      if (!storageLocation.startsWith('Unit ')) {
+        continue;
+      }
       
       // Check if this storage location has a products subcollection
       const productsRef = collection(db, 'Products', storageLocation, 'products');
@@ -271,35 +389,57 @@ const removeSupplierFromProductVariants = async (productId, supplierId) => {
         const productsSnapshot = await getDocs(productsRef);
         
         for (const productDoc of productsSnapshot.docs) {
-          if (productDoc.id === productId) {
+          if (productDoc.id === productId || productDoc.id.startsWith(productId)) {
             const productData = productDoc.data();
+            const productRef = doc(db, 'Products', storageLocation, 'products', productDoc.id);
             
-            // Remove supplier information from variants
+            // Check if product has variants structure
             if (productData.variants && Array.isArray(productData.variants)) {
+              // Remove supplier from variants' suppliers arrays
               const updatedVariants = productData.variants.map(variant => {
-                // Remove supplier info if it matches the supplier being unlinked
-                if (variant.supplier && variant.supplier.id === supplierId) {
-                  const { supplier, ...variantWithoutSupplier } = variant;
-                  return variantWithoutSupplier;
+                if (variant.suppliers && Array.isArray(variant.suppliers)) {
+                  return {
+                    ...variant,
+                    suppliers: variant.suppliers.filter(s => s.id !== supplierId)
+                  };
                 }
                 return variant;
               });
               
-              // Update the product document with the updated variants
-              const productRef = doc(db, 'Products', storageLocation, 'products', productId);
-              await updateDoc(productRef, {
+              // Remove supplier from product-level suppliers array
+              const existingSuppliers = productData.suppliers || [];
+              const updatedSuppliers = existingSuppliers.filter(s => s.id !== supplierId);
+              
+              const updateData = {
                 variants: updatedVariants,
+                suppliers: updatedSuppliers,
+                updatedAt: new Date().toISOString()
+              };
+              
+              await updateDoc(productRef, updateData);
+            } else {
+              // Product doesn't have variants - remove supplier from product's suppliers array
+              const existingSuppliers = productData.suppliers || [];
+              const updatedSuppliers = existingSuppliers.filter(s => s.id !== supplierId);
+              
+              await updateDoc(productRef, {
+                suppliers: updatedSuppliers,
                 updatedAt: new Date().toISOString()
               });
-
-              return; // Found and updated, no need to continue searching
             }
+            
+            productFound = true;
           }
         }
       } catch (err) {
         // Continue to next storage location if this one fails
+        console.error(`Error removing supplier from products in ${storageLocation}:`, err);
         continue;
       }
+    }
+    
+    if (!productFound) {
+      console.warn(`Product ${productId} not found in any storage location`);
     }
   } catch (error) {
     console.error('Error removing supplier from product variants:', error);

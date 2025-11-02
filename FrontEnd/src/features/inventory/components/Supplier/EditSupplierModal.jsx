@@ -13,7 +13,6 @@ const   EditSupplierModal = ({ supplier, onClose }) => {
     phone: '',
     email: '',
     status: 'active',
-    restockThreshold: '',
     leadTime: ''
   });
   
@@ -32,7 +31,6 @@ const   EditSupplierModal = ({ supplier, onClose }) => {
         email: supplier.email || '',
         status: supplier.status || 'active',
         supplierCodes: supplier.supplierCodes || [],
-        restockThreshold: supplier.restockThreshold || '',
         leadTime: supplier.leadTime || ''
       });
     }
@@ -112,7 +110,6 @@ const   EditSupplierModal = ({ supplier, onClose }) => {
           phone: formData.phone,
           email: formData.email,
           status: formData.status,
-          restockThreshold: parseInt(formData.restockThreshold) || 0,
           leadTime: parseInt(formData.leadTime) || 7
         });
       } else {
@@ -125,7 +122,6 @@ const   EditSupplierModal = ({ supplier, onClose }) => {
           phone: formData.phone,
           email: formData.email,
           status: formData.status,
-          restockThreshold: parseInt(formData.restockThreshold) || 0,
           leadTime: parseInt(formData.leadTime) || 7
         });
       }
@@ -267,24 +263,6 @@ const   EditSupplierModal = ({ supplier, onClose }) => {
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Restock Threshold
-              </label>
-              <input
-                type="number"
-                name="restockThreshold"
-                value={formData.restockThreshold}
-                onChange={handleChange}
-                min="0"
-                className="w-full border rounded-lg px-3 py-2"
-                placeholder="Enter minimum products for restock"
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                Minimum number of products that need restocking before creating a purchase order
-              </p>
             </div>
 
             <div>

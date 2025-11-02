@@ -21,10 +21,16 @@ const ProductList = ({ cartItems: addedProducts, onRemoveItem, isProcessing }) =
         groups[productKey] = {
           productName: item.name,
           baseName: item.baseName || item.name,
-          price: item.price,
+          price: item.price, // This is price per piece
+          bundlePrice: item.bundlePrice, // Original bundle price if bundle product
           unit: item.unit,
           totalQuantity: 0,
-          locations: []
+          locations: [],
+          isBundle: item.isBundle,
+          piecesPerBundle: item.piecesPerBundle,
+          bundlePackagingType: item.bundlePackagingType,
+          baseUnit: item.baseUnit,
+          formattedDimensions: item.formattedDimensions
         };
       }
       
@@ -64,12 +70,59 @@ const ProductList = ({ cartItems: addedProducts, onRemoveItem, isProcessing }) =
                 <h4 className="font-medium text-gray-900 text-sm leading-tight mb-1">
                   {productGroup.productName}
                 </h4>
-                <div className="flex items-center text-xs text-gray-500 space-x-2">
-                  <span className="font-medium text-orange-600">
-                    Total: {productGroup.totalQuantity} {productGroup.unit || 'pcs'}
-                  </span>
-                  <span>×</span>
-                  <span>{formatCurrency(productGroup.price)}</span>
+                <div className="flex flex-col gap-1">
+                  {/* Bundle or dimension info */}
+                  {productGroup.isBundle && productGroup.piecesPerBundle ? (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                          📦 Bundle
+                        </span>
+                        <span className="text-xs text-gray-600">
+                          {productGroup.piecesPerBundle} {productGroup.baseUnit || 'pcs'} per {productGroup.bundlePackagingType || 'bundle'}
+                        </span>
+                      </div>
+                      {/* Show pricing information for bundles */}
+                      <div className="bg-purple-50 rounded px-2 py-1 text-xs space-y-0.5">
+                        {productGroup.bundlePrice && (
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-purple-600">Bundle Price:</span>
+                            <span className="font-medium text-purple-700">
+                              {formatCurrency(productGroup.bundlePrice)} / {productGroup.bundlePackagingType || 'bundle'}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-purple-600">Price per {productGroup.baseUnit || 'pc'}:</span>
+                          <span className="font-medium text-purple-700">{formatCurrency(productGroup.price)}</span>
+                        </div>
+                      </div>
+                    </>
+                  ) : productGroup.formattedDimensions ? (
+                    <span className="text-xs text-gray-600">
+                      📏 {productGroup.formattedDimensions}
+                    </span>
+                  ) : null}
+                  
+                  {/* Total quantity and price per unit */}
+                  <div className="flex items-center text-xs text-gray-500 space-x-2">
+                    <span className="font-medium text-orange-600">
+                      {productGroup.isBundle ? (
+                        <>
+                          Total: {Math.floor(productGroup.totalQuantity / (productGroup.piecesPerBundle || 1))} {productGroup.bundlePackagingType || 'bundles'}
+                          {productGroup.totalQuantity % (productGroup.piecesPerBundle || 1) > 0 && (
+                            <span className="ml-1 text-blue-600">
+                              + {productGroup.totalQuantity % (productGroup.piecesPerBundle || 1)} {productGroup.baseUnit || 'pcs'}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <>Total: {productGroup.totalQuantity} {productGroup.unit || 'pcs'}</>
+                      )}
+                    </span>
+                    <span>×</span>
+                    <span>{formatCurrency(productGroup.price)}</span>
+                  </div>
                 </div>
               </div>
               <div className="text-right">
@@ -107,9 +160,25 @@ const ProductList = ({ cartItems: addedProducts, onRemoveItem, isProcessing }) =
                   
                   <div className="flex items-center gap-3 ml-2">
                     <div className="text-right">
-                      <p className="text-xs font-medium text-gray-700">
-                        {location.qty} {location.unit || 'pcs'}
-                      </p>
+                      {location.isBundle && location.piecesPerBundle ? (
+                        <>
+                          <p className="text-xs font-medium text-gray-700">
+                            {Math.floor(location.qty / location.piecesPerBundle)} {location.bundlePackagingType || 'bundles'}
+                            {location.qty % location.piecesPerBundle > 0 && (
+                              <span className="ml-1 text-blue-600">
+                                + {location.qty % location.piecesPerBundle} {location.baseUnit || 'pcs'}
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-xs text-purple-600 font-medium">
+                            = {location.qty} {location.baseUnit || 'pcs'}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-xs font-medium text-gray-700">
+                          {location.qty} {location.unit || 'pcs'}
+                        </p>
+                      )}
                       <p className="text-xs text-gray-500">
                         {formatCurrency(location.price * location.qty)}
                       </p>
