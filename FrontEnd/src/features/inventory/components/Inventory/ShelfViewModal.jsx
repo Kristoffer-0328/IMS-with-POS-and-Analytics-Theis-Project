@@ -56,13 +56,13 @@ const ShelfViewModal = ({
       // Remove allocation
       onLocationSelect(shelfName, rowName, columnIndex, -1);
     } else {
-      // Add allocation
+      // Add allocation - only if there's remaining quantity
       const remainingQty = getRemainingQuantity();
       if (remainingQty > 0) {
         const allocateQty = Math.min(remainingQty, cellCapacity);
         onLocationSelect(shelfName, rowName, columnIndex, allocateQty);
-      } else {
       }
+      // Don't allow adding locations if all quantity is already allocated
     }
   };
  
@@ -351,6 +351,15 @@ const ShelfViewModal = ({
         {/* Layout: Display all shelves in grid */}
         <div className="mb-5">
           {(() => {
+            // Safety check: Ensure selectedUnit and shelves exist
+            if (!selectedUnit || !selectedUnit.shelves || !Array.isArray(selectedUnit.shelves)) {
+              return (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">No storage configuration available for this location.</p>
+                </div>
+              );
+            }
+
             const normalShelves = selectedUnit.shelves.filter(shelf => shelf.type !== 'large-area');
             const zones = selectedUnit.shelves.filter(shelf => shelf.type === 'large-area');
             const hasZones = zones.length > 0;

@@ -29,7 +29,9 @@ const BulkDeleteModal = ({ isOpen, onClose, selectedProducts, products, onDelete
     setIsDeleting(true);
     try {
       const batch = writeBatch(db);
-      let deletedCount = 0;
+      let deletedProductsCount = 0;
+      let deletedVariantsCount = 0;
+      let deletedSupplierLinksCount = 0;
 
       for (const productId of selectedProducts) {
         const product = products.find(p => p.id === productId);
@@ -38,61 +40,117 @@ const BulkDeleteModal = ({ isOpen, onClose, selectedProducts, products, onDelete
           continue;
         }
 
-        // Delete supplier connections first
-        if (product.suppliers && Array.isArray(product.suppliers) && product.suppliers.length > 0) {
-          for (const supplier of product.suppliers) {
-            try {
-              // Query for supplier-product link documents in Suppliers collection
-              const supplierProductsRef = collection(db, 'Suppliers', supplier.id, 'products');
-              const linkQuery = query(supplierProductsRef, where('productId', '==', productId));
-              const linkSnapshot = await getDocs(linkQuery);
+        // Check if this is a new structure product (flat Products collection) or old structure
+        const isNewStructure = !product.storageLocation && !product.locations;
 
-              // Delete all matching link documents
-              linkSnapshot.forEach((linkDoc) => {
-                batch.delete(linkDoc.ref);
-                console.log(`Queued deletion of supplier link: ${supplier.name} -> ${product.name}`);
-              });
-            } catch (error) {
-              console.error(`Error queuing supplier links deletion for product ${productId}:`, error);
-            }
-          }
-        }
+        if (isNewStructure) {
+          // NEW STRUCTURE: Delete from Products/{productId} and all related Variants
+          console.log(`🆕 Deleting product (new structure): ${productId}`);
 
-        // Delete all product instances across all locations
-        if (product.locations && Array.isArray(product.locations) && product.locations.length > 0) {
-          // Product exists in multiple locations - delete all instances
-          for (const location of product.locations) {
-            const storageLocation = location.storageLocation;
-            const locationProductId = location.id;
+          // 1. Find and delete all variants for this product
+          const variantsRef = collection(db, 'Variants');
+          const variantsQuery = query(variantsRef, where('parentProductId', '==', productId));
+          const variantsSnapshot = await getDocs(variantsQuery);
+
+          console.log(`Found ${variantsSnapshot.size} variant(s) for product ${productId}`);
+
+          variantsSnapshot.forEach((variantDoc) => {
+            const variantData = variantDoc.data();
             
-            if (!storageLocation || !locationProductId) {
-              console.warn(`Missing storage location or ID for product location:`, location);
-              continue;
+            // Delete supplier connections for this variant
+            if (variantData.suppliers && Array.isArray(variantData.suppliers) && variantData.suppliers.length > 0) {
+              for (const supplier of variantData.suppliers) {
+                try {
+                  // Query for supplier-variant link documents
+                  const supplierProductsRef = collection(db, 'Suppliers', supplier.id, 'products');
+                  const linkQuery = query(supplierProductsRef, where('variantId', '==', variantDoc.id));
+                  // Note: We can't execute queries inside a loop for batch, so we'll handle this separately
+                  getDocs(linkQuery).then(linkSnapshot => {
+                    linkSnapshot.forEach((linkDoc) => {
+                      batch.delete(linkDoc.ref);
+                      deletedSupplierLinksCount++;
+                      console.log(`Queued deletion of supplier link: ${supplier.name} -> ${variantData.variantName}`);
+                    });
+                  });
+                } catch (error) {
+                  console.error(`Error queuing supplier links for variant ${variantDoc.id}:`, error);
+                }
+              }
             }
 
-            const productRef = doc(db, 'Products', storageLocation, 'products', locationProductId);
-            batch.delete(productRef);
-            deletedCount++;
-            console.log(`Queued deletion: ${storageLocation}/products/${locationProductId}`);
-          }
-        } else if (product.storageLocation) {
-          // Single location product - delete using direct storage location
-          const productRef = doc(db, 'Products', product.storageLocation, 'products', productId);
+            // Delete the variant document
+            batch.delete(variantDoc.ref);
+            deletedVariantsCount++;
+            console.log(`Queued variant deletion: ${variantDoc.id} (${variantData.variantName})`);
+          });
+
+          // 2. Delete the product document from Products collection
+          const productRef = doc(db, 'Products', productId);
           batch.delete(productRef);
-          deletedCount++;
-          console.log(`Queued deletion: ${product.storageLocation}/products/${productId}`);
+          deletedProductsCount++;
+          console.log(`Queued product deletion: Products/${productId}`);
+
         } else {
-          console.warn(`Product ${productId} (${product.name}) has no storage location information, skipping...`);
+          // OLD STRUCTURE: Delete from Products/{storageLocation}/products/{productId}
+          console.log(`🔙 Deleting product (old structure): ${productId}`);
+
+          // Delete supplier connections (old structure)
+          if (product.suppliers && Array.isArray(product.suppliers) && product.suppliers.length > 0) {
+            for (const supplier of product.suppliers) {
+              try {
+                // Query for supplier-product link documents in Suppliers collection
+                const supplierProductsRef = collection(db, 'Suppliers', supplier.id, 'products');
+                const linkQuery = query(supplierProductsRef, where('productId', '==', productId));
+                const linkSnapshot = await getDocs(linkQuery);
+
+                // Delete all matching link documents
+                linkSnapshot.forEach((linkDoc) => {
+                  batch.delete(linkDoc.ref);
+                  deletedSupplierLinksCount++;
+                  console.log(`Queued deletion of supplier link: ${supplier.name} -> ${product.name}`);
+                });
+              } catch (error) {
+                console.error(`Error queuing supplier links deletion for product ${productId}:`, error);
+              }
+            }
+          }
+
+          // Delete all product instances across all locations (old structure)
+          if (product.locations && Array.isArray(product.locations) && product.locations.length > 0) {
+            // Product exists in multiple locations - delete all instances
+            for (const location of product.locations) {
+              const storageLocation = location.storageLocation;
+              const locationProductId = location.id;
+              
+              if (!storageLocation || !locationProductId) {
+                console.warn(`Missing storage location or ID for product location:`, location);
+                continue;
+              }
+
+              const productRef = doc(db, 'Products', storageLocation, 'products', locationProductId);
+              batch.delete(productRef);
+              deletedProductsCount++;
+              console.log(`Queued deletion: ${storageLocation}/products/${locationProductId}`);
+            }
+          } else if (product.storageLocation) {
+            // Single location product - delete using direct storage location
+            const productRef = doc(db, 'Products', product.storageLocation, 'products', productId);
+            batch.delete(productRef);
+            deletedProductsCount++;
+            console.log(`Queued deletion: ${product.storageLocation}/products/${productId}`);
+          } else {
+            console.warn(`Product ${productId} (${product.name}) has no storage location information, skipping...`);
+          }
         }
       }
 
       // Commit all deletions
-      if (deletedCount > 0) {
-        await batch.commit();
-        console.log(`✅ Successfully deleted ${deletedCount} product instance(s)`);
-      } else {
-        console.warn('No products were deleted - check storage location data');
-      }
+      await batch.commit();
+      
+      console.log(`✅ Bulk delete completed:`);
+      console.log(`   - Products deleted: ${deletedProductsCount}`);
+      console.log(`   - Variants deleted: ${deletedVariantsCount}`);
+      console.log(`   - Supplier links deleted: ${deletedSupplierLinksCount}`);
 
       onDeleteComplete();
     } catch (error) {

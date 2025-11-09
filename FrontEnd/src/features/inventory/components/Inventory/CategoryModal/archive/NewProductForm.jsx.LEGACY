@@ -63,6 +63,12 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
     const [piecesPerBundle, setPiecesPerBundle] = useState('');
     const [bundlePackagingType, setBundlePackagingType] = useState('bundle');
     
+    // Cement & Aggregates specific: Packed vs Raw form toggle
+    const [cementFormType, setCementFormType] = useState('packed'); // 'packed' or 'raw'
+    const [packagingVariant, setPackagingVariant] = useState('40kg'); // '40kg', '25kg', 'sack'
+    const [numberOfBags, setNumberOfBags] = useState('');
+    const [bulkVolumeCubicMeters, setBulkVolumeCubicMeters] = useState('');
+    
     // Storage location modal states
     const [isStorageModalOpen, setIsStorageModalOpen] = useState(false);
     const [selectedStorageLocations, setSelectedStorageLocations] = useState([]);
@@ -90,6 +96,15 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
             setMeasurementType(rule.measurementType);
             setBaseUnit(rule.baseUnit);
             setRequireDimensions(rule.requireDimensions);
+            
+            // Auto-detect cement form type based on storage unit
+            if (categoryName === 'Cement & Aggregates') {
+                if (selectedCategory.name === 'Unit 03 Yard') {
+                    setCementFormType('raw'); // Yard = always raw/bulk
+                } else {
+                    setCementFormType('packed'); // Unit 03 = always packed/bagged
+                }
+            }
             
             // Reset measurement-specific fields when category changes
             setUnitWeightKg('');
@@ -318,8 +333,37 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
             return;
         }
         
-        // Validate storage locations
-        if (selectedStorageLocations.length === 0) {
+        // Special validation for Cement & Aggregates
+        if (selectedCategory?.category === 'Cement & Aggregates') {
+            if (cementFormType === 'packed') {
+                if (!numberOfBags || !unitWeightKg) {
+                    alert('Please enter number of bags and weight per bag for packed cement');
+                    return;
+                }
+            } else if (cementFormType === 'raw') {
+                if (!bulkVolumeCubicMeters) {
+                    alert('Please enter volume in m³ for bulk cement');
+                    return;
+                }
+                // Auto-assign to yard if no location selected
+                if (selectedStorageLocations.length === 0) {
+                    // Automatically set to yard location
+                    const yardLocation = {
+                        id: 'unit03-yard-bulk',
+                        unit: 'Unit 03 Yard',
+                        shelf: 'Yard',
+                        row: 'Bulk Storage',
+                        column: 0,
+                        fullLocation: 'Unit 03 Yard - Bulk Storage'
+                    };
+                    setSelectedStorageLocations([yardLocation]);
+                    setQuantityPerLocation({ [yardLocation.id]: parseFloat(bulkVolumeCubicMeters) || 0 });
+                }
+            }
+        }
+        
+        // Validate storage locations (skip for raw cement, will be auto-assigned)
+        if (selectedStorageLocations.length === 0 && !(selectedCategory?.category === 'Cement & Aggregates' && cementFormType === 'raw')) {
             alert('Please select at least one storage location');
             return;
         }
@@ -331,8 +375,8 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
             return;
         }
         
-        // Validate measurement-specific fields
-        if (measurementType === 'weight' && !unitWeightKg) {
+        // Validate measurement-specific fields (excluding cement which has its own validation)
+        if (measurementType === 'weight' && selectedCategory?.category !== 'Cement & Aggregates' && !unitWeightKg) {
             alert('Please enter unit weight in kg');
             return;
         }
@@ -351,7 +395,22 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
             const db = getFirestore(app);
             const currentSuppliers = supplier ? [supplier] : selectedSuppliers;
             
-            for (const location of selectedStorageLocations) {
+            // For raw cement, ensure yard location is set
+            let locationsToProcess = selectedStorageLocations;
+            if (selectedCategory?.category === 'Cement & Aggregates' && cementFormType === 'raw' && locationsToProcess.length === 0) {
+                const yardLocation = {
+                    id: 'unit03-yard-bulk',
+                    unit: 'Unit 03 Yard',
+                    shelf: 'Yard',
+                    row: 'Bulk Storage',
+                    column: 0,
+                    fullLocation: 'Unit 03 Yard - Bulk Storage'
+                };
+                locationsToProcess = [yardLocation];
+                quantityPerLocation[yardLocation.id] = parseFloat(bulkVolumeCubicMeters) || 0;
+            }
+            
+            for (const location of locationsToProcess) {
                 const locationQty = quantityPerLocation[location.id] || 0;
                 
                 // Build product data based on measurement type
@@ -379,14 +438,31 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
                         primaryCode: s.primaryCode || s.code
                     })),
                     supplierPrice: Number(supplierPrice) || 0,
-                    multiLocation: selectedStorageLocations.length > 1,
+                    multiLocation: locationsToProcess.length > 1,
                     totalQuantityAllLocations: totalQty,
                     createdAt: serverTimestamp(),
                     lastUpdated: serverTimestamp()
                 };
+                
+                // Add cement-specific fields
+                if (selectedCategory?.category === 'Cement & Aggregates') {
+                    productData.cementFormType = cementFormType; // 'packed' or 'raw'
+                    if (cementFormType === 'packed') {
+                        productData.packagingVariant = packagingVariant; // '40kg', '25kg', 'sack'
+                        productData.numberOfBags = parseInt(numberOfBags) || 0;
+                        productData.weightPerBag = parseFloat(unitWeightKg) || 0;
+                        productData.unitWeightKg = parseFloat(unitWeightKg) || 0;
+                    } else if (cementFormType === 'raw') {
+                        productData.bulkVolumeCubicMeters = parseFloat(bulkVolumeCubicMeters) || 0;
+                        productData.baseUnit = 'm³'; // Override base unit for raw cement
+                        if (unitWeightKg) {
+                            productData.approximateWeightKg = parseFloat(unitWeightKg) || 0;
+                        }
+                    }
+                }
 
                 // Add measurement-specific fields
-                if (measurementType === 'weight') {
+                if (measurementType === 'weight' && selectedCategory?.category !== 'Cement & Aggregates') {
                     productData.unitWeightKg = Number(unitWeightKg) || 0;
                 }
                 if (measurementType === 'volume') {
@@ -752,13 +828,246 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
                                 </svg>
                             </div>
-                            <h3 className="text-lg font-semibold text-gray-900">Weight Information</h3>
-                            <span className="ml-auto text-xs text-red-500 bg-red-50 px-2 py-1 rounded-full">Required</span>
+                            <h3 className="text-lg font-semibold text-gray-900">Weight-Based Measurement</h3>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                        {/* Cement & Aggregates: Packed vs Raw Form - Auto-detected based on storage unit */}
+                        {selectedCategory?.category === 'Cement & Aggregates' && (
+                            <div className="mb-6 p-5 bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-300 rounded-xl">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                                        </svg>
+                                        <h4 className="text-base font-semibold text-gray-800">Storage Form Type</h4>
+                                    </div>
+                                    <span className={`text-xs px-3 py-1 rounded-full font-medium ${
+                                        cementFormType === 'packed' 
+                                            ? 'bg-blue-100 text-blue-800' 
+                                            : 'bg-amber-100 text-amber-800'
+                                    }`}>
+                                        {cementFormType === 'packed' ? 'Packed Form' : 'Raw Form'}
+                                    </span>
+                                </div>
+                                
+                                {/* Display current form type (no toggle) */}
+                                <div className="p-4 bg-white rounded-lg border-2 border-dashed border-amber-300 mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2 rounded-lg ${
+                                            cementFormType === 'packed' ? 'bg-blue-100' : 'bg-amber-100'
+                                        }`}>
+                                            <svg className={`w-6 h-6 ${
+                                                cementFormType === 'packed' ? 'text-blue-600' : 'text-amber-600'
+                                            }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                {cementFormType === 'packed' ? (
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                                ) : (
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                                                )}
+                                            </svg>
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="text-sm font-semibold text-gray-800">
+                                                {cementFormType === 'packed' ? 'Packed Form (Bags/Sacks)' : 'Raw Form (Bulk m³)'}
+                                            </p>
+                                            <p className="text-xs text-gray-600 mt-1">
+                                                {cementFormType === 'packed' 
+                                                    ? '📦 For bagged cement stored in Unit 03 pallets'
+                                                    : '🏗️ For bulk cement in Unit 03 Yard outdoor stockpile'
+                                                }
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Packed Form Fields */}
+                                {cementFormType === 'packed' && (
+                                    <div className="space-y-4 p-4 bg-white rounded-lg border border-blue-200">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                            <h5 className="text-sm font-semibold text-gray-800">Bagged/Sacked Product Details</h5>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="block text-sm font-medium text-gray-700">
+                                                    Packaging Variant <span className="text-red-500">*</span>
+                                                </label>
+                                                <select
+                                                    value={packagingVariant}
+                                                    onChange={(e) => {
+                                                        setPackagingVariant(e.target.value);
+                                                        // Auto-set unit weight based on selection
+                                                        if (e.target.value === '40kg') setUnitWeightKg('40');
+                                                        else if (e.target.value === '25kg') setUnitWeightKg('25');
+                                                        else if (e.target.value === '10kg') setUnitWeightKg('10');
+                                                        else if (e.target.value === '5kg') setUnitWeightKg('5');
+                                                        else setUnitWeightKg(''); // For custom sack weight
+                                                    }}
+                                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                >
+                                                    <optgroup label="📦 Standard Bag Size">
+                                                        <option value="40kg">40 kg Bag</option>
+                                                        <option value="25kg">25 kg Bag</option>
+                                                    </optgroup>
+                                                    <optgroup label="♻️ Repacked Cement">
+                                                        <option value="10kg">10 kg Bag (Repacked)</option>
+                                                        <option value="5kg">5 kg Bag (Repacked)</option>
+                                                    </optgroup>
+                                                    <optgroup label="⚙️ Other">
+                                                        <option value="sack">Custom Weight Sack</option>
+                                                    </optgroup>
+                                                </select>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label className="block text-sm font-medium text-gray-700">
+                                                    Weight per Bag (kg) <span className="text-red-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    value={unitWeightKg}
+                                                    onChange={(e) => setUnitWeightKg(e.target.value)}
+                                                    placeholder="e.g., 40, 25, 50"
+                                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    disabled={packagingVariant !== 'sack'}
+                                                />
+                                                <p className="text-xs text-gray-500">
+                                                    {packagingVariant !== 'sack' 
+                                                        ? 'Auto-filled based on packaging variant' 
+                                                        : 'Enter custom weight for sack'}
+                                                </p>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label className="block text-sm font-medium text-gray-700">
+                                                    Number of Bags <span className="text-red-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={numberOfBags}
+                                                    onChange={(e) => {
+                                                        setNumberOfBags(e.target.value);
+                                                        // Auto-calculate total quantity (total weight)
+                                                        if (e.target.value && unitWeightKg) {
+                                                            setQuantity((parseFloat(e.target.value) * parseFloat(unitWeightKg)).toString());
+                                                        }
+                                                    }}
+                                                    placeholder="Enter number of bags"
+                                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label className="block text-sm font-medium text-gray-700">
+                                                    Total Weight (kg)
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    value={quantity}
+                                                    disabled
+                                                    className="w-full px-4 py-2.5 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 cursor-not-allowed"
+                                                />
+                                                <p className="text-xs text-gray-500">
+                                                    Auto-calculated: {numberOfBags || 0} bags × {unitWeightKg || 0} kg
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Storage info for packed form */}
+                                        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                            <div className="flex items-start gap-2">
+                                                <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                <div>
+                                                    <p className="text-sm font-semibold text-blue-900">Pallet Storage</p>
+                                                    <p className="text-xs text-blue-700 mt-1">
+                                                        Bagged cement will be stored in <strong>Unit 03 - Pallet Storage</strong>. 
+                                                        You can select specific row and column locations.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Raw Form Fields */}
+                                {cementFormType === 'raw' && (
+                                    <div className="space-y-4 p-4 bg-white rounded-lg border border-amber-200">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
+                                            <h5 className="text-sm font-semibold text-gray-800">Bulk Cement Details</h5>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="block text-sm font-medium text-gray-700">
+                                                    Volume (m³) <span className="text-red-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    value={bulkVolumeCubicMeters}
+                                                    onChange={(e) => {
+                                                        setBulkVolumeCubicMeters(e.target.value);
+                                                        // For bulk cement, we might track volume instead of weight
+                                                        // Or convert volume to approximate weight if needed
+                                                        setQuantity(e.target.value);
+                                                    }}
+                                                    placeholder="Enter volume in cubic meters"
+                                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                                                />
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label className="block text-sm font-medium text-gray-700">
+                                                    Approximate Weight (kg)
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    value={unitWeightKg}
+                                                    onChange={(e) => setUnitWeightKg(e.target.value)}
+                                                    placeholder="Optional: estimated weight"
+                                                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                                                />
+                                                <p className="text-xs text-gray-500">
+                                                    Optional: bulk density varies by cement type
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Storage info for raw form */}
+                                        <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                                            <div className="flex items-start gap-2">
+                                                <svg className="w-5 h-5 text-amber-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                <div>
+                                                    <p className="text-sm font-semibold text-amber-900">Yard Storage</p>
+                                                    <p className="text-xs text-amber-700 mt-1">
+                                                        Bulk cement will automatically be allocated to <strong>Unit 03 Yard - Outdoor Stockpile</strong>. 
+                                                        No pallet cell selection needed.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Standard Weight Field for Non-Cement Products */}
+                        {selectedCategory?.category !== 'Cement & Aggregates' && (
                             <div className="space-y-2">
                                 <label className="block text-sm font-medium text-gray-700">
-                                    Unit Weight (kg) <span className="text-red-500">*</span>
+                                    Unit Weight (kg) {requireDimensions && <span className="text-red-500">*</span>}
                                 </label>
                                 <input
                                     type="number"
@@ -769,8 +1078,11 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
                                     placeholder="Weight per unit in kilograms"
                                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                                 />
+                                <p className="text-xs text-gray-500">
+                                    Specify the weight of a single unit in kilograms
+                                </p>
                             </div>
-                        </div>
+                        )}
                     </div>
                 )}
 
@@ -958,17 +1270,18 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
                 )}
 
                 
-                {/* Storage Location Selection */}
-                <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex items-center gap-2 mb-5">
-                        <div className="p-1.5 bg-blue-100 rounded-lg">
-                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                            </svg>
+                {/* Storage Location Selection - Hide for Raw Cement */}
+                {!(selectedCategory?.category === 'Cement & Aggregates' && cementFormType === 'raw') && (
+                    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-2 mb-5">
+                            <div className="p-1.5 bg-blue-100 rounded-lg">
+                                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Storage Locations</h3>
+                            <span className="ml-auto text-xs text-red-500 bg-red-50 px-2 py-1 rounded-full">Required</span>
                         </div>
-                        <h3 className="text-lg font-semibold text-gray-900">Storage Locations</h3>
-                        <span className="ml-auto text-xs text-red-500 bg-red-50 px-2 py-1 rounded-full">Required</span>
-                    </div>
                     
                     <div className="space-y-4">
                         {selectedUnit && (
@@ -1047,6 +1360,7 @@ const NewProductForm = ({ selectedCategory, onClose, onBack, supplier = null }) 
                         )}
                     </div>
                 </div>
+                )}
 
                 {/* Submit Button */}
                 <div className="sticky bottom-0 bg-white pt-6 pb-2 -mx-1 px-6 border-t border-gray-200 shadow-lg">

@@ -13,7 +13,7 @@ import CategoryMOdalIndex from '../components/Inventory/CategoryModal/CategoryMo
 import InfoModal from '../components/Dashboard/InfoModal';
 import StorageFacilityInteractiveMap from '../components/Inventory/StorageFacilityInteractiveMap';
 import BulkProductImport from '../components/BulkProductImport';
-import { getFirestore, collection, getDocs } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, onSnapshot } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
 // Import components for tabs
 import RestockingRequest from './RestockingRequest';
@@ -23,6 +23,9 @@ import BulkDeleteModal from '../components/Inventory/BulkDeleteModal';
 
 
 const Inventory = () => {
+  // Feature flag: Set to true to use new Product/Variant architecture with Master collection
+  const USE_NEW_ARCHITECTURE = true;
+  
   const [suppliers, setSuppliers] = useState([]); // Add suppliers state
   const db = getFirestore(app);
   // Read tab from URL query string and set activeTab
@@ -43,8 +46,9 @@ const Inventory = () => {
   const [isImportModalOpen, setImportIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
-  const { listenToProducts } = useServices();
+  const { listenToProducts, listenToLegacyProducts } = useServices();
   const [products, setProduct] = useState([]);
+  const [variants, setVariants] = useState([]);
   const [categorymodal, setcategorymodal] = useState(false);
   const [viewMode, setViewMode] = useState('card');
   
@@ -144,9 +148,53 @@ const Inventory = () => {
   };
 
   useEffect(() => {
-    const unsubscribe = listenToProducts(setProduct);
-    return () => unsubscribe();
-  }, []);
+    // ARCHITECTURE NOTE:
+    // NOW USING NEW ARCHITECTURE:
+    // - Master/{productId} - General product info only
+    // - Master/Variants/items/{variantId} - Stock, price, location, suppliers
+    // 
+    // Each variant is displayed as a separate inventory item
+    // Products are templates that can have multiple variants
+    
+    if (USE_NEW_ARCHITECTURE) {
+      // NEW: Fetch from flat Master collection and Master/Variants collection
+      try {
+        // Listen to Products from Master collection (general info)
+        const productsRef = collection(db, 'Master');
+        const unsubProducts = onSnapshot(productsRef, (snapshot) => {
+          const productsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setProduct(productsData);
+          console.log(`Fetched ${productsData.length} products from Master collection`);
+        });
+
+        // Listen to Variants (inventory items with stock/price/location)
+        const variantsRef = collection(db, 'Variants');
+        const unsubVariants = onSnapshot(variantsRef, (snapshot) => {
+          const variantsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setVariants(variantsData);
+          console.log(`Fetched ${variantsData.length} variants from Variants collection`);
+        });
+
+        // Return cleanup function that unsubscribes both listeners
+        return () => {
+          unsubProducts();
+          unsubVariants();
+        };
+      } catch (error) {
+        console.error('Error fetching new architecture data:', error);
+      }
+    } else {
+      // LEGACY: Use old nested structure
+      const unsubscribe = listenToLegacyProducts(setProduct);
+      return () => unsubscribe();
+    }
+  }, [listenToLegacyProducts, listenToProducts, USE_NEW_ARCHITECTURE, db]);
 
   // Fetch suppliers
   useEffect(() => {
@@ -193,6 +241,190 @@ const Inventory = () => {
   };
 
   const filteredData = useMemo(() => {
+    // NEW ARCHITECTURE: Show ALL products from Master collection, grouped with their variants
+    if (USE_NEW_ARCHITECTURE) {
+      // Group variants by parentProductId
+      const productGroups = {};
+      
+      // First, create entries for ALL products from Master collection
+      products.forEach(product => {
+        productGroups[product.id] = {
+          variants: [],
+          totalQuantity: 0,
+          totalValue: 0,
+          lowestPrice: null,
+          highestPrice: null,
+          locations: [],
+          suppliers: [] // Initialize suppliers array
+        };
+      });
+      
+      // Then, add variant data to their parent products
+      variants.forEach(variant => {
+        const productId = variant.parentProductId;
+        if (!productGroups[productId]) {
+          // Handle orphaned variants (variants without a parent product)
+          productGroups[productId] = {
+            variants: [],
+            totalQuantity: 0,
+            totalValue: 0,
+            lowestPrice: null,
+            highestPrice: null,
+            locations: [],
+            suppliers: [] // Add suppliers array
+          };
+        }
+        
+        productGroups[productId].variants.push(variant);
+        productGroups[productId].totalQuantity += variant.quantity || 0;
+        productGroups[productId].totalValue += (variant.quantity || 0) * (variant.unitPrice || 0);
+        
+        // Track price range
+        if (!productGroups[productId].lowestPrice || variant.unitPrice < productGroups[productId].lowestPrice) {
+          productGroups[productId].lowestPrice = variant.unitPrice;
+        }
+        if (!productGroups[productId].highestPrice || variant.unitPrice > productGroups[productId].highestPrice) {
+          productGroups[productId].highestPrice = variant.unitPrice;
+        }
+        
+        // Track locations
+        if (variant.fullLocation && !productGroups[productId].locations.includes(variant.fullLocation)) {
+          productGroups[productId].locations.push(variant.fullLocation);
+        }
+        
+        // Aggregate suppliers from variants (NEW - handle suppliers array in variants)
+        if (variant.suppliers && Array.isArray(variant.suppliers) && variant.suppliers.length > 0) {
+          variant.suppliers.forEach(supplier => {
+            // Check if supplier already exists (by id or name)
+            const existingSupplier = productGroups[productId].suppliers.find(
+              s => (s.id && s.id === supplier.id) || (s.name === supplier.name)
+            );
+            
+            if (!existingSupplier && supplier.name) {
+              // Add new supplier
+              productGroups[productId].suppliers.push({
+                id: supplier.id || supplier.supplierId,
+                name: supplier.name || supplier.supplierName,
+                code: supplier.code || supplier.supplierCode,
+                price: supplier.price || supplier.supplierPrice,
+                sku: supplier.sku || supplier.supplierSKU
+              });
+            }
+          });
+        }
+      });
+      
+      // Transform grouped data into product cards (ONE card per product, even without variants)
+      let filtered = Object.entries(productGroups).map(([productId, group]) => {
+        // Find the parent product for general info
+        const parentProduct = products.find(p => p.id === productId) || {};
+        
+        // Use first variant as representative (for denormalized data) if variants exist
+        const firstVariant = group.variants.length > 0 ? group.variants[0] : null;
+        
+        // Calculate status based on total quantity across all variants
+        const totalSafetyStock = group.variants.reduce((sum, v) => sum + (v.safetyStock || 0), 0);
+        const status = group.totalQuantity <= 0 ? 'out-of-stock' 
+                     : group.totalQuantity <= totalSafetyStock ? 'low-stock' 
+                     : 'in-stock';
+        
+        return {
+          // Product ID (parent)
+          id: productId,
+          
+          // Product data from Master collection (ALWAYS use Master data as primary source)
+          name: parentProduct.name || (firstVariant ? firstVariant.productName : 'Unnamed Product'),
+          brand: parentProduct.brand || (firstVariant ? firstVariant.productBrand : 'No Brand'),
+          category: parentProduct.category || (firstVariant ? firstVariant.productCategory : 'Miscellaneous'),
+          imageUrl: parentProduct.imageUrl || (firstVariant ? firstVariant.productImageUrl : null),
+          description: parentProduct.description || '',
+          specifications: parentProduct.specifications || '',
+          
+          // Measurement data from product (ALWAYS from Master)
+          measurementType: parentProduct.measurementType || (firstVariant ? firstVariant.measurementType : 'count'),
+          baseUnit: parentProduct.baseUnit || (firstVariant ? firstVariant.baseUnit : 'pcs'),
+          requireDimensions: parentProduct.requireDimensions || false,
+          
+          // Aggregated data from variants (0 if no variants yet)
+          quantity: group.totalQuantity,
+          unitPrice: group.lowestPrice || 0, // Show lowest price or 0
+          totalvalue: group.totalValue,
+          status: status,
+          
+          // Variant info
+          hasVariants: group.variants.length > 0,
+          variantCount: group.variants.length,
+          
+          // Location info (multiple locations)
+          location: group.locations.length > 1 
+            ? `${group.locations.length} locations` 
+            : group.locations.length === 1 
+              ? group.locations[0]
+              : 'No variants yet',
+          locations: group.locations,
+          
+          // Price range (if multiple variants have different prices)
+          priceRange: (group.lowestPrice !== null && group.highestPrice !== null && group.lowestPrice !== group.highestPrice)
+            ? `₱${group.lowestPrice?.toLocaleString()} - ₱${group.highestPrice?.toLocaleString()}`
+            : null,
+          
+          // Additional fields from first variant (for display) - only if variant exists
+          unitWeightKg: firstVariant?.unitWeightKg,
+          unitVolumeLiters: firstVariant?.unitVolumeLiters,
+          length: firstVariant?.length,
+          width: firstVariant?.width,
+          thickness: firstVariant?.thickness,
+          uomConversions: firstVariant?.uomConversions,
+          
+          // Timestamps (prefer Master collection)
+          createdAt: parentProduct.createdAt || (firstVariant?.createdAt),
+          lastUpdated: parentProduct.lastUpdated || (firstVariant?.lastUpdated),
+          
+          // Supplier info (aggregated from variants)
+          suppliers: group.suppliers || [], // Array of aggregated suppliers from all variants
+          
+          // Flag for new architecture
+          _isNewArchitecture: true,
+          _variantData: group.variants // Store all variants for ViewProductModal (empty array if no variants)
+        };
+      });
+      
+      // Apply filters (same as legacy)
+      if (debouncedSearchQuery !== '') {
+        filtered = filtered.filter(item => {
+          const name = (item.name || '').toLowerCase();
+          const brand = (item.brand || '').toLowerCase();
+          const category = (item.category || '').toLowerCase();
+          const variantName = (item.variantName || '').toLowerCase();
+          const location = (item.fullLocation || '').toLowerCase();
+          
+          return name.includes(debouncedSearchQuery) ||
+                 brand.includes(debouncedSearchQuery) ||
+                 category.includes(debouncedSearchQuery) ||
+                 variantName.includes(debouncedSearchQuery) ||
+                 location.includes(debouncedSearchQuery) ||
+                 item.id.toLowerCase().includes(debouncedSearchQuery);
+        });
+      }
+
+      if (selectedCategory !== 'all') {
+        filtered = filtered.filter(item => item.category === selectedCategory);
+      }
+
+      if (currentFilter === 'low-stock') {
+        filtered = filtered.filter(item => item.status === 'low-stock');
+      } else if (currentFilter === 'out-of-stock') {
+        filtered = filtered.filter(item => item.status === 'out-of-stock');
+      }
+
+      if (selectedStorageRoom !== 'all') {
+        filtered = filtered.filter(item => item.storageLocation === selectedStorageRoom);
+      }
+
+      return filtered;
+    }
+    
+    // LEGACY ARCHITECTURE: Group products by identity
     let filtered = [...products];
 
     // Step 1: Group products by their base identity (name + brand + specifications)
@@ -310,7 +542,7 @@ const Inventory = () => {
     }
 
     return filtered;
-  }, [products, debouncedSearchQuery, selectedCategory, currentFilter, selectedStorageRoom]);
+  }, [products, variants, debouncedSearchQuery, selectedCategory, currentFilter, selectedStorageRoom, USE_NEW_ARCHITECTURE]);
 
   const totalValue = useMemo(() => {
     return filteredData.reduce((sum, p) => sum + (parseFloat(p.totalvalue) || 0), 0);

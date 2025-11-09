@@ -6,8 +6,9 @@ import { getDoc } from 'firebase/firestore';
 import { FiPackage, FiDollarSign, FiMapPin, FiInfo, FiLayers, FiCalendar, FiMap, FiTrash2 } from 'react-icons/fi';
 import ShelfViewModal from './ShelfViewModal';
 import { uploadImage } from '../../../../services/cloudinary/CloudinaryService';
-import { getStorageUnitConfig } from '../../config/StorageUnitsConfig';
+import { getStorageUnitConfig, getAllStorageUnits } from '../../config/StorageUnitsConfig';
 import NewVariantForm from './CategoryModal/NewVariantForm';
+import ErrorModal from '../../../../components/modals/ErrorModal';
 
 const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTab = 'overview' }) => {
   const navigate = useNavigate();
@@ -27,37 +28,55 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [storageLocations, setStorageLocations] = useState([]);
+  const [alertModal, setAlertModal] = useState({ isOpen: false, type: 'info', title: '', message: '', details: '' });
   const db = getFirestore(app);
   
   // Helper function to normalize supplier data - handles both old (suppliers array) and new (supplier object) structures
   const getSuppliers = (product) => {
     if (!product) return [];
     
-    // If product has suppliers array (old structure or multi-supplier)
+    // NEW ARCHITECTURE: Product has suppliers array aggregated from variants
     if (product.suppliers && Array.isArray(product.suppliers) && product.suppliers.length > 0) {
       return product.suppliers;
     }
     
-    // If product has supplier object (new structure from linking)
+    // LEGACY: If product has supplier object (old single supplier structure)
     if (product.supplier && typeof product.supplier === 'object' && product.supplier.name) {
       return [product.supplier];
     }
     
-    // Check variants for supplier info
+    // LEGACY: Check variants array for supplier info (old nested structure)
     if (product.variants && Array.isArray(product.variants) && product.variants.length > 0) {
-      const variantSuppliers = product.variants
-        .filter(v => v.supplier && v.supplier.name)
-        .map(v => v.supplier);
+      const variantSuppliers = [];
+      
+      product.variants.forEach(variant => {
+        // Each variant can have suppliers array (NEW) or supplier object (OLD)
+        if (variant.suppliers && Array.isArray(variant.suppliers)) {
+          variant.suppliers.forEach(supplier => {
+            if (supplier && supplier.name) {
+              // Check if supplier already added
+              const exists = variantSuppliers.find(s => 
+                (s.id && s.id === supplier.id) || (s.name === supplier.name)
+              );
+              if (!exists) {
+                variantSuppliers.push(supplier);
+              }
+            }
+          });
+        } else if (variant.supplier && variant.supplier.name) {
+          // Old structure with single supplier
+          const exists = variantSuppliers.find(s => 
+            (s.id && s.id === variant.supplier.id) || (s.name === variant.supplier.name)
+          );
+          if (!exists) {
+            variantSuppliers.push(variant.supplier);
+          }
+        }
+      });
       
       if (variantSuppliers.length > 0) {
-        // Remove duplicates by supplier id
-        const uniqueSuppliers = variantSuppliers.reduce((acc, supplier) => {
-          if (!acc.find(s => s.id === supplier.id)) {
-            acc.push(supplier);
-          }
-          return acc;
-        }, []);
-        return uniqueSuppliers;
+        return variantSuppliers;
       }
     }
     
@@ -78,25 +97,43 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
     setActiveTab(initialTab);
   }, [initialTab]);
   
-  // Fetch variants from flat structure
+  // Fetch storage locations for variant creation
+  useEffect(() => {
+    // Fetch storage locations from configuration (not database)
+    if (isOpen) {
+      try {
+        // Use the centralized storage units configuration
+        const allUnits = getAllStorageUnits();
+        
+        // Transform to the format expected by the component
+        const fetchedStorageLocations = allUnits.map(unit => ({
+          id: unit.name, // "Unit 01", "Unit 02", etc.
+          name: unit.name,
+          category: unit.category,
+          fullName: unit.fullName,
+          type: unit.type,
+          capacity: unit.capacity
+        }));
+        
+        setStorageLocations(fetchedStorageLocations);
+      } catch (error) {
+        console.error("Error loading storage locations:", error);
+      }
+    }
+  }, [isOpen, db]);
+  
+  // Fetch variants from Master/Variants collection (NEW ARCHITECTURE)
   useEffect(() => {
     const fetchVariants = async () => {
       if (!product || product.isVariant) return; // Don't fetch variants for variant products
       
       setLoadingVariants(true);
       try {
-        const storageLocation = product.storageLocation;
-        if (!storageLocation) {
-          setVariants([]);
-          return;
-        }
-
-        // Query for all products where parentProductId === this product's ID
-        const productsRef = collection(db, 'Products', storageLocation, 'products');
+        // NEW ARCHITECTURE: Query flat Variants collection (top-level)
+        const variantsRef = collection(db, 'Variants');
         const variantsQuery = query(
-          productsRef,
-          where('parentProductId', '==', product.id),
-          where('isVariant', '==', true)
+          variantsRef,
+          where('parentProductId', '==', product.id)
         );
         
         const variantsSnapshot = await getDocs(variantsQuery);
@@ -105,6 +142,7 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
           ...doc.data()
         }));
         
+        console.log(`Found ${variantsList.length} variants for product ${product.id}`);
         setVariants(variantsList);
       } catch (error) {
         console.error('Error fetching variants:', error);
@@ -324,23 +362,11 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
       const category = getProductDetail('category');
       const productId = getProductDetail('id');
       const productName = getProductDetail('name');
-      const storageLocation = product.storageLocation; // e.g., "Unit 01"
-      const shelfName = product.shelfName; // e.g., "A"
-      const rowName = product.rowName; // e.g., "1"
-      const columnIndex = product.columnIndex; // e.g., 1
-
+      
       if (!category) {
         throw new Error("Product category is required but missing");
       }
-      
-      if (!storageLocation || !shelfName || !rowName || columnIndex === undefined) {
-        throw new Error("Product storage information is incomplete. Missing: " + 
-          (!storageLocation ? "storageLocation " : "") +
-          (!shelfName ? "shelfName " : "") +
-          (!rowName ? "rowName " : "") +
-          (columnIndex === undefined ? "columnIndex" : ""));
-      }
-      
+
       // Upload to Cloudinary with progress tracking
       const uploadResult = await uploadImage(
         file,
@@ -358,25 +384,95 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
       // Update preview with Cloudinary URL
       setImageUrl(cloudinaryUrl);
       
-      // Update the product in Firebase using the NEW NESTED structure
-      // Path: Products/{storageLocation}/products/{productId}
+      // Determine product structure type and update accordingly
+      // Priority 1: Check if product exists in flat Master collection (NEW ARCHITECTURE)
+      const masterProductRef = doc(db, 'Master', productId);
+      const masterProductDoc = await getDoc(masterProductRef);
       
-      const productRef = doc(
-        db,
-        'Products',
-        storageLocation,
-        'products',
-        productId
-      );
+      if (masterProductDoc.exists()) {
+        // NEW ARCHITECTURE: Update flat Master collection
+        console.log('🆕 Updating image for new structure product (Master collection)');
+        
+        await updateDoc(masterProductRef, {
+          imageUrl: cloudinaryUrl,
+          updatedAt: new Date().toISOString()
+        });
 
-      await updateDoc(productRef, {
-        image: cloudinaryUrl,
-        imageUrl: cloudinaryUrl,
-        lastUpdated: new Date().toISOString()
+        // Also update imageUrl in all variants for denormalized data
+        const variantsRef = collection(db, 'Variants');
+        const variantsQuery = query(variantsRef, where('parentProductId', '==', productId));
+        const variantsSnapshot = await getDocs(variantsQuery);
+        
+        const updatePromises = variantsSnapshot.docs.map(variantDoc => 
+          updateDoc(variantDoc.ref, {
+            productImageUrl: cloudinaryUrl,
+            updatedAt: new Date().toISOString()
+          })
+        );
+        
+        await Promise.all(updatePromises);
+        console.log(`✅ Updated image for product and ${variantsSnapshot.size} variant(s)`);
+        
+      } else {
+        // OLD ARCHITECTURE: Try to update nested Products structure
+        console.log('🔙 Attempting to update image for old structure product (nested collection)');
+        
+        const storageLocation = product.storageLocation;
+        const shelfName = product.shelfName;
+        const rowName = product.rowName;
+        const columnIndex = product.columnIndex;
+        
+        if (!storageLocation || !shelfName || !rowName || columnIndex === undefined) {
+          // If storage info is incomplete, try the old Products/{category}/Items/{productId} structure
+          console.log('⚠️ Storage info incomplete, trying Products/{category}/Items/{productId} structure');
+          
+          const categoryItemRef = doc(db, 'Products', category, 'Items', productId);
+          const categoryItemDoc = await getDoc(categoryItemRef);
+          
+          if (categoryItemDoc.exists()) {
+            await updateDoc(categoryItemRef, {
+              image: cloudinaryUrl,
+              imageUrl: cloudinaryUrl,
+              lastUpdated: new Date().toISOString()
+            });
+            console.log(`✅ Updated image at: Products/${category}/Items/${productId}`);
+          } else {
+            throw new Error(
+              "Could not find product in any known structure. " +
+              "Product is not in Master collection, and storage information is incomplete for nested structure. " +
+              "Missing: " + 
+              (!storageLocation ? "storageLocation " : "") +
+              (!shelfName ? "shelfName " : "") +
+              (!rowName ? "rowName " : "") +
+              (columnIndex === undefined ? "columnIndex" : "")
+            );
+          }
+        } else {
+          // Path: Products/{storageLocation}/products/{productId}
+          const productRef = doc(
+            db,
+            'Products',
+            storageLocation,
+            'products',
+            productId
+          );
+
+          await updateDoc(productRef, {
+            image: cloudinaryUrl,
+            imageUrl: cloudinaryUrl,
+            lastUpdated: new Date().toISOString()
+          });
+          
+          console.log(`✅ Updated image at: Products/${storageLocation}/products/${productId}`);
+        }
+      }
+
+      setAlertModal({
+        isOpen: true,
+        type: 'success',
+        title: 'Upload Successful',
+        message: 'Product image has been updated successfully!'
       });
-
-
-      alert('Image uploaded successfully!');
       setImageUrl(cloudinaryUrl);
       
       // Notify parent component to refresh the product data
@@ -384,8 +480,14 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
         onProductUpdate();
       }
     } catch (error) {
-      console.error('Failed to update image:', error);
-      alert('Failed to update image: ' + error.message);
+      console.error('❌ Failed to update image:', error);
+      setAlertModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Upload Failed',
+        message: 'Failed to update product image.',
+        details: error.message
+      });
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -550,11 +652,19 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
 
   // Handle view location click
   const handleViewLocation = () => {
+    // For new structure products (master products without storageLocation)
+    // Check if product is a master product with variants
+    const isNewStructureProduct = !product.storageLocation && !product.locations;
+    
+    if (isNewStructureProduct) {
+      // For new structure, show variants tab instead since location is per variant
+      console.log('New structure product - locations are stored per variant');
+      setActiveTab('variants');
+      return;
+    }
+
+    // For old structure products with storageLocation
     const storageLocation = product.storageLocation;
-
-
-
-
 
     if (storageLocation) {
       const unitConfig = getUnitConfig(storageLocation);
@@ -591,11 +701,8 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
     try {
       if (!editedProduct || !product) return;
 
-      const storageLocation = product.storageLocation;
-      if (!storageLocation) {
-        alert('Cannot save: Product storage location is missing');
-        return;
-      }
+      // Check if this is a new structure product
+      const isNewStructureProduct = !product.storageLocation && !product.locations;
 
       // Clean the data by removing undefined values and computed fields
       const cleanData = (obj) => {
@@ -618,19 +725,74 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
       const updateData = {
         ...cleanData(editedProduct),
         isActive: isActive,
-        lastUpdated: new Date().toISOString()
       };
 
-      // Update the product in Firebase
-      const productRef = doc(
-        db,
-        'Products',
-        storageLocation,
-        'products',
-        product.id
-      );
+      if (isNewStructureProduct) {
+        // NEW ARCHITECTURE: Update flat Products collection
+        console.log('🆕 Updating new structure product (flat collection)');
+        
+        updateData.updatedAt = new Date().toISOString();
+        
+        const productRef = doc(db, 'Products', product.id);
+        await updateDoc(productRef, updateData);
 
-      await updateDoc(productRef, updateData);
+        // If product name or other denormalized fields changed, update all variants
+        if (editedProduct.name !== product.name || 
+            editedProduct.brand !== product.brand || 
+            editedProduct.category !== product.category) {
+          
+          const variantsRef = collection(db, 'Variants');
+          const variantsQuery = query(variantsRef, where('parentProductId', '==', product.id));
+          const variantsSnapshot = await getDocs(variantsQuery);
+          
+          const variantUpdates = {};
+          if (editedProduct.name !== product.name) variantUpdates.productName = editedProduct.name;
+          if (editedProduct.brand !== product.brand) variantUpdates.productBrand = editedProduct.brand;
+          if (editedProduct.category !== product.category) variantUpdates.productCategory = editedProduct.category;
+          
+          if (Object.keys(variantUpdates).length > 0) {
+            variantUpdates.updatedAt = new Date().toISOString();
+            
+            const updatePromises = variantsSnapshot.docs.map(variantDoc => 
+              updateDoc(variantDoc.ref, variantUpdates)
+            );
+            
+            await Promise.all(updatePromises);
+            console.log(`✅ Updated denormalized data in ${variantsSnapshot.size} variant(s)`);
+          }
+        }
+        
+        console.log(`✅ Updated product: Products/${product.id}`);
+        
+      } else {
+        // OLD ARCHITECTURE: Update nested Products structure
+        console.log('🔙 Updating old structure product (nested collection)');
+        
+        const storageLocation = product.storageLocation;
+        if (!storageLocation) {
+          setAlertModal({
+            isOpen: true,
+            type: 'error',
+            title: 'Cannot Save',
+            message: 'Product storage location is missing.',
+            details: 'This product requires a storage location to be updated.'
+          });
+          return;
+        }
+        
+        updateData.lastUpdated = new Date().toISOString();
+
+        const productRef = doc(
+          db,
+          'Products',
+          storageLocation,
+          'products',
+          product.id
+        );
+
+        await updateDoc(productRef, updateData);
+        console.log(`✅ Updated product: Products/${storageLocation}/products/${product.id}`);
+      }
 
       // Update local state
       setIsEditMode(false);
@@ -640,10 +802,21 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
         onProductUpdate();
       }
 
-      alert('Product updated successfully!');
+      setAlertModal({
+        isOpen: true,
+        type: 'success',
+        title: 'Update Successful',
+        message: 'Product has been updated successfully!'
+      });
     } catch (error) {
-      console.error('Error updating product:', error);
-      alert('Failed to update product: ' + error.message);
+      console.error('❌ Error updating product:', error);
+      setAlertModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Update Failed',
+        message: 'Failed to update product.',
+        details: error.message
+      });
     }
   };
 
@@ -655,51 +828,125 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
     try {
       if (!product) return;
 
-      const storageLocation = product.storageLocation;
-      if (!storageLocation) {
-        alert('Cannot delete: Product storage location is missing');
-        return;
-      }
+      // Check if this is a new structure product
+      const isNewStructureProduct = !product.storageLocation && !product.locations;
 
       setIsDeleting(true);
 
-      // Delete supplier links first
-      const suppliers = getSuppliers(product);
-      if (suppliers.length > 0) {
-        for (const supplier of suppliers) {
-          try {
-            // Delete from supplier_products collection
-            const supplierProductRef = doc(db, 'supplier_products', supplier.id, 'products', product.id);
-            await deleteDoc(supplierProductRef);
-            console.log(`Deleted supplier link: ${supplier.name} -> ${product.name}`);
-          } catch (error) {
-            console.error(`Error deleting supplier link for ${supplier.name}:`, error);
-            // Continue with deletion even if supplier link deletion fails
+      if (isNewStructureProduct) {
+        // NEW ARCHITECTURE: Delete from flat Products and Variants collections
+        console.log('🆕 Deleting new structure product (flat collection)');
+
+        // 1. Delete all variants first
+        const variantsRef = collection(db, 'Variants');
+        const variantsQuery = query(variantsRef, where('parentProductId', '==', product.id));
+        const variantsSnapshot = await getDocs(variantsQuery);
+
+        console.log(`Found ${variantsSnapshot.size} variant(s) to delete`);
+
+        for (const variantDoc of variantsSnapshot.docs) {
+          const variantData = variantDoc.data();
+          
+          // Delete supplier links for this variant
+          if (variantData.suppliers && Array.isArray(variantData.suppliers) && variantData.suppliers.length > 0) {
+            for (const supplier of variantData.suppliers) {
+              try {
+                const supplierProductsRef = collection(db, 'Suppliers', supplier.id, 'products');
+                const linkQuery = query(supplierProductsRef, where('variantId', '==', variantDoc.id));
+                const linkSnapshot = await getDocs(linkQuery);
+                
+                for (const linkDoc of linkSnapshot.docs) {
+                  await deleteDoc(linkDoc.ref);
+                  console.log(`Deleted supplier link: ${supplier.name} -> ${variantData.variantName}`);
+                }
+              } catch (error) {
+                console.error(`Error deleting supplier link for variant ${variantDoc.id}:`, error);
+              }
+            }
+          }
+
+          // Delete the variant document
+          await deleteDoc(variantDoc.ref);
+          console.log(`Deleted variant: ${variantDoc.id}`);
+        }
+
+        // 2. Delete the product document
+        const productRef = doc(db, 'Products', product.id);
+        await deleteDoc(productRef);
+        console.log(`✅ Deleted product: Products/${product.id}`);
+
+      } else {
+        // OLD ARCHITECTURE: Delete from nested Products structure
+        console.log('🔙 Deleting old structure product (nested collection)');
+        
+        const storageLocation = product.storageLocation;
+        if (!storageLocation) {
+          setAlertModal({
+            isOpen: true,
+            type: 'error',
+            title: 'Cannot Delete',
+            message: 'Product storage location is missing.',
+            details: 'This product requires a storage location to be deleted.'
+          });
+          setIsDeleting(false);
+          return;
+        }
+
+        // Delete supplier links
+        const suppliers = getSuppliers(product);
+        if (suppliers.length > 0) {
+          for (const supplier of suppliers) {
+            try {
+              const supplierProductsRef = collection(db, 'Suppliers', supplier.id, 'products');
+              const linkQuery = query(supplierProductsRef, where('productId', '==', product.id));
+              const linkSnapshot = await getDocs(linkQuery);
+              
+              for (const linkDoc of linkSnapshot.docs) {
+                await deleteDoc(linkDoc.ref);
+                console.log(`Deleted supplier link: ${supplier.name} -> ${product.name}`);
+              }
+            } catch (error) {
+              console.error(`Error deleting supplier link for ${supplier.name}:`, error);
+            }
           }
         }
+
+        // Delete the product document
+        const productRef = doc(
+          db,
+          'Products',
+          storageLocation,
+          'products',
+          product.id
+        );
+
+        await deleteDoc(productRef);
+        console.log(`✅ Deleted product: Products/${storageLocation}/products/${product.id}`);
       }
-
-      // Delete the product document
-      const productRef = doc(
-        db,
-        'Products',
-        storageLocation,
-        'products',
-        product.id
-      );
-
-      await deleteDoc(productRef);
 
       // Close modals and notify parent to refresh
       setShowDeleteModal(false);
       setDeleteConfirmText('');
+      setAlertModal({
+        isOpen: true,
+        type: 'success',
+        title: 'Delete Successful',
+        message: 'Product has been deleted successfully!'
+      });
       onClose();
+      
       if (onProductUpdate) {
         onProductUpdate();
       }
     } catch (error) {
-      console.error('Error deleting product:', error);
-      alert('❌ Failed to delete product: ' + error.message);
+      console.error('❌ Error deleting product:', error);
+      setAlertModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Delete Failed',
+        message: 'Failed to delete product.',
+        details: error.message
+      });
     } finally {
       setIsDeleting(false);
     }
@@ -1291,7 +1538,7 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
           </div>
 
           {/* Tab Content */}
-          <div className="overflow-y-auto p-6" style={{ maxHeight: 'calc(90vh - 400px)' }}>
+          <div className="overflow-y-auto p-6" style={{ maxHeight: 'calc(90vh - 500px)' }}>
             {/* Overview Tab */}
             {activeTab === 'overview' && (
               <div className="space-y-6">
@@ -1365,40 +1612,133 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
 
                 {/* Quick Info Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Storage Location Card */}
+                  {/* Storage Location Card - Enhanced */}
                   <div 
                     onClick={handleViewLocation}
-                    className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer group"
+                    className="bg-gradient-to-br from-blue-50 to-white rounded-xl border-2 border-blue-200 p-4 hover:shadow-lg transition-all cursor-pointer group hover:border-blue-300"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-2">
-                        <div className="p-2 bg-blue-100 rounded-lg group-hover:bg-blue-200 transition-colors">
-                          <FiMapPin className="text-blue-600" size={18} />
+                        <div className="p-2.5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl group-hover:scale-110 transition-transform shadow-md">
+                          <FiMapPin className="text-white" size={20} />
                         </div>
-                        <h4 className="text-sm font-semibold text-gray-700">Storage Location</h4>
+                        <div>
+                          <h4 className="text-sm font-bold text-gray-800">Storage Location</h4>
+                          <p className="text-xs text-blue-600">
+                            {(!product.storageLocation && !product.locations) ? 'Multi-location' : 'Single location'}
+                          </p>
+                        </div>
                       </div>
-                      <svg className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-gray-500">Storage Unit:</span>
-                        <span className="font-medium text-gray-900">{product.storageLocation || 'N/A'}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-gray-500">Location:</span>
-                        <span className="font-medium text-gray-900">{product.shelfName || 'N/A'} - {product.rowName || 'N/A'}</span>
+                      <div className="p-1.5 bg-blue-100 rounded-full group-hover:bg-blue-200 transition-colors">
+                        <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
                       </div>
                     </div>
-                    <div className="mt-3 pt-3 border-t border-gray-100">
-                      <span className="text-xs text-blue-600 font-medium group-hover:text-blue-700">
-                        Click to view on map →
-                      </span>
+                    
+                    <div className="space-y-2.5">
+                      {variants.length > 0 ? (
+                        // Master product with variants - show aggregated info
+                        <>
+                          <div className="bg-white rounded-lg p-3 border border-blue-100">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-medium text-gray-600">Product Type:</span>
+                              <span className="px-2 py-1 bg-blue-500 text-white text-xs font-bold rounded-full">
+                                MASTER PRODUCT
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-medium text-gray-600">Total Variants:</span>
+                              <span className="text-sm font-bold text-blue-600">{variants.length}</span>
+                            </div>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-medium text-gray-600">Storage Units:</span>
+                              <span className="text-sm font-bold text-purple-600">
+                                {(() => {
+                                  const uniqueLocations = new Set(variants.map(v => v.storageLocation).filter(Boolean));
+                                  return uniqueLocations.size;
+                                })()} unit{(() => {
+                                  const uniqueLocations = new Set(variants.map(v => v.storageLocation).filter(Boolean));
+                                  return uniqueLocations.size;
+                                })() !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-medium text-gray-600">Total Quantity:</span>
+                              <span className="text-sm font-bold text-green-600">
+                                {variants.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0)} {product.baseUnit || product.unit || 'pcs'}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-2.5 border border-purple-200">
+                            <div className="flex items-start gap-2">
+                              <svg className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <p className="text-xs text-purple-700 leading-relaxed">
+                                This master product has variants stored across multiple locations. Click to view detailed location map.
+                              </p>
+                            </div>
+                          </div>
+                        </>
+                      ) : product.storageLocation ? (
+                        // Old structure: Single product with location - show specific location
+                        <>
+                          <div className="bg-white rounded-lg p-3 border border-blue-100">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <span className="text-xs text-gray-500 block mb-1">Storage Unit:</span>
+                                <span className="text-sm font-bold text-gray-900">{product.storageLocation || 'N/A'}</span>
+                              </div>
+                              <div>
+                                <span className="text-xs text-gray-500 block mb-1">Quantity:</span>
+                                <span className="text-sm font-bold text-blue-600">{product.quantity || 0} {product.unit || 'pcs'}</span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {product.shelfName && product.rowName && (
+                            <div className="bg-white rounded-lg p-3 border border-blue-100">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs text-gray-500">Position:</span>
+                                <span className="px-2 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded">
+                                  {product.shelfName} • {product.rowName}
+                                  {product.columnIndex !== undefined && ` • Col ${product.columnIndex + 1}`}
+                                </span>
+                              </div>
+                              {product.fullLocation && (
+                                <p className="text-xs text-gray-600 mt-1">
+                                  📍 {product.fullLocation}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        // No location data available
+                        <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                          <p className="text-xs text-gray-500 text-center">
+                            No storage location assigned
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="mt-4 pt-3 border-t border-blue-100">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-blue-700 font-semibold group-hover:text-blue-800 flex items-center gap-1.5">
+                          <FiMap size={14} />
+                          {variants.length > 0 ? 'View All Locations' : 'View on Map'}
+                        </span>
+                        <svg className="w-4 h-4 text-blue-600 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                        </svg>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Supplier Card */}
+                  {/* Supplier Card - Enhanced */}
                   <div 
                     onClick={() => {
                       const suppliers = getSuppliers(product);
@@ -1409,69 +1749,128 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                         navigate('/im/suppliers');
                       }
                     }}
-                    className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer group"
+                    className="bg-gradient-to-br from-orange-50 to-white rounded-xl border-2 border-orange-200 p-4 hover:shadow-lg transition-all cursor-pointer group hover:border-orange-300"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-2">
-                        <div className="p-2 bg-orange-100 rounded-lg group-hover:bg-orange-200 transition-colors">
-                          <FiPackage className="text-orange-600" size={18} />
+                        <div className="p-2.5 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl group-hover:scale-110 transition-transform shadow-md">
+                          <FiPackage className="text-white" size={20} />
                         </div>
-                        <h4 className="text-sm font-semibold text-gray-700">Supplier Info</h4>
+                        <div>
+                          <h4 className="text-sm font-bold text-gray-800">Supplier Info</h4>
+                          <p className="text-xs text-orange-600">
+                            {getSuppliers(product).length > 0 ? `${getSuppliers(product).length} linked` : 'Not linked'}
+                          </p>
+                        </div>
                       </div>
-                      <svg className="w-4 h-4 text-gray-400 group-hover:text-orange-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
+                      <div className="p-1.5 bg-orange-100 rounded-full group-hover:bg-orange-200 transition-colors">
+                        <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
                     </div>
-                    <div className="space-y-2">
+                    
+                    <div className="space-y-2.5">
                       {(() => {
                         const suppliers = getSuppliers(product);
                         return suppliers.length > 0 ? (
                           <>
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="text-gray-500">Primary:</span>
-                              <span className="font-medium text-gray-900">{suppliers[0].name}</span>
-                            </div>
-                            {suppliers.length > 1 && (
-                              <div className="flex items-center gap-1">
-                                <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs font-medium rounded-full">
-                                  +{suppliers.length - 1} more
+                            {/* Primary Supplier */}
+                            <div className="bg-white rounded-lg p-3 border border-orange-100">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="px-2 py-0.5 bg-orange-500 text-white text-xs font-bold rounded">
+                                  PRIMARY
                                 </span>
+                                <span className="text-xs text-gray-500">Supplier</span>
+                              </div>
+                              <div className="mb-2">
+                                <p className="text-sm font-bold text-gray-900">{suppliers[0].name}</p>
+                                {suppliers[0].code && (
+                                  <p className="text-xs text-gray-500">Code: {suppliers[0].code}</p>
+                                )}
+                              </div>
+                              {suppliers[0].price && (
+                                <div className="flex items-center justify-between pt-2 border-t border-orange-50">
+                                  <span className="text-xs text-gray-500">Supplier Price:</span>
+                                  <span className="text-sm font-bold text-green-600">₱{formatMoney(suppliers[0].price)}</span>
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Additional Suppliers */}
+                            {suppliers.length > 1 && (
+                              <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg p-2.5 border border-orange-200">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                    </svg>
+                                    <span className="text-xs font-medium text-orange-700">Alternative Suppliers</span>
+                                  </div>
+                                  <span className="px-2 py-1 bg-orange-500 text-white text-xs font-bold rounded-full">
+                                    +{suppliers.length - 1}
+                                  </span>
+                                </div>
+                                <div className="mt-2 space-y-1">
+                                  {suppliers.slice(1, 3).map((sup, idx) => (
+                                    <p key={idx} className="text-xs text-orange-700 flex items-center gap-1">
+                                      <span className="w-1 h-1 bg-orange-500 rounded-full"></span>
+                                      {sup.name}
+                                    </p>
+                                  ))}
+                                  {suppliers.length > 3 && (
+                                    <p className="text-xs text-orange-600 italic">
+                                      ...and {suppliers.length - 3} more
+                                    </p>
+                                  )}
+                                </div>
                               </div>
                             )}
                           </>
                         ) : (
-                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5">
-                            <p className="text-xs text-amber-800 font-medium mb-1 flex items-center gap-1">
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          // No suppliers linked
+                          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-dashed border-amber-300 rounded-lg p-3">
+                            <div className="flex items-start gap-2 mb-2">
+                              <svg className="w-5 h-5 text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                               </svg>
-                              No supplier linked
-                            </p>
-                            <p className="text-xs text-amber-700 leading-relaxed">
-                              Link this product to a supplier in the Supplier Management page
-                            </p>
+                              <div>
+                                <p className="text-xs font-bold text-amber-800 mb-1">
+                                  No Supplier Linked
+                                </p>
+                                <p className="text-xs text-amber-700 leading-relaxed">
+                                  Link suppliers to track pricing, manage purchase orders, and maintain supply chain information.
+                                </p>
+                              </div>
+                            </div>
                           </div>
                         );
                       })()}
                     </div>
-                    <div className="mt-3 pt-3 border-t border-gray-100">
-                      <span className="text-xs text-orange-600 font-medium group-hover:text-orange-700 flex items-center gap-1">
-                        {getSuppliers(product).length > 0 ? (
-                          <>
-                            View supplier details
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                          </>
-                        ) : (
-                          <>
-                            Go to Supplier Management
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                            </svg>
-                          </>
-                        )}
-                      </span>
+                    
+                    <div className="mt-4 pt-3 border-t border-orange-100">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-orange-700 font-semibold group-hover:text-orange-800 flex items-center gap-1.5">
+                          {getSuppliers(product).length > 0 ? (
+                            <>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              View All Suppliers
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                              </svg>
+                              Link Supplier
+                            </>
+                          )}
+                        </span>
+                        <svg className="w-4 h-4 text-orange-600 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                        </svg>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1662,135 +2061,120 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
               </div>
             )}
 
-            {/* Location Tab */}
+            {/* Location Tab - Enhanced */}
             {activeTab === 'location' && (
-              <div className="space-y-6">
-                {/* Location Information */}
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                      <FiMapPin size={16} />
-                      Storage Location{product.locations && product.locations.length > 1 ? 's' : ''}
-                    </h4>
-                    {product.storageLocation && (
-                      <button
-                        onClick={handleViewLocation}
-                        className={`flex items-center gap-2 px-3 py-1.5 text-white text-xs font-medium rounded-lg transition-colors ${
-                          product.isVariant 
-                            ? 'bg-purple-500 hover:bg-purple-600' 
-                            : 'bg-orange-500 hover:bg-orange-600'
-                        }`}
-                      >
-                        <FiMap size={14} />
-                        View on Map
-                      </button>
-                    )}
+              <div className="space-y-4">
+                {/* Location Overview Header */}
+                <div className="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border-2 border-blue-200 p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg">
+                      <FiMapPin className="text-white" size={24} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-800">Storage Location Details</h3>
+                      <p className="text-sm text-blue-600">
+                        {variants.length} variant{variants.length !== 1 ? 's' : ''}
+                      </p>
+                    </div>
                   </div>
-                  <div className="p-4 space-y-3">
-                    {product.locations && product.locations.length > 1 ? (
-                      <>
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
-                          <p className="text-sm text-blue-800 font-medium">
-                            📍 This product is stored in {product.locations.length} different locations
-                          </p>
-                          <p className="text-xs text-blue-600 mt-1">
-                            Total quantity across all locations: {product.quantity} {product.unit}
-                          </p>
-                        </div>
-                        {product.locations.map((loc, index) => (
-                          <div key={loc.id || index} className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-1">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs font-semibold text-gray-700 bg-gray-200 px-2 py-1 rounded">
-                                Location {index + 1}
-                              </span>
-                              <span className="text-xs font-medium text-gray-600">
-                                Qty: {loc.quantity} {product.unit}
-                              </span>
-                            </div>
-                            <InfoRow label="Full Location" value={loc.location || 'N/A'} />
-                            <InfoRow label="Storage Unit" value={loc.storageLocation || 'N/A'} />
-                            {loc.shelfName && <InfoRow label="Shelf" value={loc.shelfName} />}
-                            {loc.rowName && <InfoRow label="Row" value={loc.rowName} />}
-                          </div>
-                        ))}
-                      </>
-                    ) : (
-                      <>
-                        <InfoRow label="Storage Location" value={product.storageLocation || 'N/A'} />
-                        <InfoRow label="Shelf Name" value={product.shelfName || 'N/A'} />
-                        <InfoRow label="Row Name" value={product.rowName || 'N/A'} />
-                        <InfoRow label="Full Location" value={product.fullLocation || 'N/A'} />
-                      </>
-                    )}
+
+                  {/* Quick Stats */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-white rounded-lg p-3 border border-blue-100">
+                      <div className="text-xs text-blue-600 mb-1">Total Variants</div>
+                      <div className="text-sm font-bold text-gray-900">{variants.length}</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 border border-blue-100">
+                      <div className="text-xs text-blue-600 mb-1">Total Locations</div>
+                      <div className="text-sm font-bold text-gray-900">
+                        {variants.reduce((sum, v) => sum + (v.locations?.length || 0), 0)}
+                      </div>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 border border-blue-100">
+                      <div className="text-xs text-blue-600 mb-1">Total Quantity</div>
+                      <div className="text-sm font-bold text-blue-600">
+                        {variants.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0)} {product.baseUnit || 'pcs'}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {/* Storage Unit Configuration */}
-                {product.storageLocation && (
-                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                    <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                      <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                        <FiMap size={16} />
-                        Storage Unit Details
-                      </h4>
-                    </div>
-                    <div className="p-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <InfoRow label="Storage Unit" value={product.storageLocation || 'N/A'} />
-                        <InfoRow label="Unit Type" value={getUnitConfig(product.storageLocation)?.type || 'N/A'} />
-                        <InfoRow label="Shelves" value={getUnitConfig(product.storageLocation)?.shelves?.length || 'N/A'} />
-                        <InfoRow label="Column Index" value={product.columnIndex || 'N/A'} />
-                      </div>
-                      {getUnitConfig(product.storageLocation) && (
-                        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                          <p className="text-xs text-blue-700">
-                            <strong>Unit Configuration:</strong> {getUnitConfig(product.storageLocation).title}
-                          </p>
-                          <p className="text-xs text-blue-600 mt-1">
-                            This storage unit has {getUnitConfig(product.storageLocation).shelves.length} shelves available for storage.
-                          </p>
+                {/* Simple Variant List with All Locations */}
+                {variants.length === 0 ? (
+                  <div className="bg-yellow-50 rounded-xl border-2 border-yellow-300 p-6 text-center">
+                    <FiMapPin className="mx-auto mb-2 text-yellow-600" size={32} />
+                    <p className="text-sm text-yellow-800">No variants with location data</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {variants.map((variant, idx) => (
+                      <div key={variant.id || idx} className="bg-white rounded-lg border border-gray-200 p-4">
+                        {/* Variant Header */}
+                        <div className="flex items-start justify-between mb-3 pb-3 border-b border-gray-100">
+                          <div>
+                            <h5 className="text-sm font-semibold text-gray-900">
+                              {variant.variantName || variant.size || variant.specifications || `Variant ${idx + 1}`}
+                            </h5>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              Total: {variant.quantity || 0} {variant.unit || variant.baseUnit || 'pcs'}
+                            </p>
+                          </div>
+                          {variant.unitPrice && (
+                            <span className="text-sm font-semibold text-green-600">
+                              ₱{formatMoney(variant.unitPrice)}
+                            </span>
+                          )}
                         </div>
-                      )}
-                    </div>
+
+                        {/* All Locations for this Variant */}
+                        {variant.locations && variant.locations.length > 0 ? (
+                          <div className="space-y-2">
+                            <p className="text-xs font-medium text-gray-600 mb-2">
+                              Storage Locations ({variant.locations.length}):
+                            </p>
+                            {variant.locations.map((loc, locIdx) => (
+                              <div key={locIdx} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex items-start gap-2 flex-1">
+                                    <FiMapPin className="text-blue-600 mt-0.5" size={14} />
+                                    <div className="flex-1">
+                                      <p className="text-sm font-medium text-gray-900">
+                                        {loc.location || loc.fullLocation || `${loc.unit || loc.storageLocation} - ${loc.shelfName || loc.shelf} - ${loc.rowName || loc.row}`}
+                                      </p>
+                                      <div className="flex items-center gap-2 mt-1">
+                                        {loc.shelfName && (
+                                          <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded">
+                                            {loc.shelfName}
+                                          </span>
+                                        )}
+                                        {loc.rowName && (
+                                          <span className="text-xs px-2 py-0.5 bg-green-50 text-green-700 rounded">
+                                            {loc.rowName}
+                                          </span>
+                                        )}
+                                        {loc.columnIndex !== undefined && (
+                                          <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-700 rounded">
+                                            Col {loc.columnIndex + 1}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="text-right ml-3">
+                                    <div className="text-sm font-bold text-blue-600">{loc.quantity || 0}</div>
+                                    <div className="text-xs text-gray-500">{variant.unit || 'pcs'}</div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-400 italic">No location data</p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
-
-                {/* Location Map Preview */}
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                      <FiMap size={16} />
-                      Location Map
-                    </h4>
-                    <button
-                      onClick={handleViewLocation}
-                      disabled={!product.storageLocation}
-                      className={`flex items-center gap-2 px-3 py-1.5 text-white text-xs font-medium rounded-lg transition-colors ${
-                        product.storageLocation
-                          ? (product.isVariant ? 'bg-purple-500 hover:bg-purple-600' : 'bg-orange-500 hover:bg-orange-600')
-                          : 'bg-gray-400 cursor-not-allowed'
-                      }`}
-                    >
-                      <FiMap size={14} />
-                      {product.storageLocation ? 'View Full Map' : 'No Location Set'}
-                    </button>
-                  </div>
-                  <div className="p-4">
-                    {product.storageLocation ? (
-                      <div className="text-center py-8">
-                        <FiMap className="mx-auto mb-2 text-gray-400" size={32} />
-                        <p className="text-sm text-gray-600 mb-2">Interactive storage map available</p>
-                        <p className="text-xs text-gray-500">Click "View Full Map" to see the complete storage layout and locate this product</p>
-                      </div>
-                    ) : (
-                      <div className="text-center py-8 text-gray-500">
-                        <FiMapPin className="mx-auto mb-2" size={32} />
-                        <p>No storage location assigned</p>
-                        <p className="text-xs mt-1">This product needs to be assigned to a storage location</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
               </div>
             )}
 
@@ -1939,46 +2323,46 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
           <div className="min-h-screen px-4 py-8 flex items-center justify-center">
             <div className="relative bg-white w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden">
               <NewVariantForm
-                selectedCategory={{ name: product.category }}
+                product={product}
+                selectedCategory={{ 
+                  category: product.category,
+                  name: product.defaultStorageUnit || null
+                }}
+                storageLocations={storageLocations}
+                onClose={() => {
+                  setShowVariantCreationModal(false);
+                }}
                 onBack={() => {
                   setShowVariantCreationModal(false);
+                }}
+                onVariantCreated={async () => {
                   // Refresh variants list after creating a new variant
+                  setShowVariantCreationModal(false);
                   if (product && !product.isVariant) {
-                    const fetchVariants = async () => {
-                      setLoadingVariants(true);
-                      try {
-                        const storageLocation = product.storageLocation;
-                        if (!storageLocation) {
-                          setVariants([]);
-                          return;
-                        }
-
-                        // Query for all products where parentProductId === this product's ID
-                        const productsRef = collection(db, 'Products', storageLocation, 'products');
-                        const variantsQuery = query(
-                          productsRef,
-                          where('parentProductId', '==', product.id),
-                          where('isVariant', '==', true)
-                        );
-                        
-                        const variantsSnapshot = await getDocs(variantsQuery);
-                        const variantsList = variantsSnapshot.docs.map(doc => ({
-                          id: doc.id,
-                          ...doc.data()
-                        }));
-                        
-                        setVariants(variantsList);
-                      } catch (error) {
-                        console.error('Error fetching variants:', error);
-                        setVariants([]);
-                      } finally {
-                        setLoadingVariants(false);
-                      }
-                    };
-                    fetchVariants();
+                    setLoadingVariants(true);
+                    try {
+                      // NEW ARCHITECTURE: Query flat Variants collection in Master
+                      const variantsRef = collection(db, 'Master', 'Variants', 'items');
+                      const variantsQuery = query(
+                        variantsRef,
+                        where('parentProductId', '==', product.id)
+                      );
+                      
+                      const variantsSnapshot = await getDocs(variantsQuery);
+                      const variantsList = variantsSnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                      }));
+                      
+                      setVariants(variantsList);
+                    } catch (error) {
+                      console.error('Error fetching variants:', error);
+                      setVariants([]);
+                    } finally {
+                      setLoadingVariants(false);
+                    }
                   }
                 }}
-                preSelectedProduct={product}
               />
             </div>
           </div>
@@ -2160,6 +2544,16 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
           </div>
         </div>
       )}
+
+      {/* Alert Modal */}
+      <ErrorModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        type={alertModal.type}
+        title={alertModal.title}
+        message={alertModal.message}
+        details={alertModal.details}
+      />
     </div>
   );
 };

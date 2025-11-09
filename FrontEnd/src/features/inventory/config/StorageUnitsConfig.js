@@ -538,6 +538,20 @@ export const STORAGE_UNITS = [
     ]
   },
   {
+    id: 'unit-03-yard',
+    title: 'Unit 03 Yard - Bulk Cement Storage',
+    type: 'Outdoor Stockpile',
+    capacity: 10000, // Large capacity for bulk storage in m³ (conceptual capacity for tracking)
+    shelves: [
+      {
+        name: "Yard",
+        rows: [
+          { name: "Bulk Storage", capacity: 10000, columns: 1 }  // Single large area for bulk cement in m³
+        ]
+      }
+    ]
+  },
+  {
     id: 'unit-04',
     title: 'Unit 04 - Electrical & Plumbing',
     type: 'Storage Unit',
@@ -1066,4 +1080,19 @@ export const getRowDimensionConstraints = (unitName, shelfName, rowName) => {
   if (!row) return null;
 
   return row.dimensionConstraints || null;
+};
+
+/**
+ * Get all storage units as a simplified list for selection
+ * @returns {Array} Array of storage units with id, name, and category
+ */
+export const getAllStorageUnits = () => {
+  return STORAGE_UNITS.map(unit => ({
+    id: unit.id,
+    name: unit.title.split(' - ')[0], // Extract "Unit 01" from "Unit 01 - Steel & Heavy Materials"
+    fullName: unit.title,
+    category: unit.title.split(' - ')[1] || 'General', // Extract category part
+    type: unit.type,
+    capacity: unit.capacity
+  }));
 };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { FiX, FiEdit2, FiTrash2, FiSave } from 'react-icons/fi';
 import { getFirestore, collection, getDocs, doc, getDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import app from '../../../../FirebaseConfig';
@@ -20,20 +20,36 @@ const SupplierProducts = ({ supplier, onClose }) => {
   const db = getFirestore(app);
   const { updateSupplierProductDetails, listenToProducts } = useServices();
 
+  // Memoize linked product IDs to prevent unnecessary re-renders in child modal
+  const linkedProductIds = useMemo(() => {
+    return supplierProducts.map(p => p.id);
+  }, [supplierProducts]);
+
   const fetchSupplierProducts = async () => {
     if (!supplier?.id) return;
 
     setLoading(true);
     try {
-      // Step 1: Get the list of product IDs linked to this supplier
-      const supplierProductsRef = collection(db, 'supplier_products', supplier.id, 'products');
-      const supplierProductsSnapshot = await getDocs(supplierProductsRef);
+      console.log('📦 Fetching supplier products for supplier:', supplier.id);
       
-      // Create a map of productId -> supplier data (price, SKU, etc.)
+      // Step 1: Get the list of product IDs linked to this supplier
+      // Try new structure first (Suppliers/{id}/products), then fallback to old (supplier_products/{id}/products)
+      let supplierProductsRef = collection(db, 'Suppliers', supplier.id, 'products');
+      let supplierProductsSnapshot = await getDocs(supplierProductsRef);
+      
+      if (supplierProductsSnapshot.empty) {
+        console.log('📦 No products in new "Suppliers" collection, checking old "supplier_products"...');
+        supplierProductsRef = collection(db, 'supplier_products', supplier.id, 'products');
+        supplierProductsSnapshot = await getDocs(supplierProductsRef);
+      } else {
+        console.log(`📦 Found ${supplierProductsSnapshot.size} products in new "Suppliers" collection`);
+      }
+      
+      // Create a map of productId/variantId -> supplier data (price, SKU, etc.)
       const supplierDataMap = {};
       supplierProductsSnapshot.docs.forEach(docSnapshot => {
         const data = docSnapshot.data();
-        // Use the document ID as the key (which is the productId)
+        // Use the document ID as the key (which is the productId or variantId)
         const productId = docSnapshot.id;
         supplierDataMap[productId] = {
           supplierPrice: data.supplierPrice || 0,
@@ -41,15 +57,38 @@ const SupplierProducts = ({ supplier, onClose }) => {
           lastUpdated: data.lastUpdated,
           isVariant: data.isVariant || false,
           parentProductId: data.parentProductId || null,
-          variantIndex: data.variantIndex || null
+          variantIndex: data.variantIndex || null,
+          // New structure fields
+          productName: data.productName || '',
+          productBrand: data.productBrand || '',
+          productCategory: data.productCategory || ''
         };
       });
 
 
-      // Step 2: Use listenToProducts service to get all products (more efficient)
+      // Step 2: Fetch variants from new Variants collection for linked variant IDs
+      const variantIds = Object.keys(supplierDataMap).filter(id => id.startsWith('VAR_'));
+      const variantsFromDB = [];
+      
+      if (variantIds.length > 0) {
+        console.log(`📦 Fetching ${variantIds.length} variants from Variants collection...`);
+        for (const variantId of variantIds) {
+          const variantRef = doc(db, 'Variants', variantId);
+          const variantDoc = await getDoc(variantRef);
+          if (variantDoc.exists()) {
+            variantsFromDB.push({
+              id: variantDoc.id,
+              ...variantDoc.data()
+            });
+          }
+        }
+        console.log(`📦 Found ${variantsFromDB.length} variants in Variants collection`);
+      }
+
+      // Step 3: Use listenToProducts service to get all products (more efficient)
       const unsubscribe = listenToProducts((allProducts) => {
 
-        // Step 3: Filter products that are linked to this supplier
+        // Step 4: Filter products that are linked to this supplier
         const linkedProducts = allProducts.filter(product => {
           const isLinked = supplierDataMap[product.id] !== undefined;
           if (isLinked) {
@@ -58,7 +97,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
         });
 
 
-        // Step 4: Group products by base identity to consolidate duplicates across storage locations
+        // Step 5: Group products by base identity to consolidate duplicates across storage locations
         const productGroups = {};
         
         linkedProducts.forEach(product => {
@@ -68,7 +107,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
           const groupKey = `${product.name || 'unknown'}_${product.brand || 'generic'}_${product.specifications || ''}_${product.category || ''}`;
           
           if (!productGroups[groupKey]) {
-            // Check if product has variants in Firebase
+            // Check if product has variants in Firebase (old structure)
             const productVariants = Array.isArray(product.variants) ? product.variants : [];
             
             // Process variants that are linked to this supplier
@@ -125,6 +164,78 @@ const SupplierProducts = ({ supplier, onClose }) => {
             });
             productGroups[groupKey].allIds.push(product.id);
             productGroups[groupKey].totalQuantity += Number(product.quantity) || 0;
+          }
+        });
+
+        // Step 6: Process variants from new Variants collection
+        variantsFromDB.forEach(variant => {
+          const variantSupplierData = supplierDataMap[variant.id];
+          if (!variantSupplierData) return;
+
+          // Use denormalized product data or fetch parent product
+          const productName = variant.productName || variantSupplierData.productName || 'Unknown';
+          const productBrand = variant.productBrand || variantSupplierData.productBrand || 'Generic';
+          const productCategory = variant.productCategory || variantSupplierData.productCategory || 'Unknown';
+          
+          // Create group key using denormalized parent product data
+          const groupKey = `${productName}_${productBrand}_${variant.specifications || ''}_${productCategory}`;
+          
+          // Create variant object
+          const processedVariant = {
+            ...variant,
+            id: variant.id,
+            parentProductId: variant.parentProductId,
+            name: productName,
+            size: variant.size || variant.specifications || '',
+            specifications: variant.specifications || '',
+            supplierPrice: variantSupplierData.supplierPrice || 0,
+            supplierSKU: variantSupplierData.supplierSKU || '',
+            unitPrice: variant.unitPrice || 0,
+            quantity: variant.quantity || 0,
+            unit: variant.unit || 'pcs',
+            // Handle multi-location variants
+            locations: variant.locations || [],
+            totalQuantity: variant.locations 
+              ? variant.locations.reduce((sum, loc) => sum + (loc.quantity || 0), 0) 
+              : (variant.quantity || 0)
+          };
+
+          // Add to existing product group or create new one
+          if (!productGroups[groupKey]) {
+            productGroups[groupKey] = {
+              id: variant.parentProductId || variant.id,
+              name: productName,
+              brand: productBrand,
+              category: productCategory,
+              image: variant.productImageUrl || '',
+              supplierPrice: variantSupplierData.supplierPrice || 0,
+              supplierSKU: variantSupplierData.supplierSKU || '',
+              lastUpdated: variantSupplierData.lastUpdated,
+              variants: [processedVariant],
+              actualCategory: productCategory,
+              fullLocation: processedVariant.locations.length > 0 
+                ? processedVariant.locations.map(l => l.fullLocation).join(', ')
+                : 'Unknown',
+              locations: processedVariant.locations.length > 0 
+                ? processedVariant.locations 
+                : [{
+                    id: variant.id,
+                    location: variant.fullLocation || 'Unknown',
+                    quantity: variant.quantity || 0
+                  }],
+              allIds: [variant.id],
+              totalQuantity: processedVariant.totalQuantity
+            };
+          } else {
+            // Add variant to existing product group
+            productGroups[groupKey].variants.push(processedVariant);
+            productGroups[groupKey].allIds.push(variant.id);
+            productGroups[groupKey].totalQuantity += processedVariant.totalQuantity;
+            
+            // Add locations from this variant
+            if (processedVariant.locations.length > 0) {
+              productGroups[groupKey].locations.push(...processedVariant.locations);
+            }
           }
         });
 
@@ -186,8 +297,19 @@ const SupplierProducts = ({ supplier, onClose }) => {
   const handleUnlink = async (productId) => {
     if (window.confirm('Are you sure you want to unlink this product from the supplier?')) {
       try {
-        // Delete the product document from supplier_products collection
-        const productRef = doc(db, 'supplier_products', supplier.id, 'products', productId);
+        // Try new structure first (Suppliers/{id}/products/{productId})
+        let productRef = doc(db, 'Suppliers', supplier.id, 'products', productId);
+        let productDoc = await getDoc(productRef);
+        
+        // If not found, try old structure (supplier_products/{id}/products/{productId})
+        if (!productDoc.exists()) {
+          console.log('📦 Product link not in new "Suppliers" collection, using old "supplier_products"...');
+          productRef = doc(db, 'supplier_products', supplier.id, 'products', productId);
+        } else {
+          console.log('📦 Deleting product link from new "Suppliers" collection');
+        }
+        
+        // Delete the product document from supplier collection
         await deleteDoc(productRef);
         
         // Refresh the list
@@ -255,8 +377,19 @@ const SupplierProducts = ({ supplier, onClose }) => {
         const variant = product.variants[variantIndex];
         const variantId = variant.id;
 
-        // Delete the variant from supplier_products collection
-        const variantRef = doc(db, 'supplier_products', supplier.id, 'products', variantId);
+        // Try new structure first (Suppliers/{id}/products/{variantId})
+        let variantRef = doc(db, 'Suppliers', supplier.id, 'products', variantId);
+        let variantDoc = await getDoc(variantRef);
+        
+        // If not found, try old structure (supplier_products/{id}/products/{variantId})
+        if (!variantDoc.exists()) {
+          console.log('📦 Variant link not in new "Suppliers" collection, using old "supplier_products"...');
+          variantRef = doc(db, 'supplier_products', supplier.id, 'products', variantId);
+        } else {
+          console.log('📦 Deleting variant link from new "Suppliers" collection');
+        }
+        
+        // Delete the variant from supplier collection
         await deleteDoc(variantRef);
 
         await fetchSupplierProducts(); // Refresh the list
@@ -651,7 +784,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
           supplier={supplier} 
           onClose={() => setLinkProductModal(false)} 
           onProductLinked={fetchSupplierProducts}
-          linkedProductIds={supplierProducts.map(p => p.id)}
+          linkedProductIds={linkedProductIds}
         />
       )}
       
@@ -668,47 +801,73 @@ const LinkProductModal = ({ supplier, onClose, onProductLinked, linkedProductIds
   const [supplierPrices, setSupplierPrices] = useState({});
   const [linking, setLinking] = useState(false);
   const { listenToProducts, linkProductToSupplier } = useServices();
+  const db = getFirestore(app);
 
   useEffect(() => {
+    setLoading(true);
+    console.log('📦 Fetching available products for linking...');
+
+    // Listen to products - this returns the unsubscribe function directly
     const unsubscribe = listenToProducts((products) => {
-      // Group products by base identity to avoid duplicates
+      console.log(`📦 Got ${products.length} products from listener`);
+      
+      // Group by base identity to avoid duplicates
       const productGroups = {};
       
-      products.forEach(product => {
-        const groupKey = `${product.name || 'unknown'}_${product.brand || 'generic'}_${product.specifications || ''}_${product.category || ''}`;
+      products.forEach(item => {
+        const itemName = item.name || 'unknown';
+        const itemBrand = item.brand || 'generic';
+        const itemCategory = item.category || '';
+        const itemSpecs = item.specifications || '';
+        
+        const groupKey = `${itemName}_${itemBrand}_${itemSpecs}_${itemCategory}`;
         
         if (!productGroups[groupKey]) {
           productGroups[groupKey] = {
-            ...product,
-            locations: [product],
-            totalQuantity: Number(product.quantity) || 0,
-            allIds: [product.id]
+            id: item.id,
+            name: itemName,
+            brand: itemBrand,
+            category: itemCategory,
+            specifications: itemSpecs,
+            imageUrl: item.imageUrl || '',
+            unitPrice: item.unitPrice || 0,
+            unit: item.unit || 'pcs',
+            isVariant: false, // Old structure products
+            locations: [item],
+            totalQuantity: Number(item.quantity) || 0,
+            allIds: [item.id]
           };
         } else {
-          productGroups[groupKey].locations.push(product);
-          productGroups[groupKey].totalQuantity += Number(product.quantity) || 0;
-          productGroups[groupKey].allIds.push(product.id);
+          // Add to existing group
+          productGroups[groupKey].locations.push(item);
+          productGroups[groupKey].totalQuantity += Number(item.quantity) || 0;
+          productGroups[groupKey].allIds.push(item.id);
         }
       });
 
-      // Convert to array and filter out already linked products
+      // Convert to array and filter out already linked products/variants
       const availableProducts = Object.values(productGroups)
         .filter(group => !group.allIds.some(id => linkedProductIds.includes(id)))
         .map(group => ({
           ...group,
-          id: group.allIds[0], // Use first ID as primary
+          quantity: group.totalQuantity,
           location: group.locations.length > 1 
             ? `${group.locations.length} locations` 
-            : (group.locations[0]?.fullLocation || 'Unknown'),
-          quantity: group.totalQuantity
+            : (group.locations[0]?.fullLocation || group.locations[0]?.location || 'Unknown')
         }));
 
+      console.log(`📦 ${availableProducts.length} products available for linking`);
       setAllProducts(availableProducts);
       setLoading(false);
     });
 
-    return unsubscribe;
-  }, [linkedProductIds]);
+    // Cleanup on unmount - unsubscribe is returned directly from listenToProducts
+    return () => {
+      if (unsubscribe && typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, []); // Empty dependency array - only run once on mount
 
   const handleProductSelect = (productId, checked) => {
     setSelectedProducts(prev => ({

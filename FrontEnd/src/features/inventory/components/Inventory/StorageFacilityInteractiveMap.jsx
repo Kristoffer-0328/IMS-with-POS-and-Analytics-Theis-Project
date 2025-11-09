@@ -402,7 +402,7 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-red-500 bg-red-50 row-start-3 col-start-3"
             onClick={() => !editMode && openShelfView('unit3')}
-            title={`Unit 03 - Cement & Aggregates`}
+            title={`Unit 03 - Cement & Aggregates (Pallet Storage)`}
           >
             {editMode && (
               <div className="absolute top-1 right-1 flex gap-1 z-20">
@@ -431,7 +431,36 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
             )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 03')}`}></div>
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 03</div>
-            <div className="text-sm text-gray-600 font-medium">Cement & Aggregates</div>
+            <div className="text-sm text-gray-600 font-medium">Bagged Cement (Pallets)</div>
+          </div>
+          
+          {/* Unit 03 Yard - Bulk Storage Area for Cement in m³ */}
+          <div 
+            className="bg-amber-100 border-2 border-amber-600 p-4 cursor-pointer hover:bg-amber-200 hover:border-amber-700 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm row-start-2 col-start-3"
+            onClick={() => !editMode && openShelfView('unit3-yard')}
+            title={`Unit 03 - Yard (Bulk Cement Storage)`}
+          >
+            {editMode && (
+              <div className="absolute top-1 right-1 flex gap-1 z-20">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-03-yard'); }}
+                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Add Zone"
+                >
+                  +
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-03-yard'); }}
+                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Edit Yard"
+                >
+                  Edit
+                </button>
+              </div>
+            )}
+            <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 03 Yard')}`}></div>
+            <div className="text-lg font-bold mb-1 text-amber-800">Unit 03 Yard</div>
+            <div className="text-xs text-amber-700 font-medium">Bulk Cement (m³)</div>
           </div>
           
           <div 
