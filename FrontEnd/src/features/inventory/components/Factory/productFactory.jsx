@@ -73,7 +73,12 @@ export const ProductFactory = {
             specifications: data.specifications || '',
             categoryValues: data.categoryValues || {},
             customFields: data.customFields || {},
+            // Bundle fields
             isBundle: data.isBundle || false,
+            piecesPerBundle: data.piecesPerBundle !== undefined && data.piecesPerBundle !== null
+                ? Number(data.piecesPerBundle)
+                : 0,
+            bundlePackagingType: data.bundlePackagingType || 'bundle',
             dateStocked: data.dateStocked || new Date().toISOString().split('T')[0],
             createdAt: timestamp,
             lastUpdated: timestamp,
@@ -156,6 +161,10 @@ export const ProductFactory = {
             categoryValues: data.categoryValues || {},
             customFields: data.customFields || {},
             isBundle: data.isBundle || false,
+            piecesPerBundle: data.piecesPerBundle !== undefined && data.piecesPerBundle !== null
+                ? Number(data.piecesPerBundle)
+                : 0,
+            bundlePackagingType: data.bundlePackagingType || 'bundle',
             dateStocked: data.dateStocked || new Date().toISOString().split('T')[0],
             createdAt: data.createdAt || timestamp,
             lastUpdated: data.lastUpdated || timestamp

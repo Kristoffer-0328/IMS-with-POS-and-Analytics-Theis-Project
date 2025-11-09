@@ -222,11 +222,40 @@ export default function VariantSelectionModal({
           <div className="mb-4">
             <p className="text-gray-600 mb-1">Product:</p>
             <p className="font-medium">{product.name}</p>
+            
+            {/* For single variant, show variant info here prominently */}
+            {product.variants.length === 1 && (
+              <div className="mt-3 space-y-2">
+                {/* Variant Name */}
+                {activeVariant?.variantName && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Variant:</span>
+                    <span className="text-sm font-semibold text-gray-900">{activeVariant.variantName}</span>
+                  </div>
+                )}
+                
+                {/* Bundle Badge */}
+                {isBundle && (
+                  <div className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-purple-100 text-purple-700 border border-purple-200">
+                    📦 Bundle: {activeVariant.piecesPerBundle} {activeVariant.baseUnit || 'pcs'} per {activeVariant.bundlePackagingType || 'bundle'}
+                  </div>
+                )}
+                
+                {/* Dimensions */}
+                {formatDimensions(activeVariant) && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Dimensions:</span>
+                    <span className="text-sm font-medium text-gray-900">{formatDimensions(activeVariant)}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Variant Selection */}
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            {product.variants.map((variant, index) => {
+          {/* Variant Selection - Only show for multiple variants */}
+          {product.variants.length > 1 && (
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              {product.variants.map((variant, index) => {
               const dimensionInfo = formatDimensions(variant);
               const isBundle = variant.isBundle && variant.piecesPerBundle;
               
@@ -241,56 +270,56 @@ export default function VariantSelectionModal({
                   }`}
                 >
                   <div className="text-center w-full">
+                    {/* Variant Name - Always show prominently */}
+                    {variant.variantName && (
+                      <p className="text-sm font-semibold text-gray-900 mb-1.5">
+                        {variant.variantName}
+                      </p>
+                    )}
+                    
                     {/* Bundle Badge */}
                     {isBundle && (
                       <div className="mb-2">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
-                          Bundle
+                          📦 {variant.piecesPerBundle} {variant.baseUnit || 'pcs'}/{variant.bundlePackagingType || 'bundle'}
                         </span>
                       </div>
                     )}
                     
-                    {/* Dimension Info (Priority) */}
+                    {/* Dimension Info */}
                     {dimensionInfo && (
-                      <p className="text-sm font-medium text-gray-900 mb-1">
+                      <p className="text-xs text-gray-600 mb-1">
                         {dimensionInfo}
                       </p>
                     )}
                     
-                    {/* Show brand if different brands exist */}
-                    {hasBrandVariants && variant.brand && !dimensionInfo && (
-                      <p className="font-medium text-gray-900 mb-1">{variant.brand}</p>
-                    )}
-                    
-                    {/* Show size/specifications if different sizes exist and no dimensions */}
-                    {!dimensionInfo && hasSizeOrUnitVariants && (variant.size || variant.variantName || variant.specifications) && (
-                      <p className="text-sm text-gray-600">
-                        {variant.size || variant.variantName || variant.specifications}
-                        {variant.unit && ` ${variant.unit}`}
-                      </p>
-                    )}
-                    
-                    {/* If no distinguishing features shown yet, show variant name or default */}
-                    {!dimensionInfo && !hasBrandVariants && !hasSizeOrUnitVariants && (
-                      <p className="text-sm text-gray-600">
-                        {variant.size || variant.variantName || variant.unit || 'Standard'}
+                    {/* Show additional specs if available and not in variant name */}
+                    {variant.specifications && variant.specifications !== variant.variantName && (
+                      <p className="text-xs text-gray-500 mb-1">
+                        {variant.specifications}
                       </p>
                     )}
                     
                     {/* Price */}
                     <p className="text-sm font-medium text-orange-600 mt-1">
-                      ₱{formatCurrency(variant.unitPrice || variant.price || 0)} / {variant.bundlePackagingType || 'bundle'}
-                      {isBundle && (
-                        <span className="block text-xs text-gray-500 mt-0.5">
-                          (₱{formatCurrency((variant.unitPrice || variant.price || 0) / variant.piecesPerBundle)} / {variant.baseUnit || 'pc'})
-                        </span>
+                      {isBundle ? (
+                        <>
+                          ₱{formatCurrency(variant.unitPrice || variant.price || 0)} / {variant.bundlePackagingType || 'bundle'}
+                          <span className="block text-xs text-gray-500 mt-0.5">
+                            (₱{formatCurrency((variant.unitPrice || variant.price || 0) / variant.piecesPerBundle)} / {variant.baseUnit || 'pc'})
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          ₱{formatCurrency(variant.unitPrice || variant.price || 0)} / {variant.baseUnit || variant.unit || 'pc'}
+                        </>
                       )}
                     </p>
                     
                     {/* Stock Info */}
                     <div className="text-xs mt-2 space-y-1">
                       <p className="text-gray-700 font-medium">
-                        Stock: {variant.totalQuantity || variant.quantity} { 'pcs'}
+                        Stock: {variant.totalQuantity || variant.quantity} {variant.baseUnit || 'pcs'}
                       </p>
                       {isBundle && (
                         <p className="text-purple-600">
@@ -308,7 +337,8 @@ export default function VariantSelectionModal({
                 </button>
               );
             })}
-          </div>
+            </div>
+          )}
 
           {/* Quick Select */}
           <div className="mb-4">
@@ -415,51 +445,43 @@ export default function VariantSelectionModal({
 
           {/* Price Summary */}
           <div className="bg-gray-50 rounded-lg p-3">
-            {/* Show dimension/bundle info if available */}
+            {/* Show variant name */}
+            {activeVariant?.variantName && (
+              <div className="flex justify-between py-1 border-b border-gray-200 mb-2 pb-2">
+                <span className="text-gray-600">Variant:</span>
+                <span className="font-semibold text-gray-900">{activeVariant.variantName}</span>
+              </div>
+            )}
+            
+            {/* Show bundle info if it's a bundle */}
+            {isBundle && (
+              <div className="flex justify-between py-1 bg-purple-50 -mx-3 px-3 mb-2">
+                <span className="text-purple-700 font-medium">Bundle Type:</span>
+                <span className="font-medium text-purple-900">
+                  {activeVariant.piecesPerBundle} {activeVariant.baseUnit || 'pcs'} / {activeVariant.bundlePackagingType || 'bundle'}
+                </span>
+              </div>
+            )}
+            
+            {/* Show dimension/specs info if available */}
             {formatDimensions(activeVariant) && (
               <div className="flex justify-between py-1">
-                <span className="text-gray-600">Variant:</span>
-                <span className="font-medium">
-                  {activeVariant?.isBundle && activeVariant?.piecesPerBundle ? (
-                    <span className="text-purple-600">
-                       {formatDimensions(activeVariant)}
-                    </span>
-                  ) : (
-                    <span>   {formatDimensions(activeVariant)}</span>
-                  )}
+                <span className="text-gray-600">Dimensions:</span>
+                <span className="font-medium text-gray-900">
+                  {formatDimensions(activeVariant)}
                 </span>
               </div>
             )}
             
             <div className="flex justify-between py-1">
-              <span className="text-gray-600">
-                {hasBrandVariants && !formatDimensions(activeVariant) 
-                  ? 'Selected Brand:' 
-                  : formatDimensions(activeVariant) 
-                    ? 'Price:' 
-                    : 'Selected Size:'}
-              </span>
+              <span className="text-gray-600">Price:</span>
               <span className="font-medium">
-                {hasBrandVariants && !formatDimensions(activeVariant)
-                  ? (activeVariant?.brand || 'Unknown')
-                  : formatDimensions(activeVariant)
-                    ? (
-                      isBundle && inputMode === 'piece' 
-                        ? `₱${formatCurrency(getEffectivePrice())} / ${activeVariant.baseUnit || 'pc'}`
-                        : `₱${formatCurrency(getEffectivePrice())} / ${isBundle ? (activeVariant.bundlePackagingType || 'bundle') : (activeVariant.baseUnit || 'pcs')}`
-                    )
-                    : (activeVariant?.size || activeVariant?.variantName || activeVariant?.specifications || 
-                       `${activeVariant?.unit || 'pcs'}`)
+                {isBundle && inputMode === 'piece' 
+                  ? `₱${formatCurrency(getEffectivePrice())} / ${activeVariant.baseUnit || 'pc'}`
+                  : `₱${formatCurrency(getEffectivePrice())} / ${isBundle ? (activeVariant.bundlePackagingType || 'bundle') : (activeVariant.baseUnit || activeVariant.unit || 'pc')}`
                 }
               </span>
             </div>
-            
-            {!formatDimensions(activeVariant) && (
-              <div className="flex justify-between py-1">
-                <span className="text-gray-600">Price per {activeVariant?.unit || 'pcs'}:</span>
-                <span>₱{formatCurrency(getEffectivePrice())}</span>
-              </div>
-            )}
             
             <div className="flex justify-between py-1">
               <span className="text-gray-600">Quantity:</span>

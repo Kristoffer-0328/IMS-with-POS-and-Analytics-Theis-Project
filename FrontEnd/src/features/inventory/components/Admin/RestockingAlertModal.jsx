@@ -8,13 +8,13 @@ import {
   updateDoc, 
   addDoc,
   serverTimestamp,
-  orderBy,
   getDocs,
   runTransaction
 } from 'firebase/firestore';
 import { getFirestore } from 'firebase/firestore';
 import app from '../../../../FirebaseConfig';
 import { useAuth } from '../../../auth/services/FirebaseAuth';
+import ErrorModal from '../../../../components/modals/ErrorModal';
 
 const db = getFirestore(app);
 
@@ -25,46 +25,125 @@ const RestockingAlertModal = ({ isOpen, onClose }) => {
   const [processingId, setProcessingId] = useState(null);
   const [filter, setFilter] = useState('all');
   const [expandedGroups, setExpandedGroups] = useState({});
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [alertModalData, setAlertModalData] = useState({ title: '', message: '', type: 'info', details: '' });
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmModalData, setConfirmModalData] = useState({ title: '', message: '', details: '', onConfirm: null });
+
+  const openModal = (data) => {
+    setAlertModalData({
+      title: data.title || 'Notice',
+      message: data.message || '',
+      type: data.type || 'info',
+      details: data.details || ''
+    });
+    setShowAlertModal(true);
+  };
+
+  const openConfirmModal = (data) => {
+    return new Promise((resolve) => {
+      setConfirmModalData({
+        title: data.title || 'Confirm Action',
+        message: data.message || 'Are you sure?',
+        details: data.details || '',
+        onConfirm: () => {
+          setShowConfirmModal(false);
+          resolve(true);
+        },
+        onCancel: () => {
+          setShowConfirmModal(false);
+          resolve(false);
+        }
+      });
+      setShowConfirmModal(true);
+    });
+  };
 
   useEffect(() => {
     if (!isOpen) return;
 
     setLoading(true);
 
-    const q = query(
+    // Normalize different historical/new collection and field names into a common shape
+    const normalize = (id, data, source) => {
+      const variantDetails = data.variantDetails || (
+        data.size || data.unit
+          ? { size: data.size || 'N/A', unit: data.unit || 'pcs' }
+          : undefined
+      );
+      const createdAtMs = data.createdAt?.toMillis ? data.createdAt.toMillis() : 0;
+      return {
+        id,
+        __source: source,
+        productId: data.productId,
+        productName: data.productName,
+        category: data.category || '',
+        priority: data.priority || 'urgent',
+        variantDetails,
+        location: data.location || data.storageLocation || null,
+        currentQuantity: data.currentQuantity ?? data.currentQty ?? data.currentStock ?? 0,
+        restockLevel: data.restockLevel ?? data.reorderPoint ?? data.rop ?? 0,
+        safetyStock: data.safetyStock ?? data.minSafetyStock ?? 0,
+        status: data.status || 'pending',
+        createdAtMs
+      };
+    };
+
+    let aRequests = [];
+    let bRequests = [];
+
+    const priorityOrder = { critical: 0, urgent: 1, high: 2, medium: 3, normal: 4 };
+    const updateCombined = () => {
+      const combined = [...aRequests, ...bRequests];
+      combined.sort((x, y) => {
+        const pa = priorityOrder[x.priority] ?? 999;
+        const pb = priorityOrder[y.priority] ?? 999;
+        if (pa !== pb) return pa - pb;
+        return (y.createdAtMs || 0) - (x.createdAtMs || 0);
+      });
+      setRestockingRequests(combined);
+      setLoading(false);
+    };
+
+    const qA = query(
       collection(db, 'RestockingRequests'),
-      where('status', 'in', ['pending', 'acknowledged']),
-      orderBy('createdAt', 'desc')
+      where('status', 'in', ['pending', 'acknowledged'])
+    );
+    const qB = query(
+      collection(db, 'RestockRequests'),
+      where('status', 'in', ['pending', 'acknowledged'])
     );
 
-    const unsubscribe = onSnapshot(
-      q,
+    const unsubA = onSnapshot(
+      qA,
       (snapshot) => {
-        const requests = [];
-        snapshot.forEach((doc) => {
-          requests.push({
-            id: doc.id,
-            ...doc.data()
-          });
-        });
-
-        const priorityOrder = { critical: 0, urgent: 1, high: 2, medium: 3, normal: 4 };
-        requests.sort((a, b) => {
-          const priorityA = priorityOrder[a.priority] || 999;
-          const priorityB = priorityOrder[b.priority] || 999;
-          return priorityA - priorityB;
-        });
-
-        setRestockingRequests(requests);
-        setLoading(false);
+        aRequests = snapshot.docs.map((d) => normalize(d.id, d.data(), 'RestockingRequests'));
+        updateCombined();
       },
       (error) => {
-        console.error('Error fetching restocking requests:', error);
-        setLoading(false);
+        console.warn('RestockingRequests snapshot error:', error);
+        aRequests = [];
+        updateCombined();
       }
     );
 
-    return () => unsubscribe();
+    const unsubB = onSnapshot(
+      qB,
+      (snapshot) => {
+        bRequests = snapshot.docs.map((d) => normalize(d.id, d.data(), 'RestockRequests'));
+        updateCombined();
+      },
+      (error) => {
+        console.warn('RestockRequests snapshot error:', error);
+        bRequests = [];
+        updateCombined();
+      }
+    );
+
+    return () => {
+      unsubA();
+      unsubB();
+    };
   }, [isOpen]);
 
   // Group requests by product ID and variant details (to combine same product across locations)
@@ -166,21 +245,27 @@ const RestockingAlertModal = ({ isOpen, onClose }) => {
 
     // Use the first location's request data as representative
     const request = group.locations[0];
+    // Attempt to determine variant identity from request
+    const variantIdFromRequest = request.variantId || null;
+    const variantSize = request.variantDetails?.size || request.size || null;
+    const variantUnit = request.variantDetails?.unit || request.unit || null;
+
     const safetyStockAmount = request.safetyStock || 0;
 
     if (safetyStockAmount <= 0) {
-      alert('Cannot replenish: No safety stock available for this product.');
+      openModal({
+        title: 'No Safety Stock',
+        message: 'Cannot replenish: No safety stock available for this product.',
+        type: 'warning'
+      });
       return;
     }
 
-    const confirmed = window.confirm(
-      `Replenish stock using safety stock?\n\n` +
-      `Product: ${group.productName}\n` +
-      `Current Stock: ${group.totalCurrentQty} units\n` +
-      `Safety Stock Available: ${group.totalSafetyStock} units\n` +
-      `Amount to Replenish: ${safetyStockAmount} units\n\n` +
-      `This will move ${safetyStockAmount} units from safety stock to normal stock.`
-    );
+    const confirmed = await openConfirmModal({
+      title: 'Confirm Replenishment',
+      message: 'Do you want to replenish stock using safety stock?',
+      details: `Product: ${group.productName}\nCurrent Stock: ${group.totalCurrentQty} units\nSafety Stock Available: ${group.totalSafetyStock} units\nAmount to Replenish: ${safetyStockAmount} units\n\nThis will move ${safetyStockAmount} units from safety stock to normal stock.`
+    });
 
     if (!confirmed) return;
 
@@ -188,85 +273,137 @@ const RestockingAlertModal = ({ isOpen, onClose }) => {
 
     try {
       await runTransaction(db, async (transaction) => {
-        // Find the product document
-        const productsRef = collection(db, 'Products');
-        const storageUnitsSnapshot = await getDocs(productsRef);
-        
-        let productFound = false;
-        let productRef = null;
-        let productData = null;
+        // NEW DATA STRUCTURE: Use Variants collection (flat structure)
+        // Find the variant document directly in Variants collection
+        let variantRef = null;
+        let variantData = null;
+        let masterProductRef = null;
+        let masterProductData = null;
 
-        for (const unitDoc of storageUnitsSnapshot.docs) {
-          const unitId = unitDoc.id;
-          if (!unitId.startsWith('Unit ')) continue;
+        console.log('🔍 Searching for variant with:', {
+          variantIdFromRequest,
+          productId: request.productId,
+          variantSize,
+          variantUnit,
+          requestData: request
+        });
 
-          const unitProductsRef = collection(db, 'Products', unitId, 'products');
-          const productsSnapshot = await getDocs(unitProductsRef);
+        // 1. Try to find variant by ID first
+        if (variantIdFromRequest) {
+          const vRef = doc(db, 'Variants', variantIdFromRequest);
+          const vSnap = await transaction.get(vRef);
+          if (vSnap.exists()) {
+            variantRef = vRef;
+            variantData = vSnap.data();
+            console.log('✅ Found variant by ID:', variantIdFromRequest, variantData);
+          } else {
+            console.log('❌ Variant not found by ID:', variantIdFromRequest);
+          }
+        }
 
-          for (const prodDoc of productsSnapshot.docs) {
-            const data = prodDoc.data();
+        // 2. If no variantId, query Variants by productId + size/unit match
+        if (!variantRef && request.productId) {
+          console.log('🔍 Querying Variants by parentProductId:', request.productId);
+          const variantsQuery = query(
+            collection(db, 'Variants'),
+            where('parentProductId', '==', request.productId)
+          );
+          const variantsSnapshot = await getDocs(variantsQuery);
+          
+          console.log('📦 Found', variantsSnapshot.size, 'variants for product:', request.productId);
+          
+          for (const vDoc of variantsSnapshot.docs) {
+            const vData = vDoc.data();
+            console.log('🔎 Checking variant:', vDoc.id, {
+              size: vData.size,
+              unit: vData.unit,
+              baseUnit: vData.baseUnit,
+              searching: { variantSize, variantUnit }
+            });
             
-            if (data.id === request.productId || data.productId === request.productId) {
-              productRef = prodDoc.ref;
-              productData = data;
-              productFound = true;
+            // Handle size matching: 'N/A' or null/undefined should match undefined/null
+            const normalizedRequestSize = (variantSize === 'N/A' || !variantSize) ? null : variantSize;
+            const normalizedVariantSize = vData.size || null;
+            const sizeMatch = normalizedRequestSize === null ? true : (normalizedVariantSize === normalizedRequestSize);
+            
+            // Handle unit matching: check both unit and baseUnit fields
+            const normalizedVariantUnit = vData.unit || vData.baseUnit || null;
+            const unitMatch = variantUnit ? (normalizedVariantUnit === variantUnit) : true;
+            
+            console.log('🔍 Match check:', { sizeMatch, unitMatch, normalizedRequestSize, normalizedVariantSize, normalizedVariantUnit });
+            
+            if (sizeMatch && unitMatch) {
+              variantRef = vDoc.ref;
+              variantData = vData;
+              console.log('✅ Matched variant:', vDoc.id);
               break;
             }
           }
-
-          if (productFound) break;
-        }
-
-        if (!productFound || !productRef) {
-          throw new Error('Product not found in inventory');
-        }
-
-        const previousQuantity = request.currentQuantity;
-        const newQuantity = previousQuantity + safetyStockAmount;
-        const newSafetyStock = Math.max(0, (productData.safetyStock || 0) - safetyStockAmount);
-
-        // Update product quantity and safety stock
-        if (request.variantIndex >= 0 && productData.variants) {
-          const updatedVariants = [...productData.variants];
-          updatedVariants[request.variantIndex] = {
-            ...updatedVariants[request.variantIndex],
-            quantity: newQuantity,
-            safetyStock: newSafetyStock
-          };
           
-          transaction.update(productRef, {
-            variants: updatedVariants,
-            lastUpdated: serverTimestamp()
-          });
-        } else {
-          transaction.update(productRef, {
-            quantity: newQuantity,
-            safetyStock: newSafetyStock,
-            lastUpdated: serverTimestamp()
-          });
+          if (!variantRef) {
+            console.log('❌ No matching variant found in', variantsSnapshot.size, 'variants');
+          }
         }
 
-        // Create stock movement record
+        if (!variantRef || !variantData) {
+          throw new Error(`Variant not found in inventory (Variants collection). Searched with: variantId=${variantIdFromRequest}, productId=${request.productId}, size=${variantSize}, unit=${variantUnit}`);
+        }
+
+        // 3. Get Master product info for logging
+        const parentProductId = variantData.parentProductId || variantData.productId || request.productId;
+        if (parentProductId) {
+          masterProductRef = doc(db, 'Master', parentProductId);
+          const masterSnap = await transaction.get(masterProductRef);
+          if (masterSnap.exists()) {
+            masterProductData = masterSnap.data();
+          }
+        }
+
+        // Compute previous quantities & safety stock
+        const previousQuantity = variantData.quantity || 0;
+        const variantLevelSafety = variantData.safetyStock || 0;
+
+        // Decrement safety stock and increment regular stock
+        const newVariantSafetyStock = Math.max(0, variantLevelSafety - safetyStockAmount);
+        const newQuantity = previousQuantity + safetyStockAmount;
+
+        // Update the variant document in Variants collection
+        transaction.update(variantRef, {
+          quantity: newQuantity,
+          safetyStock: newVariantSafetyStock,
+          lastUpdated: serverTimestamp()
+        });
+
+        // Create stock movement record with variant details
         const movementRef = doc(collection(db, 'stock_movements'));
         transaction.set(movementRef, {
           movementType: 'safety_stock_replenishment',
-          productId: request.productId,
-          productName: request.productName,
-          previousQuantity: previousQuantity,
-          newQuantity: newQuantity,
+          productId: parentProductId || request.productId,
+          productName: masterProductData?.name || request.productName,
+          variantId: variantData.id || variantIdFromRequest,
+          variantName: variantData.variantName || variantData.name || null,
+          variantSize: variantData.size || variantSize,
+          variantUnit: variantData.unit || variantData.baseUnit || variantUnit,
+          previousQuantity,
+          newQuantity,
           usedSafetyStock: safetyStockAmount,
           location: request.location,
+          storageLocation: variantData.storageLocation || request.location,
           reason: 'Replenished from safety stock',
           performedBy: currentUser?.uid || 'unknown',
           performedByName: currentUser?.displayName || currentUser?.email || 'Unknown',
           timestamp: serverTimestamp()
         });
 
-        // Create release log for legacy mobile build integration
+        // Release log (legacy integration) with variant metadata
         const releaseLogRef = doc(collection(db, 'release_logs'));
         transaction.set(releaseLogRef, {
-          productId: request.productId,
-          productName: request.productName,
+          productId: parentProductId || request.productId,
+          productName: masterProductData?.name || request.productName,
+          variantId: variantData.id || variantIdFromRequest,
+          variantName: variantData.variantName || variantData.name || null,
+          variantSize: variantData.size || variantSize,
+          variantUnit: variantData.unit || variantData.baseUnit || variantUnit,
           quantityReleased: safetyStockAmount,
           relatedRequestId: request.id,
           releasedBy: currentUser?.uid || 'unknown',
@@ -274,29 +411,36 @@ const RestockingAlertModal = ({ isOpen, onClose }) => {
           timestamp: serverTimestamp()
         });
 
-        // Update all requests in this group to resolved
+        // Update all grouped requests to resolved (update in original collection)
         for (const loc of group.locations) {
-          const requestRef = doc(db, 'RestockingRequests', loc.id);
+          const collectionName = loc.__source || 'RestockingRequests';
+          const requestRef = doc(db, collectionName, loc.id);
           transaction.update(requestRef, {
             status: 'resolved_safety_stock',
             resolvedAt: serverTimestamp(),
             resolvedBy: currentUser?.uid || 'unknown',
             resolvedByName: currentUser?.displayName || currentUser?.email || 'Unknown',
-            updatedAt: serverTimestamp()
+            updatedAt: serverTimestamp(),
+            variantResolved: true,
+            variantId: variantData.id || variantIdFromRequest
           });
         }
       });
 
-      alert(
-        `Replenishment Successful!\n\n` +
-        `${group.productName} has been replenished from safety stock.\n\n` +
-        `Added: ${safetyStockAmount} units\n` +
-        `New Stock: ${group.totalCurrentQty + safetyStockAmount} units`
-      );
+      openModal({
+        title: 'Replenishment Successful',
+        message: `${group.productName} has been replenished from safety stock.`,
+        type: 'success',
+        details: `Added: ${safetyStockAmount} units\nNew Stock: ${(group.totalCurrentQty || 0) + safetyStockAmount} units${variantSize ? `\nVariant: ${variantSize} ${variantUnit || ''}` : ''}`
+      });
 
     } catch (error) {
       console.error('Replenishment error:', error);
-      alert(`Replenishment failed: ${error.message}`);
+      openModal({
+        title: 'Replenishment Failed',
+        message: `Replenishment failed: ${error.message}`,
+        type: 'error'
+      });
     } finally {
       setProcessingId(null);
     }
@@ -315,16 +459,21 @@ const RestockingAlertModal = ({ isOpen, onClose }) => {
       });
     } catch (error) {
       console.error('Error acknowledging request:', error);
-      alert('Failed to acknowledge alert');
+      openModal({
+        title: 'Action Failed',
+        message: 'Failed to acknowledge alert',
+        type: 'error'
+      });
     }
   };
 
   // Dismiss alert
   const handleDismiss = async (requestId) => {
-    const confirmed = window.confirm(
-      'Are you sure you want to dismiss this alert?\n\n' +
-      'The alert will be marked as dismissed and removed from the list.'
-    );
+    const confirmed = await openConfirmModal({
+      title: 'Dismiss Alert',
+      message: 'Are you sure you want to dismiss this alert?',
+      details: 'The alert will be marked as dismissed and removed from the list.'
+    });
 
     if (!confirmed) return;
 
@@ -339,7 +488,11 @@ const RestockingAlertModal = ({ isOpen, onClose }) => {
       });
     } catch (error) {
       console.error('Error dismissing request:', error);
-      alert('Failed to dismiss alert');
+      openModal({
+        title: 'Action Failed',
+        message: 'Failed to dismiss alert',
+        type: 'error'
+      });
     }
   };
 
@@ -627,6 +780,119 @@ const RestockingAlertModal = ({ isOpen, onClose }) => {
               </button>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Feedback Modal */}
+      {showAlertModal && (
+        <ErrorModal
+          isOpen={showAlertModal}
+          onClose={() => setShowAlertModal(false)}
+          title={alertModalData.title}
+          message={alertModalData.message}
+          type={alertModalData.type}
+          details={alertModalData.details}
+        />
+      )}
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <ConfirmModal
+          isOpen={showConfirmModal}
+          onConfirm={confirmModalData.onConfirm}
+          onCancel={confirmModalData.onCancel}
+          title={confirmModalData.title}
+          message={confirmModalData.message}
+          details={confirmModalData.details}
+        />
+      )}
+    </div>
+  );
+};
+
+// Confirmation Modal Component (two-button variant)
+const ConfirmModal = ({ 
+  isOpen, 
+  onConfirm, 
+  onCancel, 
+  title = 'Confirm Action', 
+  message = '', 
+  details = ''
+}) => {
+  if (!isOpen) return null;
+
+  // Handle ESC key
+  React.useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === 'Escape' && isOpen) {
+        onCancel();
+      }
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onCancel]);
+
+  return (
+    <div 
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-[110] animate-in fade-in duration-200"
+      onClick={onCancel}
+    >
+      <div 
+        className="bg-white border-2 border-blue-300 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl animate-in zoom-in-95 duration-300"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header with Icon */}
+        <div className="flex items-start gap-4 mb-4">
+          <div className="bg-blue-100 text-blue-600 rounded-full p-3 flex-shrink-0">
+            <svg
+              className="w-8 h-8"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              role="img"
+              aria-label="Confirmation"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="M9 12h6" />
+              <path d="M12 9v6" />
+            </svg>
+          </div>
+          <div className="flex-1">
+            <h3 className="text-xl font-bold text-blue-900 mb-2">
+              {title}
+            </h3>
+            <p className="text-blue-800 text-sm leading-relaxed">
+              {message}
+            </p>
+          </div>
+        </div>
+
+        {/* Details Section (Optional) */}
+        {details && (
+          <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-300">
+            <p className="text-xs text-blue-800 font-mono whitespace-pre-wrap">
+              {details}
+            </p>
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2.5 rounded-lg font-medium transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-4 focus:ring-gray-300"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-medium transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-4 focus:ring-blue-300"
+          >
+            Confirm
+          </button>
         </div>
       </div>
     </div>

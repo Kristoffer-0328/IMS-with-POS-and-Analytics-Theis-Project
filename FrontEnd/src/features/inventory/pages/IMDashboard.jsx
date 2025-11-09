@@ -726,16 +726,7 @@ const IMDashboard = () => {
         content={chartInfo.stockValue.content}
       />
 
-      {/* Restocking Alert Modal */}
-      <RestockingAlertModal
-        isOpen={showRestockingAlerts}
-        onClose={() => setShowRestockingAlerts(false)}
-      />
-
-      {/* Floating Restocking Alert Badge */}
-      <RestockingAlertBadge
-        onClick={() => setShowRestockingAlerts(true)}
-      />
+     
     </div>
   );
 };

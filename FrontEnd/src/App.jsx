@@ -37,10 +37,11 @@ import ReceivingManagement from './features/inventory/pages/ReceivingManagement'
 import SupplierManagement from './features/inventory/pages/SupplierManagement';
 import ReleaseMobileView from './features/inventory/pages/release_mobile_view';
 import MobileReceive from './features/inventory/pages/MobileReceive';
+import RestockingAlertModal from './features/inventory/components/Admin/RestockingAlertModal';
 // POS cashier Interface
 
 import Pos_Sidebar from './features/pos/pages/Pos_Sidebar';
-import Pos_NewSale from './features/pos/pages/Pos_NewSale';
+import Pos_NewSale from './features/pos/pages/Pos_NewSale_V2'; // Updated to V2
 import Pos_Quotation from './features/pos/pages/Pos_Quotation';
 import Pos_Settings from './features/pos/pages/Pos_Settings';
 import Pos_Transaction_History from './features/pos/pages/Pos_TransactionHistory';
@@ -69,9 +70,10 @@ const AdminLayout = ({ children }) => {
 
 const IMLayout = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
+  const [showRestockModal, setShowRestockModal] = useState(false);
 
   return (
-    <div className="flex min-h-screen w-full bg-gray-50">
+    <div className="flex min-h-screen w-full bg-gray-50 relative">
       <IMSidebar collapsed={collapsed} setCollapsed={setCollapsed} />
       <main
         id="content"
@@ -84,6 +86,25 @@ const IMLayout = ({ children }) => {
           {children}
         </div>
       </main>
+
+      {/* Floating Restocking Alerts Button */}
+      <button
+        type="button"
+        onClick={() => setShowRestockModal(true)}
+        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg bg-gradient-to-r from-orange-500 to-red-500 text-white font-medium hover:shadow-xl transition-all focus:outline-none focus:ring-4 focus:ring-orange-300"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+        </svg>
+        Restocking Alerts
+        <span className="ml-2 inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-white/20 text-xs font-semibold">Live</span>
+      </button>
+
+      {/* Global Restocking Alert Modal */}
+      <RestockingAlertModal
+        isOpen={showRestockModal}
+        onClose={() => setShowRestockModal(false)}
+      />
     </div>
   );
 };
