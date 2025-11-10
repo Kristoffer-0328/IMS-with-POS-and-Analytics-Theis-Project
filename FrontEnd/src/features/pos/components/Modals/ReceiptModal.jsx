@@ -5,6 +5,15 @@ import { printInvoiceContent } from '../../utils/ReceiptGenerator';
 const ReceiptModal = ({ transaction, onClose }) => {
   if (!transaction) return null;
 
+  // Debug: Log transaction data to see what we're receiving
+  useEffect(() => {
+    console.log('🧾 ReceiptModal received transaction:', transaction);
+    console.log('📦 Items:', transaction.items);
+    if (transaction.items && transaction.items.length > 0) {
+      console.log('📋 First item structure:', transaction.items[0]);
+    }
+  }, [transaction]);
+
   // Add useEffect to handle body scroll
   useEffect(() => {
     // Disable scrolling on body when modal is open
@@ -109,12 +118,7 @@ const ReceiptModal = ({ transaction, onClose }) => {
                   Customer Details
                 </h4>
                 <p className="text-sm text-gray-600">{transaction.customerName}</p>
-                {transaction.customerDetails && (
-                  <>
-                    <p className="text-sm text-gray-600">{transaction.customerDetails.phone || 'N/A'}</p>
-                    <p className="text-sm text-gray-600">{transaction.customerDetails.address || 'N/A'}</p>
-                  </>
-                )}
+            
               </div>
               <div className="space-y-2">
                 <h4 className="font-semibold text-gray-700 flex items-center gap-2">
@@ -137,18 +141,26 @@ const ReceiptModal = ({ transaction, onClose }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {transaction.items.map((item, index) => (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm text-gray-900">{item.name}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600 text-center">{item.quantity}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600 text-right">
-                        ₱{formatCurrency(item.price)}
-                      </td>
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900 text-right">
-                        ₱{formatCurrency(item.price * item.quantity)}
-                      </td>
-                    </tr>
-                  ))}
+                  {transaction.items.map((item, index) => {
+                    // Handle multiple possible field name variations
+                    const itemName = item.name || item.productName || item.variantName || 'Unknown Item';
+                    const quantity = item.quantity || item.qty || 0;
+                    const price = item.price || item.unitPrice || 0;
+                    const total = item.totalPrice || (price * quantity);
+                    
+                    return (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 text-sm text-gray-900">{itemName}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600 text-center">{quantity}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600 text-right">
+                          ₱{formatCurrency(price)}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-medium text-gray-900 text-right">
+                          ₱{formatCurrency(total)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -157,28 +169,28 @@ const ReceiptModal = ({ transaction, onClose }) => {
             <div className="space-y-3 p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100">
               <div className="flex justify-between text-sm text-gray-600">
                 <span>Subtotal</span>
-                <span>₱{formatCurrency(transaction.subTotal)}</span>
+                <span>₱{formatCurrency(transaction.subTotal || transaction.subtotal || 0)}</span>
               </div>
               <div className="flex justify-between text-sm text-gray-600">
                 <span>Tax (12%)</span>
-                <span>₱{formatCurrency(transaction.tax)}</span>
+                <span>₱{formatCurrency(transaction.tax || 0)}</span>
               </div>
               <div className="h-px bg-gray-200 my-2"></div>
               <div className="flex justify-between text-lg font-bold text-gray-900">
                 <span>Total</span>
-                <span>₱{formatCurrency(transaction.total)}</span>
+                <span>₱{formatCurrency(transaction.total || transaction.finalTotal || 0)}</span>
               </div>
               <div className="flex justify-between text-sm text-gray-600">
                 <span>Amount Paid</span>
-                <span>₱{formatCurrency(transaction.amountPaid)}</span>
+                <span>₱{formatCurrency(transaction.amountPaid || 0)}</span>
               </div>
               <div className="flex justify-between text-sm font-medium text-green-600">
                 <span>Change</span>
-                <span>₱{formatCurrency(transaction.change)}</span>
+                <span>₱{formatCurrency(transaction.change || 0)}</span>
               </div>
               <div className="flex justify-between text-sm text-gray-600 mt-2">
                 <span>Payment Method</span>
-                <span className="font-medium">{transaction.paymentMethod}</span>
+                <span className="font-medium">{transaction.paymentMethod || 'Cash'}</span>
               </div>
             </div>
           </div>

@@ -140,12 +140,12 @@ export default function VariantSelectionModal({
     const newValue = Math.min(effectiveMax, Math.max(1, currentQty + amount));
     setQty(newValue.toString());
   };
-
+  
   // Get actual pieces quantity regardless of input mode
   const getActualPiecesQuantity = () => {
     const inputQty = qty === '' ? 0 : parseInt(qty);
     if (isBundle && inputMode === 'bundle') {
-      return inputQty * activeVariant.piecesPerBundle;
+      return  inputQty * activeVariant.piecesPerBundle;  
     }
     return inputQty;
   };
@@ -371,30 +371,7 @@ export default function VariantSelectionModal({
               </div>
             )}
             
-            <div className="grid grid-cols-4 gap-2">
-              {quickQuantities.map((quickQty) => {
-                const effectiveMax = isBundle && inputMode === 'bundle'
-                  ? Math.floor(maxQty / activeVariant.piecesPerBundle)
-                  : maxQty;
-                
-                return (
-                  <button
-                    key={quickQty}
-                    onClick={() => setQty(Math.min(quickQty, effectiveMax).toString())}
-                    disabled={quickQty > effectiveMax}
-                    className={`py-2 rounded-lg text-sm ${
-                      quickQty <= effectiveMax
-                        ? getCurrentQuantity() === quickQty
-                          ? 'bg-orange-500 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    {quickQty}
-                  </button>
-                );
-              })}
-            </div>
+           
           </div>
 
           {/* Custom Quantity */}

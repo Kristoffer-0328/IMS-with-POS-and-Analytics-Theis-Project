@@ -434,10 +434,10 @@ export default function Pos_NewSale_V2() {
         paymentMethod: transactionData.paymentMethod,
         categories: [...new Set(transactionData.items.map(item => item.category))],
         discount: transactionData.discount || 0,
-        cashier: currentUser?.displayName || currentUser?.email || 'Unknown'
+        cashier: currentUser?.name || currentUser?.email || 'Unknown'
       };
 
-      AnalyticsService.recordSale(analyticsData);
+      AnalyticsService.recordSale(analyticsData);``
       console.log('📊 Analytics recorded:', analyticsData);
     } catch (error) {
       console.error('Error collecting analytics:', error);
@@ -642,7 +642,7 @@ export default function Pos_NewSale_V2() {
         amountPaid: amountPaidNum,
         change: amountPaidNum - finalTotal,
         customerName: customerDisplayName,
-        cashierName: currentUser?.displayName || currentUser?.email || 'Unknown',
+        cashierName: currentUser?.name ||  'Unknown',
         date: currentDateTime.formattedDate,
         time: `${currentDateTime.formattedTime.hours}:${currentDateTime.formattedTime.minutes}:${currentDateTime.formattedTime.seconds}`
       };

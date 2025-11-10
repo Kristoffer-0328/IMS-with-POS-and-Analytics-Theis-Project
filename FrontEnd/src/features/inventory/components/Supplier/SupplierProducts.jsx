@@ -4,7 +4,12 @@ import { getFirestore, collection, getDocs, doc, getDoc, deleteDoc, updateDoc } 
 import app from '../../../../FirebaseConfig';
 import CategoryModalIndex from '../Inventory/CategoryModal/CategoryModalIndex';
 import NewVariantForm from '../Inventory/CategoryModal/NewVariantForm';
-import { useServices } from '../../../../services/firebase/ProductServices';
+import { 
+  useServices,
+  SUPPLIERS_COLLECTION,
+  LEGACY_SUPPLIER_PRODUCTS,
+  VARIANTS_COLLECTION
+} from '../../../../services/firebase/ProductServices';
 
 const SupplierProducts = ({ supplier, onClose }) => {
   const [supplierProducts, setSupplierProducts] = useState([]);
@@ -34,18 +39,18 @@ const SupplierProducts = ({ supplier, onClose }) => {
       
       // Step 1: Get the list of product IDs linked to this supplier
       // Try new structure first (Suppliers/{id}/products), then fallback to old (supplier_products/{id}/products)
-      let supplierProductsRef = collection(db, 'Suppliers', supplier.id, 'products');
+      
+      let supplierProductsRef = collection(db, SUPPLIERS_COLLECTION, supplier.id, 'products');
+
       let supplierProductsSnapshot = await getDocs(supplierProductsRef);
       
       if (supplierProductsSnapshot.empty) {
         console.log('📦 No products in new "Suppliers" collection, checking old "supplier_products"...');
-        supplierProductsRef = collection(db, 'supplier_products', supplier.id, 'products');
+        supplierProductsRef = collection(db, LEGACY_SUPPLIER_PRODUCTS, supplier.id, 'products');
         supplierProductsSnapshot = await getDocs(supplierProductsRef);
       } else {
         console.log(`📦 Found ${supplierProductsSnapshot.size} products in new "Suppliers" collection`);
-      }
-      
-      // Create a map of productId/variantId -> supplier data (price, SKU, etc.)
+      }      // Create a map of productId/variantId -> supplier data (price, SKU, etc.)
       const supplierDataMap = {};
       supplierProductsSnapshot.docs.forEach(docSnapshot => {
         const data = docSnapshot.data();
@@ -73,7 +78,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
       if (variantIds.length > 0) {
         console.log(`📦 Fetching ${variantIds.length} variants from Variants collection...`);
         for (const variantId of variantIds) {
-          const variantRef = doc(db, 'Variants', variantId);
+          const variantRef = doc(db, VARIANTS_COLLECTION, variantId);
           const variantDoc = await getDoc(variantRef);
           if (variantDoc.exists()) {
             variantsFromDB.push({
@@ -298,13 +303,13 @@ const SupplierProducts = ({ supplier, onClose }) => {
     if (window.confirm('Are you sure you want to unlink this product from the supplier?')) {
       try {
         // Try new structure first (Suppliers/{id}/products/{productId})
-        let productRef = doc(db, 'Suppliers', supplier.id, 'products', productId);
+        let productRef = doc(db, SUPPLIERS_COLLECTION, supplier.id, 'products', productId);
         let productDoc = await getDoc(productRef);
         
         // If not found, try old structure (supplier_products/{id}/products/{productId})
         if (!productDoc.exists()) {
           console.log('📦 Product link not in new "Suppliers" collection, using old "supplier_products"...');
-          productRef = doc(db, 'supplier_products', supplier.id, 'products', productId);
+          productRef = doc(db, LEGACY_SUPPLIER_PRODUCTS, supplier.id, 'products', productId);
         } else {
           console.log('📦 Deleting product link from new "Suppliers" collection');
         }
@@ -378,13 +383,13 @@ const SupplierProducts = ({ supplier, onClose }) => {
         const variantId = variant.id;
 
         // Try new structure first (Suppliers/{id}/products/{variantId})
-        let variantRef = doc(db, 'Suppliers', supplier.id, 'products', variantId);
+        let variantRef = doc(db, SUPPLIERS_COLLECTION, supplier.id, 'products', variantId);
         let variantDoc = await getDoc(variantRef);
         
         // If not found, try old structure (supplier_products/{id}/products/{variantId})
         if (!variantDoc.exists()) {
           console.log('📦 Variant link not in new "Suppliers" collection, using old "supplier_products"...');
-          variantRef = doc(db, 'supplier_products', supplier.id, 'products', variantId);
+          variantRef = doc(db, LEGACY_SUPPLIER_PRODUCTS, supplier.id, 'products', variantId);
         } else {
           console.log('📦 Deleting variant link from new "Suppliers" collection');
         }

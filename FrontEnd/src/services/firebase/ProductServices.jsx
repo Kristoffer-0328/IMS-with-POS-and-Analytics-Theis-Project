@@ -7,10 +7,15 @@ import { ProductFactory } from '../../features/inventory/components/Factory/prod
 const db = getFirestore(app);
 const ServicesContext = createContext(null);
 
-// Collection names
-const PRODUCTS_COLLECTION = 'Products';
-const VARIANTS_COLLECTION = 'Variants';
-const LEGACY_PRODUCTS_PATH = 'Products'; // For backward compatibility with nested structure
+// Collection names - NEW Architecture (PascalCase)
+// EXPORTED for use in other components that directly access Firebase
+export const PRODUCTS_COLLECTION = 'Products';
+export const VARIANTS_COLLECTION = 'Variants';
+export const SUPPLIERS_COLLECTION = 'Suppliers';
+
+// Legacy collection names (for backward compatibility)
+export const LEGACY_PRODUCTS_PATH = 'Products'; // Nested structure: Products/{unit}/products/{productId}
+export const LEGACY_SUPPLIER_PRODUCTS = 'supplier_products'; // Old: supplier_products/{supplierId}/products/{productId}
 
 export const ServicesProvider = ({ children }) => {
   const [products, setProducts] = useState([]);
@@ -208,7 +213,8 @@ export const ServicesProvider = ({ children }) => {
   const listenToSupplierProducts = useCallback((supplierId, onUpdate) => {
     if (!supplierId) return () => {};
     
-    const supplierProductsRef = collection(db, 'supplier_products', supplierId, 'products');
+    // Try new structure first: Suppliers/{supplierId}/products
+    const supplierProductsRef = collection(db, SUPPLIERS_COLLECTION, supplierId, 'products');
     const unsubscribe = onSnapshot(
       supplierProductsRef,
       (snapshot) => {
@@ -220,6 +226,22 @@ export const ServicesProvider = ({ children }) => {
       },
       (error) => {
         console.error('Error listening to supplier products:', error);
+        // Fallback to old structure if needed
+        const oldSupplierProductsRef = collection(db, LEGACY_SUPPLIER_PRODUCTS, supplierId, 'products');
+        const fallbackUnsubscribe = onSnapshot(
+          oldSupplierProductsRef,
+          (snapshot) => {
+            const products = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            }));
+            if (onUpdate) onUpdate(products);
+          },
+          (fallbackError) => {
+            console.error('Error listening to supplier products (fallback):', fallbackError);
+          }
+        );
+        return fallbackUnsubscribe;
       }
     );
     
@@ -469,73 +491,143 @@ export const searchProducts = async (searchTerm, filters = {}) => {
 // Legacy/Supplier Product Relationship Functions
 // ============================================================================
 
+// Helper function to ensure supplier document exists
+const ensureSupplierDocumentExists = async (supplierId, supplierData = {}) => {
+  try {
+    const now = new Date().toISOString();
+
+    // Try new structure first (Suppliers/{supplierId})
+    const supplierRef = doc(db, SUPPLIERS_COLLECTION, supplierId);
+    const supplierSnap = await getDoc(supplierRef);
+
+    if (!supplierSnap.exists()) {
+      // Create supplier document if it doesn't exist - match SupplierServices structure
+      await setDoc(supplierRef, {
+        name: supplierData.supplierName || 'Unknown Supplier',
+        primaryCode: supplierData.supplierCode || supplierId,
+        code: supplierData.supplierCode || supplierId, // For backward compatibility
+        address: supplierData.address || '',
+        contactPerson: supplierData.contactPerson || '',
+        phone: supplierData.phone || '',
+        email: supplierData.email || '',
+        supplierCodes: supplierData.supplierCodes || [],
+        leadTime: supplierData.leadTime || 7,
+        createdAt: now,
+        updatedAt: now,
+        status: 'active',
+        // Ensure supplier document is visible in Firestore
+        _hasProducts: false, // Will be set to true when first product is linked
+        totalProducts: 0,
+        // Add a dummy field to ensure document exists and is visible
+        _documentExists: true
+      });
+      console.log(`📄 Created supplier document: Suppliers/${supplierId}`);
+      return { success: true, structure: 'new' };
+    }
+
+    return { success: true, structure: 'new', exists: true };
+  } catch (error) {
+    console.error('Error ensuring supplier document exists:', error);
+    return { success: false, error };
+  }
+};
+
 // Functions for managing supplier-product relationships
 export const linkProductToSupplier = async (productId, supplierId, supplierData) => {
   try {
     const now = new Date().toISOString();
-    
+
     // Check if this is a variant (new architecture) or product (old architecture)
     const isVariant = productId.startsWith('VAR_');
-    
+
     if (isVariant) {
       // NEW ARCHITECTURE: Link variant to supplier
       // Path: Suppliers/{supplierId}/products/{variantId}
-      const supplierProductRef = doc(db, 'Suppliers', supplierId, 'products', productId);
-      
+
+      // Ensure the supplier document exists with basic info
+      const supplierResult = await ensureSupplierDocumentExists(supplierId, supplierData);
+      if (!supplierResult.success) {
+        return supplierResult;
+      }
+
+      // Now create the product link in the subcollection - using NEW Suppliers collection
+      const supplierProductRef = doc(db, SUPPLIERS_COLLECTION, supplierId, 'products', productId);
+
       // Get variant data to include in supplier link
-      const variantRef = doc(db, 'Variants', productId);
+      const variantRef = doc(db, VARIANTS_COLLECTION, productId);
       const variantSnap = await getDoc(variantRef);
-      
+
       if (!variantSnap.exists()) {
         console.error(`Variant ${productId} not found`);
         return { success: false, error: 'Variant not found' };
       }
-      
+
       const variantData = variantSnap.data();
-      
+
       // Create comprehensive link document with all necessary fields
       await setDoc(supplierProductRef, {
         // Link identifiers
         variantId: productId,
         productId: variantData.parentProductId, // Reference to master product
         supplierId: supplierId,
-        
+
         // Denormalized product info (for queries without joins)
         productName: variantData.productName,
         productBrand: variantData.productBrand,
         productCategory: variantData.productCategory,
         variantName: variantData.variantName,
-        
+
         // Pricing
         supplierPrice: supplierData.supplierPrice || 0,
         unitPrice: variantData.unitPrice || 0,
-        
+
         // Stock info (snapshot at time of linking)
         currentStock: variantData.quantity || 0,
-        
+
         // SKU/Code
         supplierSKU: supplierData.supplierSKU || productId,
-        
+
         // Metadata
         linkedAt: now,
         createdAt: now,
         updatedAt: now,
-        
+
         // Storage location (for reference)
         storageLocation: variantData.storageLocation || '',
         fullLocation: variantData.fullLocation || '',
-        
-        // Ensure collection is visible
-        _collectionExists: true, // Dummy field to ensure collection exists
+
+        // Ensure document is visible
+        _linkExists: true, // Dummy field to ensure document exists
       });
-      
+
       console.log(`✅ Linked variant ${productId} to supplier ${supplierId} (Suppliers/${supplierId}/products/${productId})`);
-      
+
     } else {
       // OLD ARCHITECTURE: Link product to supplier (backward compatibility)
       // Path: supplier_products/{supplierId}/products/{productId}
-      const supplierProductRef = doc(db, 'supplier_products', supplierId, 'products', productId);
-      
+
+      // For old architecture, ensure supplier document exists in supplier_products collection
+      const supplierRef = doc(db, LEGACY_SUPPLIER_PRODUCTS, supplierId);
+      const supplierSnap = await getDoc(supplierRef);
+
+      if (!supplierSnap.exists()) {
+        // Create supplier document if it doesn't exist
+        await setDoc(supplierRef, {
+          supplierId: supplierId,
+          name: supplierData.supplierName || 'Unknown Supplier',
+          code: supplierData.supplierCode || supplierId,
+          primaryCode: supplierData.supplierCode || supplierId,
+          createdAt: now,
+          updatedAt: now,
+          // Add a dummy field to ensure document exists
+          _documentExists: true
+        });
+        console.log(`📄 Created supplier document: ${LEGACY_SUPPLIER_PRODUCTS}/${supplierId}`);
+      }
+
+      // Now create the product link in the subcollection
+      const supplierProductRef = doc(db, LEGACY_SUPPLIER_PRODUCTS, supplierId, 'products', productId);
+
       await setDoc(supplierProductRef, {
         productId,
         supplierId: supplierId,
@@ -543,23 +635,21 @@ export const linkProductToSupplier = async (productId, supplierId, supplierData)
         supplierSKU: supplierData.supplierSKU || '',
         createdAt: now,
         updatedAt: now,
-        _collectionExists: true, // Dummy field to ensure collection exists
+        _linkExists: true, // Dummy field to ensure document exists
       });
-      
+
       // Update the product's variant array with supplier information
       await updateProductVariantsWithSupplier(productId, supplierId, supplierData);
-      
+
       console.log(`🔙 Linked product ${productId} to supplier ${supplierId} (old structure)`);
     }
-    
+
     return { success: true };
   } catch (error) {
     console.error('❌ Error linking product to supplier:', error);
     return { success: false, error };
   }
-};
-
-// Helper function to update product variants with supplier information
+};// Helper function to update product variants with supplier information
 const updateProductVariantsWithSupplier = async (productId, supplierId, supplierData) => {
   try {
     // Find the product in the nested structure: Products/{storageLocation}/products/{productId}
@@ -693,13 +783,50 @@ const updateProductVariantsWithSupplier = async (productId, supplierId, supplier
 
 export const unlinkProductFromSupplier = async (productId, supplierId) => {
   try {
-    // First, delete the supplier-product relationship record
-    const supplierProductRef = doc(db, 'supplier_products', supplierId, 'products', productId);
-    await deleteDoc(supplierProductRef);
-    
-    // Then, remove supplier information from the product's variant array
-    await removeSupplierFromProductVariants(productId, supplierId);
-    
+    const isVariant = productId.startsWith('VAR_');
+    let supplierProductRef;
+    let found = false;
+
+    // Try new structure first (Suppliers/{id}/products/{productId})
+    try {
+      supplierProductRef = doc(db, SUPPLIERS_COLLECTION, supplierId, 'products', productId);
+      const supplierProductDoc = await getDoc(supplierProductRef);
+
+      if (supplierProductDoc.exists()) {
+        await deleteDoc(supplierProductRef);
+        found = true;
+        console.log(`✅ Unlinked variant ${productId} from supplier ${supplierId} (new structure)`);
+      }
+    } catch (error) {
+      console.log('📦 Product link not in new "Suppliers" collection, trying old structure...');
+    }
+
+    // Try old structure if not found in new structure
+    if (!found) {
+      try {
+        supplierProductRef = doc(db, LEGACY_SUPPLIER_PRODUCTS, supplierId, 'products', productId);
+        const supplierProductDoc = await getDoc(supplierProductRef);
+
+        if (supplierProductDoc.exists()) {
+          await deleteDoc(supplierProductRef);
+          found = true;
+          console.log(`✅ Unlinked product ${productId} from supplier ${supplierId} (old structure)`);
+
+          // For old structure, also update the product's variant array
+          if (!isVariant) {
+            await removeSupplierFromProductVariants(productId, supplierId);
+          }
+        }
+      } catch (oldError) {
+        console.log('📦 Product link not in old "supplier_products" collection either');
+      }
+    }
+
+    if (!found) {
+      console.warn(`Product link not found for supplier ${supplierId} and product ${productId}`);
+      return { success: false, error: 'Product link not found' };
+    }
+
     return { success: true };
   } catch (error) {
     console.error('Error unlinking product from supplier:', error);
@@ -791,25 +918,43 @@ const removeSupplierFromProductVariants = async (productId, supplierId) => {
 
 export const updateSupplierProductDetails = async (productId, supplierId, updates) => {
   try {
+    let supplierProductRef;
+    let supplierProductDoc;
+
     // Try new structure first (Suppliers/{id}/products/{productId})
-    let supplierProductRef = doc(db, 'Suppliers', supplierId, 'products', productId);
-    let supplierProductDoc = await getDoc(supplierProductRef);
-    
-    // If not found, try old structure (supplier_products/{id}/products/{productId})
-    if (!supplierProductDoc.exists()) {
-      console.log('📦 Product link not in new "Suppliers" collection, using old "supplier_products"...');
-      supplierProductRef = doc(db, 'supplier_products', supplierId, 'products', productId);
+    try {
+      supplierProductRef = doc(db, SUPPLIERS_COLLECTION, supplierId, 'products', productId);
       supplierProductDoc = await getDoc(supplierProductRef);
-    } else {
-      console.log('📦 Updating product link in new "Suppliers" collection');
+
+      if (supplierProductDoc.exists()) {
+        console.log('📦 Updating product link in new "Suppliers" collection');
+      } else {
+        throw new Error('Document not found in new structure');
+      }
+    } catch (error) {
+      // Try old structure (supplier_products/{id}/products/{productId})
+      console.log('📦 Product link not in new "Suppliers" collection, trying old "supplier_products"...');
+      try {
+        supplierProductRef = doc(db, LEGACY_SUPPLIER_PRODUCTS, supplierId, 'products', productId);
+        supplierProductDoc = await getDoc(supplierProductRef);
+
+        if (!supplierProductDoc.exists()) {
+          console.error(`Product link not found for supplier ${supplierId} and product ${productId}`);
+          return { success: false, error: 'Product link not found' };
+        }
+        console.log('📦 Updating product link in old "supplier_products" collection');
+      } catch (oldError) {
+        console.error('Error accessing both supplier product structures:', oldError);
+        return { success: false, error: 'Unable to access supplier product data' };
+      }
     }
-    
+
     // Update the document
     await updateDoc(supplierProductRef, {
       ...updates,
       updatedAt: new Date().toISOString()
     });
-    
+
     return { success: true };
   } catch (error) {
     console.error('Error updating supplier product details:', error);
@@ -819,24 +964,45 @@ export const updateSupplierProductDetails = async (productId, supplierId, update
 
 export const getSupplierProducts = async (supplierId) => {
   try {
+    let products = [];
+
     // Try new structure first (Suppliers/{id}/products)
-    let supplierProductsRef = collection(db, 'Suppliers', supplierId, 'products');
-    let snapshot = await getDocs(supplierProductsRef);
-    
-    // If empty, try old structure (supplier_products/{id}/products)
-    if (snapshot.empty) {
-      console.log('📦 No products in new "Suppliers" collection, checking old "supplier_products"...');
-      supplierProductsRef = collection(db, 'supplier_products', supplierId, 'products');
-      snapshot = await getDocs(supplierProductsRef);
-    } else {
-      console.log(`📦 Found ${snapshot.size} products in new "Suppliers" collection`);
+    try {
+      const supplierProductsRef = collection(db, SUPPLIERS_COLLECTION, supplierId, 'products');
+      const snapshot = await getDocs(supplierProductsRef);
+
+      if (!snapshot.empty) {
+        products = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        console.log(`📦 Found ${products.length} products in new "Suppliers" collection`);
+        return { success: true, products };
+      }
+    } catch (error) {
+      console.log('📦 New "Suppliers" collection not accessible, trying old structure...');
     }
-    
-    const products = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    return { success: true, products };
+
+    // Try old structure (supplier_products/{id}/products)
+    try {
+      const supplierProductsRef = collection(db, LEGACY_SUPPLIER_PRODUCTS, supplierId, 'products');
+      const snapshot = await getDocs(supplierProductsRef);
+
+      if (!snapshot.empty) {
+        products = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        console.log(`📦 Found ${products.length} products in old "supplier_products" collection`);
+        return { success: true, products };
+      }
+    } catch (error) {
+      console.log('📦 Old "supplier_products" collection not accessible either');
+    }
+
+    // If we get here, no products found in either structure
+    console.log(`📦 No products found for supplier ${supplierId} in any collection`);
+    return { success: true, products: [] };
   } catch (error) {
     console.error('Error fetching supplier products:', error);
     return { success: false, error };

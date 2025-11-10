@@ -90,6 +90,12 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
           throw new Error(`Cart item missing variantId: ${JSON.stringify(item)}`);
         }
         
+        // Normalize quantity field: accept both 'qty' and 'quantity'
+        const requestedQty = item.quantity || item.qty || 0;
+        if (requestedQty <= 0) {
+          throw new Error(`Invalid quantity for item: ${item.productName || item.variantId}`);
+        }
+        
         const variantRef = doc(db, VARIANTS_COLLECTION, item.variantId);
         const variantSnap = await getDoc(variantRef);
         
@@ -103,19 +109,22 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
         const variantData = variantSnap.data();
         const available = variantData.quantity || 0;
         
-        if (available < item.qty) {
+        if (available < requestedQty) {
           throw new Error(
             `Insufficient stock for "${variantData.productName} - ${variantData.variantName}"\n` +
             `Available: ${available} units\n` +
-            `Requested: ${item.qty} units\n` +
-            `Shortage: ${item.qty - available} units`
+            `Requested: ${requestedQty} units\n` +
+            `Shortage: ${requestedQty - available} units`
           );
         }
         
         return {
           variantRef,
           variantData,
-          cartItem: item
+          cartItem: {
+            ...item,
+            quantity: requestedQty // Normalize to 'quantity'
+          }
         };
       })
     );
@@ -149,9 +158,9 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
       for (const check of variantChecks) {
         const { variantRef, variantData, cartItem } = check;
         
-        // Calculate new quantity
+        // Calculate new quantity (cartItem.quantity is now normalized)
         const currentQty = variantData.quantity || 0;
-        const newQuantity = currentQty - cartItem.qty;
+        const newQuantity = currentQty - cartItem.quantity;
         
         if (newQuantity < 0) {
           throw new Error(
@@ -164,7 +173,7 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
         const salesHistory = variantData.salesHistory || [];
         salesHistory.push({
           transactionId,
-          quantity: cartItem.qty,
+          quantity: cartItem.quantity,
           unitPrice: cartItem.unitPrice || variantData.unitPrice,
           timestamp: now.toISOString(),
           performedBy: currentUser.uid
@@ -183,7 +192,7 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
           salesHistory: filteredHistory,
           lastSale: {
             transactionId,
-            quantity: cartItem.qty,
+            quantity: cartItem.quantity,
             timestamp: serverTimestamp(),
             performedBy: currentUser.uid
           },
@@ -199,67 +208,112 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
           variantName: variantData.variantName,
           previousQty: currentQty,
           newQty: newQuantity,
-          deducted: cartItem.qty
+          deducted: cartItem.quantity
         });
       }
       
       // 5. Create transaction document
       const transactionRef = doc(collection(db, TRANSACTIONS_COLLECTION));
       
+      // Helper function to remove undefined values from object
+      const cleanObject = (obj) => {
+        return Object.fromEntries(
+          Object.entries(obj).filter(([_, v]) => v !== undefined)
+        );
+      };
+      
       const transactionData = {
         transactionId,
         receiptNumber,
         
-        // Customer info
-        customerId: transactionDetails.customerId,
-        customerName: transactionDetails.customerName,
+        // Customer info (flat structure for consistency)
+        customerId: transactionDetails.customerId || 'WALK_IN_CUSTOMER',
+        customerName: transactionDetails.customerName || 'Walk-in Customer',
         customerPhone: transactionDetails.customerPhone || '',
         customerAddress: transactionDetails.customerAddress || '',
         customerEmail: transactionDetails.customerEmail || '',
         
-        // Items sold
-        items: cartItems.map(item => ({
+        // Also store as nested object for backward compatibility
+        customerInfo: {
+          id: transactionDetails.customerId || 'WALK_IN_CUSTOMER',
+          name: transactionDetails.customerName || 'Walk-in Customer',
+          phone: transactionDetails.customerPhone || '',
+          address: transactionDetails.customerAddress || '',
+          email: transactionDetails.customerEmail || ''
+        },
+        
+        // Items sold (normalized with 'quantity' and 'price' fields)
+        items: cartItems.map(item => cleanObject({
           variantId: item.variantId,
-          parentProductId: item.parentProductId,
-          productName: item.productName,
-          variantName: item.variantName,
-          quantity: item.qty,
-          unitPrice: item.unitPrice,
-          totalPrice: item.unitPrice * item.qty,
-          category: item.category || '',
+          parentProductId: item.parentProductId || '',
+          productName: item.productName || 'Unknown Product',
+          variantName: item.variantName || '',
+          name: `${item.productName || 'Unknown'}${item.variantName ? ` - ${item.variantName}` : ''}`, // Combined name for display
+          quantity: item.quantity, // Normalized field
+          unitPrice: item.unitPrice || 0,
+          price: item.unitPrice || 0, // Alias for 'unitPrice' for ReceiptModal compatibility
+          totalPrice: (item.unitPrice || 0) * item.quantity,
+          category: item.category || 'Uncategorized',
           
-          // Location info (for reference)
-          storageLocation: item.storageLocation || '',
-          shelfName: item.shelfName || '',
-          rowName: item.rowName || '',
-          columnIndex: item.columnIndex || ''
+          // Location info (for reference) - only include if they exist
+          ...(item.storageLocation && { storageLocation: item.storageLocation }),
+          ...(item.shelfName && { shelfName: item.shelfName }),
+          ...(item.rowName && { rowName: item.rowName }),
+          ...(item.columnIndex !== undefined && item.columnIndex !== null && { columnIndex: item.columnIndex })
         })),
         
         // Financial details
-        subTotal: transactionDetails.subTotal,
-        tax: transactionDetails.tax,
+        subTotal: transactionDetails.subTotal || 0,
+        tax: transactionDetails.tax || 0,
         discount: transactionDetails.discount || 0,
         discountType: transactionDetails.discountType || 'none',
-        total: transactionDetails.total,
-        amountPaid: transactionDetails.amountPaid,
-        change: transactionDetails.change || (transactionDetails.amountPaid - transactionDetails.total),
+        total: transactionDetails.total || 0,
+        amountPaid: transactionDetails.amountPaid || 0,
+        change: transactionDetails.change || (transactionDetails.amountPaid - transactionDetails.total) || 0,
         
         // Payment info
-        paymentMethod: transactionDetails.paymentMethod,
+        paymentMethod: transactionDetails.paymentMethod || 'Cash',
         paymentReference: transactionDetails.paymentReference || '',
         
-        // Cashier info
+        // Cashier info (flat and nested for compatibility)
         cashierId: currentUser.uid,
-        cashierName: currentUser.displayName || currentUser.email || 'Unknown',
+        cashierName: currentUser.name || currentUser.displayName || currentUser.email || 'Unknown',
+        cashier: {
+          id: currentUser.uid,
+          name: currentUser.name || currentUser.displayName || currentUser.email || 'Unknown',
+          email: currentUser.email || ''
+        },
         
         // Transaction metadata
         status: 'completed',
+        releaseStatus: 'released', // Add release status for inventory tracking
         saleDate: now.toISOString().split('T')[0], // YYYY-MM-DD
         saleTime: `${hours}:${minutes}:${seconds}`,
         timestamp: serverTimestamp(),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
+      
+      // Log transaction data for debugging (excluding serverTimestamp which shows as undefined)
+      console.log('📄 Transaction data to be saved:', {
+        ...transactionData,
+        timestamp: '[serverTimestamp]',
+        createdAt: '[serverTimestamp]',
+        updatedAt: '[serverTimestamp]'
+      });
+      
+      // Verify no undefined values in critical fields
+      const hasUndefined = Object.entries(transactionData).some(([key, value]) => {
+        if (value === undefined) {
+          console.error(`❌ Undefined field detected: ${key}`);
+          return true;
+        }
+        return false;
+      });
+      
+      if (hasUndefined) {
+        throw new Error('Transaction data contains undefined fields. Check console for details.');
+      }
       
       transaction.set(transactionRef, transactionData);
       
