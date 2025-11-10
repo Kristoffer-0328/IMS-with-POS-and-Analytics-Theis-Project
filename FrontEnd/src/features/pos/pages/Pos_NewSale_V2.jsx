@@ -317,19 +317,6 @@ export default function Pos_NewSale_V2() {
     setAddedProducts(prev => prev.filter((_, index) => index !== indexToRemove));
   }, []);
 
-  const handleUpdateCartQuantity = useCallback((itemIndex, newQuantity) => {
-    if (newQuantity <= 0) {
-      handleRemoveProduct(itemIndex);
-      return;
-    }
-
-    setAddedProducts(prev =>
-      prev.map((item, index) =>
-        index === itemIndex ? { ...item, qty: newQuantity } : item
-      )
-    );
-  }, [handleRemoveProduct]);
-
   // --- Product Selection Logic ---
   const handleAddProduct = useCallback(async (wrappedProduct) => {
     if (isProcessing) return;
@@ -360,6 +347,26 @@ export default function Pos_NewSale_V2() {
       quantity: selectedQuantity
     });
 
+    // Check if adding this quantity would exceed available stock
+    const existingQuantityForVariant = addedProducts
+      .filter(item => item.variantId === variant.variantId)
+      .reduce((total, item) => total + item.qty, 0);
+    
+    const totalQuantityAfterAdd = existingQuantityForVariant + selectedQuantity;
+    const availableStock = variant.totalQuantity || variant.quantity || 0;
+    
+    if (totalQuantityAfterAdd > availableStock) {
+      // Show error modal - insufficient stock
+      setAddModalData({
+        title: 'Insufficient Stock',
+        message: `Cannot add ${selectedQuantity} ${variant.baseUnit || variant.unit || 'pcs'} of ${selectedProductForModal.name}.`,
+        type: 'error',
+        details: `Available stock: ${availableStock} ${variant.baseUnit || variant.unit || 'pcs'}\nAlready in cart: ${existingQuantityForVariant} ${variant.baseUnit || variant.unit || 'pcs'}`
+      });
+      setShowAddModal(true);
+      return; // Don't add to cart
+    }
+
     // Compute effective unit price
     let effectiveUnitPrice = variant.price || variant.unitPrice || 0;
     // If variant represents a bundle, convert price to per-piece for cart consistency
@@ -374,6 +381,7 @@ export default function Pos_NewSale_V2() {
       productId: selectedProductForModal.id,
       name: `${selectedProductForModal.name}${variant.size ? ` (${variant.size} ${variant.unit || ''})`.trim() : ''}`,
       baseName: selectedProductForModal.name,
+      variantName: variant.variantName,
       price: effectiveUnitPrice,
       qty: selectedQuantity,
       unit: variant.unit || variant.baseUnit || 'pcs',
@@ -381,7 +389,12 @@ export default function Pos_NewSale_V2() {
       image: variant.image || selectedProductForModal.image,
       // Include variant details for display
       size: variant.size,
-      brand: selectedProductForModal.brand
+      brand: selectedProductForModal.brand,
+      // Bundle information
+      isBundle: variant.isBundle,
+      piecesPerBundle: variant.piecesPerBundle,
+      bundlePackagingType: variant.bundlePackagingType,
+      bundlePrice: variant.unitPrice || variant.price
     };
 
     addProductToCart(cartItem);
@@ -400,7 +413,7 @@ export default function Pos_NewSale_V2() {
       details: ''
     });
     setShowAddModal(true);
-  }, [selectedProductForModal, activeVariantIndex, addProductToCart]);
+  }, [selectedProductForModal, activeVariantIndex, addProductToCart, addedProducts]);
 
   // --- Calculate Totals ---
   const { subTotal, tax, total, discountAmount, finalTotal } = useMemo(() => {
@@ -642,7 +655,7 @@ export default function Pos_NewSale_V2() {
         amountPaid: amountPaidNum,
         change: amountPaidNum - finalTotal,
         customerName: customerDisplayName,
-        cashierName: currentUser?.name ||  'Unknown',
+        cashierName: currentUser?.name || 'Unknown',
         date: currentDateTime.formattedDate,
         time: `${currentDateTime.formattedTime.hours}:${currentDateTime.formattedTime.minutes}:${currentDateTime.formattedTime.seconds}`
       };
@@ -789,7 +802,6 @@ export default function Pos_NewSale_V2() {
                   formattedTotal: formatCurrency(item.price * item.qty)
                 }))}
                 onRemoveItem={handleRemoveProduct}
-                onUpdateQuantity={handleUpdateCartQuantity}
                 isProcessing={isProcessing}
               />
             )}

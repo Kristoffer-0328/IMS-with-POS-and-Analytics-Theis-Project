@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect } from 'react';
-import { getFirestore, collection, getDocs } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore';
 import app from '../../../../FirebaseConfig';
 import { getRowDimensionConstraints } from '../../config/StorageUnitsConfig';
 
@@ -86,69 +86,76 @@ const ShelfViewModal = ({
     setLoading(true);
     try {
       const unitName = selectedUnit.title.split(' - ')[0]; // Extract "Unit 01" from "Unit 01 - Steel & Heavy Materials"
+      console.log('🔍 Fetching products for unit:', unitName);
 
       const products = [];
       
-      // NESTED STRUCTURE: Products/{Unit}/products/{productId}
-      // Each product document has storageLocation, shelfName, rowName, columnIndex fields
-      const productsRef = collection(db, 'Products', unitName, 'products');
-      const productsSnapshot = await getDocs(productsRef);
+      // NEW FLAT STRUCTURE: Query Variants collection
+      // Variants can have multiple locations stored in a "locations" array
+      const variantsRef = collection(db, 'Variants');
+      const variantsSnapshot = await getDocs(variantsRef);
 
+      console.log(`📦 Found ${variantsSnapshot.docs.length} total variants in database`);
 
-      // Fetch base products AND their variants
-      for (const productDoc of productsSnapshot.docs) {
-        const productData = productDoc.data();
+      // Process variants and extract locations that match this unit
+      variantsSnapshot.docs.forEach(variantDoc => {
+        const variantData = variantDoc.data();
         
-        // Add base product if it has storage location
-        if (productData.shelfName && productData.rowName) {
-          const productInfo = {
-            ...productData,
-            id: productDoc.id,
-            shelfName: productData.shelfName || '',
-            rowName: productData.rowName || '',
-            columnIndex: productData.columnIndex || '', // Keep as is (string or number)
-            columnIndexNumber: parseInt(productData.columnIndex) || 0, // Also store as number
-            locationKey: `${productData.shelfName}-${productData.rowName}-${productData.columnIndex}`,
-            isVariant: false
+        // Check if variant has locations array (multi-location support)
+        if (variantData.locations && Array.isArray(variantData.locations)) {
+          // Process each location in the array
+          variantData.locations.forEach(location => {
+            const locationUnit = location.unit || location.storageLocation || '';
+            
+            // Only include locations that match this unit
+            if (locationUnit === unitName) {
+              const variantInfo = {
+                ...variantData,
+                id: variantDoc.id,
+                shelfName: location.shelfName || location.shelf || '',
+                rowName: location.rowName || location.row || '',
+                columnIndex: location.columnIndex ?? '', // Keep as is (string or number)
+                columnIndexNumber: parseInt(location.columnIndex) || 0, // Also store as number
+                locationKey: `${location.shelfName || location.shelf}-${location.rowName || location.row}-${location.columnIndex}`,
+                quantity: location.quantity || 0, // Quantity at this specific location
+                // Display name: Use productName + variantName for clarity
+                name: variantData.variantName 
+                  ? `${variantData.productName || variantData.name} (${variantData.variantName})`
+                  : variantData.productName || variantData.name
+              };
+
+              console.log(`✅ Adding variant: ${variantInfo.name} at ${variantInfo.shelfName}-${variantInfo.rowName}-${variantInfo.columnIndex} (Qty: ${variantInfo.quantity})`);
+              products.push(variantInfo);
+            }
+          });
+        } 
+        // Fallback: Check legacy single location fields
+        else if (variantData.storageLocation === unitName && 
+                 variantData.shelfName && 
+                 variantData.rowName && 
+                 variantData.columnIndex !== undefined) {
+          const variantInfo = {
+            ...variantData,
+            id: variantDoc.id,
+            shelfName: variantData.shelfName || '',
+            rowName: variantData.rowName || '',
+            columnIndex: variantData.columnIndex || '',
+            columnIndexNumber: parseInt(variantData.columnIndex) || 0,
+            locationKey: `${variantData.shelfName}-${variantData.rowName}-${variantData.columnIndex}`,
+            name: variantData.variantName 
+              ? `${variantData.productName || variantData.name} (${variantData.variantName})`
+              : variantData.productName || variantData.name
           };
 
-       
-          products.push(productInfo);
+          console.log(`✅ Adding variant (legacy): ${variantInfo.name} at ${variantInfo.shelfName}-${variantInfo.rowName}-${variantInfo.columnIndex}`);
+          products.push(variantInfo);
         }
-        
-        // Fetch variants for this base product
-        // Structure: Products/{Unit}/products/{baseProductId}/variants/{variantId}
-        const variantsRef = collection(db, 'Products', unitName, 'products', productDoc.id, 'variants');
-        const variantsSnapshot = await getDocs(variantsRef);
-        
-        if (variantsSnapshot.docs.length > 0) {
-        }
-        
-        variantsSnapshot.docs.forEach(variantDoc => {
-          const variantData = variantDoc.data();
-          
-          // Only add variant if it has storage location
-          if (variantData.shelfName && variantData.rowName) {
-            const variantInfo = {
-              ...variantData,
-              id: variantDoc.id,
-              parentProductId: productDoc.id,
-              shelfName: variantData.shelfName || '',
-              rowName: variantData.rowName || '',
-              columnIndex: variantData.columnIndex || '',
-              columnIndexNumber: parseInt(variantData.columnIndex) || 0,
-              locationKey: `${variantData.shelfName}-${variantData.rowName}-${variantData.columnIndex}`,
-              isVariant: true
-            };
+      });
 
-            products.push(variantInfo);
-          }
-        });
-      }
-
+      console.log(`✅ Total products loaded for ${unitName}: ${products.length}`);
       setProducts(products);
     } catch (error) {
-      console.error('Error fetching unit products:', error);
+      console.error('❌ Error fetching unit products:', error);
       alert(`Failed to load products: ${error.message}`);
     } finally {
       setLoading(false);

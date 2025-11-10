@@ -1,5 +1,6 @@
 import React from 'react';
 import { FiX } from 'react-icons/fi';
+import ErrorModal from '../../../../components/modals/ErrorModal';
 
 const formatCurrency = (number) => {
   return new Intl.NumberFormat('en-PH', {
@@ -24,20 +25,20 @@ const formatDimensions = (variant) => {
         if (!hasLength && !hasThickness) return null;
         
         if (hasLength && hasThickness && !hasWidth) {
-          return `${variant.length}m × ⌀${variant.thickness}mm`;
+          return `${variant.length}m × ⌀${variant.thickness}mm pcs`;
         } else if (hasLength && hasWidth && hasThickness) {
-          return `${variant.length}m × ${variant.width}cm × ${variant.thickness}mm`;
+          return `${variant.length}m × ${variant.width}cm × ${variant.thickness}pcs`;
         } else if (hasThickness) {
           return `${variant.thickness}mm thick`;
         } else if (hasLength) {
-          return `${variant.length}m`;
+          return `${variant.length}pcs`;
         }
       }
       return null;
       
     case 'weight':
       if (variant.unitWeightKg && parseFloat(variant.unitWeightKg) > 0) {
-        return `${variant.unitWeightKg}kg`;
+        return `${variant.unitWeightKg}pcs`;
       }
       return null;
       
@@ -95,6 +96,10 @@ export default function VariantSelectionModal({
   
   // For bundles, allow selecting between bundle or piece input
   const [inputMode, setInputMode] = React.useState(isBundle ? 'bundle' : 'piece');
+  
+  // Error modal state
+  const [showErrorModal, setShowErrorModal] = React.useState(false);
+  const [errorMessage, setErrorMessage] = React.useState('');
 
   // Get the correct price based on input mode
   // For bundles: unitPrice is the price per bundle, so price per piece = unitPrice / piecesPerBundle
@@ -112,7 +117,22 @@ export default function VariantSelectionModal({
     const value = e.target.value;
     // Allow empty value or numbers
     if (value === '' || /^\d*$/.test(value)) {
-      setQty(value);
+      const numValue = parseInt(value);
+      const effectiveMax = isBundle && inputMode === 'bundle' 
+        ? Math.floor(maxQty / activeVariant.piecesPerBundle)
+        : maxQty;
+      
+      // If the entered value exceeds the maximum, show error modal and clamp it
+      if (!isNaN(numValue) && numValue > effectiveMax) {
+        const unit = isBundle && inputMode === 'bundle' 
+          ? (activeVariant.bundlePackagingType || 'bundles')
+          : (activeVariant.baseUnit || 'pcs');
+        setErrorMessage(`Maximum available quantity is ${effectiveMax} ${unit}.`);
+        setShowErrorModal(true);
+        setQty(effectiveMax.toString());
+      } else {
+        setQty(value);
+      }
     }
   };
 
@@ -164,7 +184,7 @@ export default function VariantSelectionModal({
       if (inputMode === 'bundle') {
         return activeVariant.bundlePackagingType || 'bundle';
       } else {
-        return activeVariant.baseUnit || 'pcs';
+        return  'pcs';
       }
     }
     // For non-bundle dimensional products, use the base unit (pcs, not meters)
@@ -374,7 +394,7 @@ export default function VariantSelectionModal({
            
           </div>
 
-          {/* Custom Quantity */}
+          {/*   om Quantity */}
           <div className="mb-6">
             <p className="text-gray-600 mb-2">
               Custom Quantity
@@ -512,6 +532,15 @@ export default function VariantSelectionModal({
           </button>
         </div>
       </div>
+
+      {/* Error Modal */}
+      <ErrorModal
+        isOpen={showErrorModal}
+        onClose={() => setShowErrorModal(false)}
+        title="Quantity Exceeded"
+        message={errorMessage}
+        type="warning"
+      />
     </div>
   );
 }

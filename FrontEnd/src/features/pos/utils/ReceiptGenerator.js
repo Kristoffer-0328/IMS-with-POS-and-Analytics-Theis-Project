@@ -59,6 +59,15 @@ export const generateInvoiceHtml = (data) => {
                     background: #f9fafb;
                     padding: 20px;
                 }
+    
+            // Flexible item field access (match ReceiptModal.jsx)
+            const getItemFields = (item) => {
+                const name = item.name || item.productName || item.variantName || 'Unknown Item';
+                const quantity = item.quantity || item.qty || 0;
+                const price = item.price || item.unitPrice || 0;
+                const total = item.totalPrice || (price * quantity);
+                return { name, quantity, price, total };
+            };
                 .invoice-container { 
                     max-width: 800px; 
                     margin: 0 auto; 
@@ -114,6 +123,7 @@ export const generateInvoiceHtml = (data) => {
 
                 /* Billing Section */
                 .billing-section {
+                                        const { name, quantity, price, total } = getItemFields(item);
                     display: flex;
                     justify-content: space-between;
                     padding: 30px 40px;
@@ -386,9 +396,9 @@ export const generateInvoiceHtml = (data) => {
                                 <tr>
                                     <td>${index + 1}</td>
                                     <td>${item.name || 'Unknown Item'}</td>
-                                    <td class="text-center">${item.quantity || 0}</td>
-                                    <td class="text-right">₱${formatCurrency(Number(item.price))}</td>
-                                    <td class="text-right">₱${formatCurrency(Number(item.price) * Number(item.quantity))}</td>
+                                    <td class="text-center">${item.qty || 0}</td>
+                                    <td class="text-right">₱${formatCurrency(Number(item.unitPrice))}</td>
+                                    <td class="text-right">₱${formatCurrency(Number(item.unitPrice) * Number(item.qty))}</td>
                                 </tr>
                             `).join('')}
                         </tbody>

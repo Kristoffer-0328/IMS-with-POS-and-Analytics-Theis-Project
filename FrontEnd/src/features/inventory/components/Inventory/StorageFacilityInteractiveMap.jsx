@@ -18,16 +18,28 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
   // Transform storage units into a lookup object for modal display
   const shelfLayouts = useMemo(() => {
     return storageUnits.reduce((acc, unit) => {
-      // Map unit-01 to unit1, unit-02 to unit2, etc. (remove hyphen and leading zero)
-      const unitNumber = unit.id.split('-')[1]; // Gets "01", "02", etc.
-      const unitKey = 'unit' + parseInt(unitNumber); // Converts to "unit1", "unit2", etc.
+      // Handle special cases like "unit-03-yard"
+      let unitKey;
+      
+      if (unit.id === 'unit-03-yard') {
+        unitKey = 'unit3-yard';
+      } else {
+        // Map unit-01 to unit1, unit-02 to unit2, etc. (remove hyphen and leading zero)
+        const unitNumber = unit.id.split('-')[1]; // Gets "01", "02", etc.
+        unitKey = 'unit' + parseInt(unitNumber); // Converts to "unit1", "unit2", etc.
+      }
       
       // Extract name from title (e.g., "Unit 01 - Steel & Heavy Materials" -> "Steel & Heavy Materials")
       // If no title, use type as fallback
       const unitName = unit.title ? unit.title.split(' - ')[1] : (unit.name || unit.type || 'Unknown Unit');
       
+      // Determine display title
+      const displayTitle = unit.id === 'unit-03-yard' 
+        ? 'Unit 03 Yard - Bulk Cement Storage'
+        : `Unit ${unit.id.split('-')[1]} - ${unitName}`;
+      
       acc[unitKey] = {
-        title: `Unit ${unitNumber} - ${unitName}`,
+        title: displayTitle,
         type: unit.type,
         shelves: unit.shelves,
         info: {
@@ -79,58 +91,60 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
         unitTotalSlots[displayName] = unit.capacity;
       });
 
-      // Fetch products from nested structure: Products/{storageUnit}/products/{productId}
-      const productsRef = collection(db, 'Products');
-      const storageUnitsSnapshot = await getDocs(productsRef);
+      // NEW FLAT STRUCTURE: Fetch variants from Variants collection
+      const variantsRef = collection(db, 'Variants');
+      const variantsSnapshot = await getDocs(variantsRef);
       
-      // Count products per unit (group base products + variants)
+      console.log('🔍 Fetching unit capacities from Variants collection');
+      
+      // Count unique products per unit
+      // A variant can have multiple locations (locations array)
       const unitProductCounts = {};
-      const processedParentIds = new Set(); // Track base products we've already counted
       
-      // Iterate through each storage unit
-      for (const storageUnitDoc of storageUnitsSnapshot.docs) {
-        const unitId = storageUnitDoc.id;
+      variantsSnapshot.docs.forEach(doc => {
+        const variant = doc.data();
+        const productId = variant.parentProductId;
         
-        // Skip non-storage unit documents
-        if (!unitId.startsWith('Unit ')) {
-          continue;
-        }
+        // Skip if no parent product ID
+        if (!productId) return;
         
-        // Fetch products subcollection for this storage unit
-        const productsSubcollectionRef = collection(db, 'Products', unitId, 'products');
-        const productsSnapshot = await getDocs(productsSubcollectionRef);
-        
-        // Initialize counter for this unit
-        if (!unitProductCounts[unitId]) {
-          unitProductCounts[unitId] = 0;
-        }
-        
-        productsSnapshot.docs.forEach(doc => {
-          const product = doc.data();
+        // Check if variant has locations array (multi-location support)
+        if (variant.locations && Array.isArray(variant.locations)) {
+          // Process each location in the array
+          variant.locations.forEach(location => {
+            const storageLocation = location.unit || location.storageLocation;
+            
+            if (storageLocation) {
+              // Initialize set for this unit if needed
+              if (!unitProductCounts[storageLocation]) {
+                unitProductCounts[storageLocation] = new Set();
+              }
+              
+              // Add product ID to the set (automatically handles uniqueness)
+              unitProductCounts[storageLocation].add(productId);
+            }
+          });
+        } 
+        // Fallback: Check legacy single location field
+        else if (variant.storageLocation) {
+          const storageLocation = variant.storageLocation;
           
-          // If it's a variant, only count if we haven't counted its parent
-          if (product.isVariant && product.parentProductId) {
-            const parentKey = `${unitId}_${product.parentProductId}`;
-            if (!processedParentIds.has(parentKey)) {
-              processedParentIds.add(parentKey);
-              unitProductCounts[unitId]++;
-            }
-          } else if (!product.isVariant) {
-            // It's a base product, count it once
-            const productKey = `${unitId}_${doc.id}`;
-            if (!processedParentIds.has(productKey)) {
-              processedParentIds.add(productKey);
-              unitProductCounts[unitId]++;
-            }
+          // Initialize set for this unit if needed
+          if (!unitProductCounts[storageLocation]) {
+            unitProductCounts[storageLocation] = new Set();
           }
-        });
-      }
+          
+          // Add product ID to the set
+          unitProductCounts[storageLocation].add(productId);
+        }
+      });
       
       // Calculate capacities for each unit
       for (const unitName in unitTotalSlots) {
-        const productCount = unitProductCounts[unitName] || 0;
+        const productSet = unitProductCounts[unitName];
+        const productCount = productSet ? productSet.size : 0;
         const totalSlots = unitTotalSlots[unitName];
-        const occupancyRate = productCount / totalSlots;
+        const occupancyRate = totalSlots > 0 ? productCount / totalSlots : 0;
         
         capacities[unitName] = {
           productCount,
@@ -138,6 +152,8 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           occupancyRate,
           status: getCapacityStatus(occupancyRate)
         };
+        
+        console.log(`📦 ${unitName}: ${productCount} unique products (${(occupancyRate * 100).toFixed(1)}% capacity)`);
         
       }
       

@@ -40,6 +40,7 @@ import RestockingAlertModal from '../components/Admin/RestockingAlertModal';
 import RestockingAlertBadge from '../components/Admin/RestockingAlertBadge';
 
 const IMDashboard = () => {
+ 
   const [currentMonth, setCurrentMonth] = useState('October');
   const { listenToProducts, fetchRestockRequests } = useServices(); 
   const [products, setProduct] = useState([]);
@@ -174,9 +175,10 @@ const IMDashboard = () => {
   }, [fetchRestockRequests]);
   
   const groupedProducts = useMemo(() => {
+    // Group by productBrand and variantName (or id if needed)
     const productGroups = {};
     products.forEach(item => {
-      const groupKey = `${item.name || 'unknown'}_${item.brand || 'generic'}_${item.specifications || ''}_${item.category || ''}`;
+      const groupKey = `${item.productBrand || 'Generic'}_${item.variantName || item.id}`;
       if (!productGroups[groupKey]) {
         productGroups[groupKey] = {
           ...item,
@@ -243,17 +245,17 @@ const IMDashboard = () => {
       .slice(0, 10);
   }, [groupedProducts]);
 
-  // Stock status distribution
+  // Stock status distribution (filter out zero-value categories)
   const stockStatusData = useMemo(() => {
     const inStock = products.filter(p => p.quantity > 60).length;
     const lowStock = products.filter(p => p.quantity > 0 && p.quantity <= 60).length;
     const outOfStock = products.filter(p => p.quantity <= 0).length;
-    
-    return [
+    const allStatuses = [
       { name: 'In Stock', value: inStock, color: '#10B981' },
       { name: 'Low Stock', value: lowStock, color: '#F59E0B' },
       { name: 'Out of Stock', value: outOfStock, color: '#EF4444' }
     ];
+    return allStatuses.filter(status => status.value > 0);
   }, [products]);
 
   const chartData = groupedProducts.map((p) => {
@@ -262,7 +264,7 @@ const IMDashboard = () => {
     else if (p.quantity <= 40) color = '#FFC554';
 
     return {
-      name: p.name,
+      name: p.variantName || p.productBrand || p.id,
       value: p.quantity,
       color,
     };
@@ -282,7 +284,13 @@ const IMDashboard = () => {
     }
     return null;
   };
-
+ // ...existing code...
+  // Place debug logging after all hooks and memoized variables are declared
+  useEffect(() => {
+    console.log('products:', products);
+    console.log('groupedProducts:', groupedProducts);
+    console.log('chartData:', chartData);
+  }, [products, groupedProducts, chartData]);
   // Custom tooltip for the area chart
   const TurnoverTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
@@ -322,10 +330,10 @@ const IMDashboard = () => {
   ];
 
   return (
+
     <div className="space-y-6">
       {/* Header Section */}
       <div className="flex items-center justify-between">
-       
         <button
           onClick={() => window.location.reload()}
           className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
@@ -335,94 +343,74 @@ const IMDashboard = () => {
         </button>
       </div>
 
+
       {/* Stat Cards Grid - Enhanced */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
-        
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         {/* Total Stock */}
-        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-5 shadow-sm border border-blue-200">
-          <div className="flex justify-between items-start mb-3">
-            <div className="bg-blue-500 p-3 rounded-lg">
-              <FiPackage className="text-white" size={24} />
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-gray-600 text-sm mb-1">Total Stock</p>
+              <h3 className="text-2xl font-bold mb-2">{dashboardStats.totalStock.toLocaleString()}</h3>
+              <div className="flex items-center text-blue-500 text-sm">
+                <FiPackage className="mr-1" />
+                <span>{dashboardStats.totalProducts} product locations</span>
+              </div>
             </div>
-            <span className="text-xs font-medium text-blue-700 bg-blue-200 px-2 py-1 rounded-full">
-              Live
-            </span>
-          </div>
-          <div>
-            <p className="text-blue-700 text-sm mb-1 font-medium">Total Stock</p>
-            <h3 className="text-3xl font-bold text-blue-900 mb-1">
-              {dashboardStats.totalStock.toLocaleString()}
-            </h3>
-            <p className="text-xs text-blue-600">
-              {dashboardStats.totalProducts} product locations
-            </p>
+            <div className="bg-blue-50 p-3 rounded-lg">
+              <FiPackage className="text-blue-600 text-xl" />
+            </div>
           </div>
         </div>
 
         {/* Total Value */}
-        <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-5 shadow-sm border border-green-200">
-          <div className="flex justify-between items-start mb-3">
-            <div className="bg-green-500 p-3 rounded-lg">
-              <FiDollarSign className="text-white" size={24} />
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-gray-600 text-sm mb-1">Inventory Value</p>
+              <h3 className="text-2xl font-bold mb-2">₱{dashboardStats.totalValue.toLocaleString()}</h3>
+              <div className="flex items-center text-green-500 text-sm">
+                <FiDollarSign className="mr-1" />
+                <span>{dashboardStats.uniqueProducts} unique products</span>
+              </div>
             </div>
-            <span className="text-xs font-medium text-green-700 bg-green-200 px-2 py-1 rounded-full">
-              Total
-            </span>
-          </div>
-          <div>
-            <p className="text-green-700 text-sm mb-1 font-medium">Inventory Value</p>
-            <h3 className="text-3xl font-bold text-green-900 mb-1">
-              ₱{dashboardStats.totalValue.toLocaleString()}
-            </h3>
-            <p className="text-xs text-green-600">
-              {dashboardStats.uniqueProducts} unique products
-            </p>
+            <div className="bg-green-50 p-3 rounded-lg">
+              <FiDollarSign className="text-green-600 text-xl" />
+            </div>
           </div>
         </div>
 
         {/* Low Stock Items */}
-        <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-5 shadow-sm border border-amber-200">
-          <div className="flex justify-between items-start mb-3">
-            <div className="bg-amber-500 p-3 rounded-lg">
-              <FiAlertTriangle className="text-white" size={24} />
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-gray-600 text-sm mb-1">Low Stock Items</p>
+              <h3 className="text-2xl font-bold mb-2">{dashboardStats.lowStockItems} Items</h3>
+              <div className="flex items-center text-red-500 text-sm">
+                <FiAlertTriangle className="mr-1" />
+                <span>Critical Stock</span>
+              </div>
             </div>
-            {dashboardStats.lowStockItems > 0 && (
-              <span className="text-xs font-medium text-amber-700 bg-amber-200 px-2 py-1 rounded-full animate-pulse">
-                Alert
-              </span>
-            )}
-          </div>
-          <div>
-            <p className="text-amber-700 text-sm mb-1 font-medium">Low Stock</p>
-            <h3 className="text-3xl font-bold text-amber-900 mb-1">
-              {dashboardStats.lowStockItems}
-            </h3>
-            <p className="text-xs text-amber-600">
-              Items need attention
-            </p>
+            <div className="bg-amber-50 p-3 rounded-lg">
+              <FiAlertTriangle className="text-amber-600 text-xl" />
+            </div>
           </div>
         </div>
 
         {/* Pending Restocks */}
-        <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-5 shadow-sm border border-purple-200">
-          <div className="flex justify-between items-start mb-3">
-            <div className="bg-purple-500 p-3 rounded-lg">
-              <FiBell className="text-white" size={24} />
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-gray-600 text-sm mb-1">Pending Restocks</p>
+              <h3 className="text-2xl font-bold mb-2">{request.filter(r => r.status === 'pending').length} Requests</h3>
+              <div className="flex items-center text-purple-500 text-sm">
+                <FiBell className="mr-1" />
+                <span>Pending approval</span>
+              </div>
             </div>
-            {request.filter(r => r.status === 'pending').length > 0 && (
-              <span className="text-xs font-medium text-purple-700 bg-purple-200 px-2 py-1 rounded-full">
-                {request.filter(r => r.status === 'pending').length} New
-              </span>
-            )}
-          </div>
-          <div>
-            <p className="text-purple-700 text-sm mb-1 font-medium">Restock Requests</p>
-            <h3 className="text-3xl font-bold text-purple-900 mb-1">
-              {request.filter(r => r.status === 'pending').length}
-            </h3>
-            <p className="text-xs text-purple-600">
-              Pending approval
-            </p>
+            <div className="bg-purple-50 p-3 rounded-lg">
+              <FiBell className="text-purple-600 text-xl" />
+            </div>
           </div>
         </div>
       </div>
@@ -651,48 +639,6 @@ const IMDashboard = () => {
         </div>
       </div>
 
-      {/* Quick Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-blue-50 rounded-lg">
-              <FiBox className="text-blue-600" size={20} />
-            </div>
-            <p className="text-sm font-medium text-gray-600">Unique Products</p>
-          </div>
-          <h4 className="text-2xl font-bold text-gray-900">{dashboardStats.uniqueProducts}</h4>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-green-50 rounded-lg">
-              <FiActivity className="text-green-600" size={20} />
-            </div>
-            <p className="text-sm font-medium text-gray-600">Avg Stock/Product</p>
-          </div>
-          <h4 className="text-2xl font-bold text-gray-900">{dashboardStats.averageStockPerProduct}</h4>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-red-50 rounded-lg">
-              <FiAlertTriangle className="text-red-600" size={20} />
-            </div>
-            <p className="text-sm font-medium text-gray-600">Out of Stock</p>
-          </div>
-          <h4 className="text-2xl font-bold text-gray-900">{dashboardStats.outOfStockItems}</h4>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-purple-50 rounded-lg">
-              <FiShoppingCart className="text-purple-600" size={20} />
-            </div>
-            <p className="text-sm font-medium text-gray-600">Categories</p>
-          </div>
-          <h4 className="text-2xl font-bold text-gray-900">{categoryData.length}</h4>
-        </div>
-      </div>
     
       {/* Info Modals */}
       <InfoModal
