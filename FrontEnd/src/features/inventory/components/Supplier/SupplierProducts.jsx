@@ -7,8 +7,7 @@ import NewVariantForm from '../Inventory/CategoryModal/NewVariantForm';
 import { 
   useServices,
   SUPPLIERS_COLLECTION,
-  LEGACY_SUPPLIER_PRODUCTS,
-  VARIANTS_COLLECTION
+  LEGACY_SUPPLIER_PRODUCTS
 } from '../../../../services/firebase/ProductServices';
 
 const SupplierProducts = ({ supplier, onClose }) => {
@@ -70,189 +69,60 @@ const SupplierProducts = ({ supplier, onClose }) => {
         };
       });
 
+      // Step 2: Use listenToProducts service to get all variants (listenToProducts returns variants from new architecture)
+      const unsubscribe = listenToProducts((allVariants) => {
 
-      // Step 2: Fetch variants from new Variants collection for linked variant IDs
-      const variantIds = Object.keys(supplierDataMap).filter(id => id.startsWith('VAR_'));
-      const variantsFromDB = [];
-      
-      if (variantIds.length > 0) {
-        console.log(`📦 Fetching ${variantIds.length} variants from Variants collection...`);
-        for (const variantId of variantIds) {
-          const variantRef = doc(db, VARIANTS_COLLECTION, variantId);
-          const variantDoc = await getDoc(variantRef);
-          if (variantDoc.exists()) {
-            variantsFromDB.push({
-              id: variantDoc.id,
-              ...variantDoc.data()
-            });
-          }
-        }
-        console.log(`📦 Found ${variantsFromDB.length} variants in Variants collection`);
-      }
-
-      // Step 3: Use listenToProducts service to get all products (more efficient)
-      const unsubscribe = listenToProducts((allProducts) => {
-
-        // Step 4: Filter products that are linked to this supplier
-        const linkedProducts = allProducts.filter(product => {
-          const isLinked = supplierDataMap[product.id] !== undefined;
-          if (isLinked) {
-          }
+        // Step 3: Filter variants that are linked to this supplier
+        const linkedVariants = allVariants.filter(variant => {
+          const isLinked = supplierDataMap[variant.id] !== undefined;
           return isLinked;
         });
 
+        console.log(`📦 Found ${linkedVariants.length} linked variants for supplier ${supplier.id}`);
 
-        // Step 5: Group products by base identity to consolidate duplicates across storage locations
-        const productGroups = {};
-        
-        linkedProducts.forEach(product => {
-          const supplierData = supplierDataMap[product.id];
+        // Step 4: Process each variant as an individual product card
+        const processedProducts = linkedVariants.map(variant => {
+          const supplierData = supplierDataMap[variant.id];
           
-          // Create a unique key for grouping (name + brand + specifications)
-          const groupKey = `${product.name || 'unknown'}_${product.brand || 'generic'}_${product.specifications || ''}_${product.category || ''}`;
+          // Use denormalized product data from variant (Master collection info)
+          const productName = variant.productName || supplierData.productName || 'Unknown Product';
+          const productBrand = variant.productBrand || supplierData.productBrand || 'Generic';
+          const productCategory = variant.productCategory || supplierData.productCategory || 'Uncategorized';
+          const variantName = variant.variantName || variant.specifications || 'Default';
           
-          if (!productGroups[groupKey]) {
-            // Check if product has variants in Firebase (old structure)
-            const productVariants = Array.isArray(product.variants) ? product.variants : [];
-            
-            // Process variants that are linked to this supplier
-            const linkedVariants = productVariants
-              .map((variant, index) => {
-                const variantId = variant.id || `${product.id}_variant_${index}`;
-                const variantSupplierData = supplierDataMap[variantId];
-                
-                if (variantSupplierData) {
-                  return {
-                    ...variant,
-                    id: variantId,
-                    variantIndex: index,
-                    parentProductId: product.id,
-                    name: variant.name || product.name,
-                    size: variant.size || variant.specifications || '',
-                    specifications: variant.specifications || '',
-                    supplierPrice: variantSupplierData.supplierPrice || 0,
-                    supplierSKU: variantSupplierData.supplierSKU || '',
-                    unitPrice: variant.unitPrice || 0,
-                    quantity: variant.quantity || 0,
-                    unit: variant.unit || 'pcs'
-                  };
-                }
-                return null;
-              })
-              .filter(v => v !== null);
-            
-            productGroups[groupKey] = {
-              ...product,
-              supplierPrice: supplierData.supplierPrice || 0,
-              supplierSKU: supplierData.supplierSKU || '',
-              lastUpdated: supplierData.lastUpdated,
-              originalUnitPrice: product.unitPrice, // Store original unit price for editing
-              variants: linkedVariants,
-              actualCategory: product.category || product.storageLocation || 'Unknown',
-              fullLocation: product.fullLocation || '',
-              locations: [{
-                id: product.id,
-                location: product.fullLocation || product.location || 'Unknown',
-                storageLocation: product.storageLocation,
-                quantity: Number(product.quantity) || 0
-              }],
-              allIds: [product.id],
-              totalQuantity: Number(product.quantity) || 0
-            };
-          } else {
-            // Add this location to the existing product group
-            productGroups[groupKey].locations.push({
-              id: product.id,
-              location: product.fullLocation || product.location || 'Unknown',
-              storageLocation: product.storageLocation,
-              quantity: Number(product.quantity) || 0
-            });
-            productGroups[groupKey].allIds.push(product.id);
-            productGroups[groupKey].totalQuantity += Number(product.quantity) || 0;
-          }
-        });
-
-        // Step 6: Process variants from new Variants collection
-        variantsFromDB.forEach(variant => {
-          const variantSupplierData = supplierDataMap[variant.id];
-          if (!variantSupplierData) return;
-
-          // Use denormalized product data or fetch parent product
-          const productName = variant.productName || variantSupplierData.productName || 'Unknown';
-          const productBrand = variant.productBrand || variantSupplierData.productBrand || 'Generic';
-          const productCategory = variant.productCategory || variantSupplierData.productCategory || 'Unknown';
+          // Calculate quantity from locations if available
+          const totalQuantity = Array.isArray(variant.locations)
+            ? variant.locations.reduce((sum, loc) => sum + (loc.quantity || 0), 0)
+            : (variant.quantity || 0);
           
-          // Create group key using denormalized parent product data
-          const groupKey = `${productName}_${productBrand}_${variant.specifications || ''}_${productCategory}`;
-          
-          // Create variant object
-          const processedVariant = {
-            ...variant,
+          return {
             id: variant.id,
             parentProductId: variant.parentProductId,
+            // Product info from Master collection
+            productName: productName,
             name: productName,
-            size: variant.size || variant.specifications || '',
+            brand: productBrand,
+            category: productCategory,
+            imageUrl: variant.productImageUrl || '',
+            // Variant-specific info
+            variantName: variantName,
             specifications: variant.specifications || '',
-            supplierPrice: variantSupplierData.supplierPrice || 0,
-            supplierSKU: variantSupplierData.supplierSKU || '',
+            // Supplier data
+            supplierPrice: supplierData.supplierPrice || 0,
+            supplierSKU: supplierData.supplierSKU || '',
+            lastUpdated: supplierData.lastUpdated,
+            // Stock info
             unitPrice: variant.unitPrice || 0,
-            quantity: variant.quantity || 0,
+            quantity: totalQuantity,
             unit: variant.unit || 'pcs',
-            // Handle multi-location variants
-            locations: variant.locations || [],
-            totalQuantity: variant.locations 
-              ? variant.locations.reduce((sum, loc) => sum + (loc.quantity || 0), 0) 
-              : (variant.quantity || 0)
+            // Location info
+            locations: Array.isArray(variant.locations) ? variant.locations : [],
+            fullLocation: Array.isArray(variant.locations) && variant.locations.length > 0
+              ? variant.locations.map(loc => loc.fullLocation || loc.location).join(', ')
+              : 'Unknown',
+            locationCount: Array.isArray(variant.locations) ? variant.locations.length : 0
           };
-
-          // Add to existing product group or create new one
-          if (!productGroups[groupKey]) {
-            productGroups[groupKey] = {
-              id: variant.parentProductId || variant.id,
-              name: productName,
-              brand: productBrand,
-              category: productCategory,
-              image: variant.productImageUrl || '',
-              supplierPrice: variantSupplierData.supplierPrice || 0,
-              supplierSKU: variantSupplierData.supplierSKU || '',
-              lastUpdated: variantSupplierData.lastUpdated,
-              variants: [processedVariant],
-              actualCategory: productCategory,
-              fullLocation: processedVariant.locations.length > 0 
-                ? processedVariant.locations.map(l => l.fullLocation).join(', ')
-                : 'Unknown',
-              locations: processedVariant.locations.length > 0 
-                ? processedVariant.locations 
-                : [{
-                    id: variant.id,
-                    location: variant.fullLocation || 'Unknown',
-                    quantity: variant.quantity || 0
-                  }],
-              allIds: [variant.id],
-              totalQuantity: processedVariant.totalQuantity
-            };
-          } else {
-            // Add variant to existing product group
-            productGroups[groupKey].variants.push(processedVariant);
-            productGroups[groupKey].allIds.push(variant.id);
-            productGroups[groupKey].totalQuantity += processedVariant.totalQuantity;
-            
-            // Add locations from this variant
-            if (processedVariant.locations.length > 0) {
-              productGroups[groupKey].locations.push(...processedVariant.locations);
-            }
-          }
         });
-
-        // Convert grouped products to array
-        const processedProducts = Object.values(productGroups).map(group => ({
-          ...group,
-          locationCount: group.locations.length,
-          // Update the full location display to show multiple locations if applicable
-          fullLocation: group.locations.length > 1 
-            ? `${group.locations.length} locations` 
-            : group.locations[0]?.location || 'Unknown'
-        }));
 
         setSupplierProducts(processedProducts);
         setLoading(false);
@@ -507,16 +377,16 @@ const SupplierProducts = ({ supplier, onClose }) => {
                         )}
 
                         {/* Status Indicator */}
-                        {product.name === 'Product not found' && (
+                        {(product.name === 'Product not found' || product.name === 'Unknown Product') && (
                           <div className="absolute top-3 left-3 bg-red-500 text-white text-xs px-2 py-1 rounded-full">
                             Missing
                           </div>
                         )}
 
-                        {/* Variant Count Badge */}
-                        {hasVariants(product) && (
+                        {/* Variant Badge */}
+                        {product.variantName && (
                           <div className="absolute top-3 right-3 bg-purple-500 text-white text-xs px-2 py-1 rounded-full">
-                            {product.variants.length} variants
+                            Variant
                           </div>
                         )}
                       </div>
@@ -524,18 +394,28 @@ const SupplierProducts = ({ supplier, onClose }) => {
                       {/* Product Info */}
                       <div className="p-4">
                         <div className="mb-3">
-                          <h3 className={`text-sm font-semibold mb-1 line-clamp-2 ${
-                            product.name === 'Product not found' 
+                          {/* Product Name from Master */}
+                          <h3 className={`text-sm font-semibold mb-1 line-clamp-1 ${
+                            product.name === 'Product not found' || product.name === 'Unknown Product'
                               ? 'text-red-600' 
                               : 'text-gray-900'
                           }`}>
-                            {product.name || 'Unknown Product'}
+                            {product.productName || product.name || 'Unknown Product'}
                           </h3>
+                          
+                          {/* Variant Name - displayed prominently below product name */}
+                          {product.variantName && (
+                            <div className="mb-2">
+                              <span className="inline-flex items-center px-2 py-1 rounded text-sm font-medium bg-purple-50 text-purple-700 border border-purple-200">
+                                {product.variantName}
+                              </span>
+                            </div>
+                          )}
                           
                           <div className="space-y-1 text-xs text-gray-500">
                             <div>SKU: {product.supplierSKU || 'Not set'}</div>
                             {product.brand && <div>Brand: {product.brand}</div>}
-                            {product.specifications && (
+                            {product.specifications && product.specifications !== product.variantName && (
                               <div className="line-clamp-1" title={product.specifications}>
                                 Specs: {product.specifications}
                               </div>
@@ -597,20 +477,12 @@ const SupplierProducts = ({ supplier, onClose }) => {
                             </div>
                             <div className="flex justify-between text-sm">
                               <span className="text-gray-500">Unit Price:</span>
-                              <span className="font-semibold text-gray-900">₱{(product.variants?.[0]?.unitPrice || product.unitPrice || 0).toLocaleString()}</span>
+                              <span className="font-semibold text-gray-900">₱{(product.unitPrice || 0).toLocaleString()}</span>
                             </div>
                           </div>
                         )}
 
-                        {/* Storage & Location Info */}
-                        {product.locationCount > 1 && (
-                          <div className="mb-3 p-2 bg-blue-50 rounded-lg">
-                            <div className="text-xs text-blue-700">
-                              <span className="font-semibold">📍 {product.locationCount} storage locations</span>
-                              <div className="mt-1">Total qty: {product.totalQuantity} {product.unit || 'pcs'}</div>
-                            </div>
-                          </div>
-                        )}
+                       
 
                         {/* Action Buttons */}
                         <div className="flex justify-between items-center pt-3 border-t border-gray-100">
@@ -634,108 +506,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
                         </div>
                       </div>
 
-                      {/* Variants Section */}
-                      {hasVariants(product) && (
-                        <div className="border-t border-gray-100 bg-gray-50">
-                          <div className="p-3">
-                            <div className="text-xs font-semibold text-gray-700 mb-2">Variants:</div>
-                            <div className="space-y-2">
-                              {product.variants.map((variant, variantIndex) => {
-                                const variantKey = `${product.id}-${variantIndex}`;
-                                const isEditingVariant = editingVariant === variantKey;
-                                
-                                return (
-                                  <div key={`${product.id}-variant-${variantIndex}`} className="bg-white rounded-lg p-3 border border-gray-200">
-                                    {isEditingVariant ? (
-                                      <div className="space-y-2">
-                                        <div className="text-xs font-semibold text-blue-900 mb-2">
-                                          Edit: {variant.size ? `${product.name} (${variant.size})` : `${product.name} - Variant ${variantIndex + 1}`}
-                                        </div>
-                                        <div>
-                                          <label className="block text-xs text-gray-700 mb-1">Supplier Price (₱)</label>
-                                          <input
-                                            type="number"
-                                            value={variantEditData.supplierPrice}
-                                            onChange={(e) => setVariantEditData({...variantEditData, supplierPrice: e.target.value})}
-                                            className="w-full px-2 py-1.5 border rounded text-xs"
-                                            step="0.01"
-                                            min="0"
-                                          />
-                                        </div>
-                                        <div>
-                                          <label className="block text-xs text-gray-700 mb-1">Supplier SKU</label>
-                                          <input
-                                            type="text"
-                                            value={variantEditData.supplierSKU}
-                                            onChange={(e) => setVariantEditData({...variantEditData, supplierSKU: e.target.value})}
-                                            className="w-full px-2 py-1.5 border rounded text-xs"
-                                          />
-                                        </div>
-                                        <div className="flex gap-2 mt-2">
-                                          <button
-                                            onClick={() => handleVariantSave(product.id, variantIndex)}
-                                            className="flex-1 px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 flex items-center justify-center gap-1"
-                                          >
-                                            <FiSave className="w-3 h-3" />
-                                            Save
-                                          </button>
-                                          <button
-                                            onClick={() => setEditingVariant(null)}
-                                            className="flex-1 px-2 py-1 bg-gray-300 text-gray-700 text-xs rounded hover:bg-gray-400"
-                                          >
-                                            Cancel
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <>
-                                        <div className="flex justify-between items-start mb-2">
-                                          <div className="flex-1">
-                                            <div className="text-sm font-medium text-gray-900">
-                                              {variant.size ? `${product.name} (${variant.size})` : `${product.name} - Variant ${variantIndex + 1}`}
-                                            </div>
-                                            <div className="text-xs text-gray-500 space-y-1">
-                                              <div>SKU: {variant.supplierSKU || 'Not set'}</div>
-                                              {variant.specifications && <div>Specs: {variant.specifications}</div>}
-                                              {variant.storageType && <div>Storage: {variant.storageType}</div>}
-                                            </div>
-                                          </div>
-                                          <div className="flex space-x-1 ml-2">
-                                            <button
-                                              onClick={() => handleVariantEdit(product.id, variantIndex, variant)}
-                                              className="inline-flex items-center p-1.5 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-md transition-colors"
-                                              title="Edit variant supplier info"
-                                            >
-                                              <FiEdit2 className="w-3.5 h-3.5" />
-                                            </button>
-                                            <button
-                                              onClick={() => handleVariantUnlink(product.id, variantIndex, variant.size ? `${product.name} (${variant.size})` : `Variant ${variantIndex + 1}`)}
-                                              className="inline-flex items-center p-1.5 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-md transition-colors"
-                                              title="Remove variant from supplier"
-                                            >
-                                              <FiTrash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                          </div>
-                                        </div>
-                                        <div className="flex justify-between text-xs">
-                                          <span className="text-gray-500">Supplier Price:</span>
-                                          <span className="font-medium text-gray-900">
-                                            {variant.supplierPrice ? `₱${variant.supplierPrice.toLocaleString()}` : '-'}
-                                          </span>
-                                        </div>
-                                        <div className="flex justify-between text-xs mt-1">
-                                          <span className="text-gray-500">Unit Price:</span>
-                                          <span className="font-medium text-gray-900">₱{(variant.unitPrice || 0).toLocaleString()}</span>
-                                        </div>
-                                      </>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                      
                     </div>
                   ))
                 )}
@@ -748,12 +519,7 @@ const SupplierProducts = ({ supplier, onClose }) => {
         <div className="border-t border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100 p-6 flex-shrink-0">
           <div className="flex justify-between items-center gap-4">
             <div className="text-sm text-gray-600 flex-shrink-0">
-              <span className="font-semibold text-gray-900">{supplierProducts.length}</span> product{supplierProducts.length !== 1 ? 's' : ''} linked
-              {supplierProducts.some(p => hasVariants(p)) && (
-                <span className="ml-2 text-gray-500">
-                  • <span className="font-semibold text-gray-900">{supplierProducts.reduce((total, product) => total + (product.variants?.length || 0), 0)}</span> variant{supplierProducts.reduce((total, product) => total + (product.variants?.length || 0), 0) !== 1 ? 's' : ''}
-                </span>
-              )}
+              <span className="font-semibold text-gray-900">{supplierProducts.length}</span> variant{supplierProducts.length !== 1 ? 's' : ''} linked
             </div>
             
             <div className="flex gap-3 flex-shrink-0">
@@ -810,59 +576,58 @@ const LinkProductModal = ({ supplier, onClose, onProductLinked, linkedProductIds
 
   useEffect(() => {
     setLoading(true);
-    console.log('📦 Fetching available products for linking...');
+    console.log('📦 Fetching available variants for linking...');
 
-    // Listen to products - this returns the unsubscribe function directly
-    const unsubscribe = listenToProducts((products) => {
-      console.log(`📦 Got ${products.length} products from listener`);
+    // Listen to variants (listenToProducts returns variants from Variants collection)
+    const unsubscribe = listenToProducts((variants) => {
+      console.log(`📦 Got ${variants.length} variants from listener`);
       
-      // Group by base identity to avoid duplicates
-      const productGroups = {};
-      
-      products.forEach(item => {
-        const itemName = item.name || 'unknown';
-        const itemBrand = item.brand || 'generic';
-        const itemCategory = item.category || '';
-        const itemSpecs = item.specifications || '';
+      // Process each variant as an individual selectable item
+      const processedVariants = variants.map(variant => {
+        // Use denormalized product data from variant (Master collection info)
+        const productName = variant.productName || 'Unknown Product';
+        const productBrand = variant.productBrand || 'Generic';
+        const productCategory = variant.productCategory || 'Uncategorized';
+        const variantName = variant.variantName || variant.specifications || 'Default';
         
-        const groupKey = `${itemName}_${itemBrand}_${itemSpecs}_${itemCategory}`;
+        // Calculate quantity from locations if available
+        const totalQuantity = Array.isArray(variant.locations)
+          ? variant.locations.reduce((sum, loc) => sum + (loc.quantity || 0), 0)
+          : (variant.quantity || 0);
         
-        if (!productGroups[groupKey]) {
-          productGroups[groupKey] = {
-            id: item.id,
-            name: itemName,
-            brand: itemBrand,
-            category: itemCategory,
-            specifications: itemSpecs,
-            imageUrl: item.imageUrl || '',
-            unitPrice: item.unitPrice || 0,
-            unit: item.unit || 'pcs',
-            isVariant: false, // Old structure products
-            locations: [item],
-            totalQuantity: Number(item.quantity) || 0,
-            allIds: [item.id]
-          };
-        } else {
-          // Add to existing group
-          productGroups[groupKey].locations.push(item);
-          productGroups[groupKey].totalQuantity += Number(item.quantity) || 0;
-          productGroups[groupKey].allIds.push(item.id);
-        }
+        return {
+          id: variant.id,
+          parentProductId: variant.parentProductId,
+          // Product info from Master collection
+          productName: productName,
+          name: productName,
+          brand: productBrand,
+          category: productCategory,
+          imageUrl: variant.productImageUrl || '',
+          // Variant-specific info
+          variantName: variantName,
+          specifications: variant.specifications || '',
+          // Stock info
+          unitPrice: variant.unitPrice || 0,
+          quantity: totalQuantity,
+          unit: variant.unit || 'pcs',
+          // Location info
+          locations: Array.isArray(variant.locations) ? variant.locations : [],
+          location: Array.isArray(variant.locations) && variant.locations.length > 0
+            ? (variant.locations.length > 1 
+                ? `${variant.locations.length} locations` 
+                : (variant.locations[0]?.fullLocation || variant.locations[0]?.location || 'Unknown'))
+            : 'Unknown'
+        };
       });
 
-      // Convert to array and filter out already linked products/variants
-      const availableProducts = Object.values(productGroups)
-        .filter(group => !group.allIds.some(id => linkedProductIds.includes(id)))
-        .map(group => ({
-          ...group,
-          quantity: group.totalQuantity,
-          location: group.locations.length > 1 
-            ? `${group.locations.length} locations` 
-            : (group.locations[0]?.fullLocation || group.locations[0]?.location || 'Unknown')
-        }));
+      // Filter out already linked variants
+      const availableVariants = processedVariants.filter(variant => 
+        !linkedProductIds.includes(variant.id)
+      );
 
-      console.log(`📦 ${availableProducts.length} products available for linking`);
-      setAllProducts(availableProducts);
+      console.log(`📦 ${availableVariants.length} variants available for linking (out of ${variants.length} total)`);
+      setAllProducts(availableVariants);
       setLoading(false);
     });
 
@@ -900,35 +665,46 @@ const LinkProductModal = ({ supplier, onClose, onProductLinked, linkedProductIds
   };
 
   const handleLinkProducts = async () => {
-    const productsToLink = Object.keys(selectedProducts).filter(id => selectedProducts[id]);
+    const variantIdsToLink = Object.keys(selectedProducts).filter(id => selectedProducts[id]);
     
-    if (productsToLink.length === 0) {
-      alert('Please select at least one product to link.');
+    if (variantIdsToLink.length === 0) {
+      alert('Please select at least one variant to link.');
       return;
     }
 
     setLinking(true);
     try {
-      for (const productId of productsToLink) {
+      // Link each selected variant individually
+      for (const variantId of variantIdsToLink) {
+        const variant = allProducts.find(v => v.id === variantId);
+        if (!variant) {
+          console.warn(`Variant ${variantId} not found`);
+          continue;
+        }
+        
         const supplierData = {
-          supplierPrice: supplierPrices[productId] || 0,
-          supplierSKU: productId,  // Use product ID as supplier SKU (like the old system)
+          supplierPrice: supplierPrices[variantId] || 0,
+          supplierSKU: variantId,  // Use variant ID as supplier SKU
           supplierName: supplier.name,
-          supplierCode: supplier.primaryCode || supplier.code
+          supplierCode: supplier.primaryCode || supplier.code,
+          // Store denormalized product data for faster queries
+          productName: variant.productName || variant.name,
+          productBrand: variant.brand,
+          productCategory: variant.category
         };
 
-        const result = await linkProductToSupplier(productId, supplier.id, supplierData);
+        const result = await linkProductToSupplier(variantId, supplier.id, supplierData);
         if (!result.success) {
-          throw new Error(`Failed to link product ${productId}`);
+          throw new Error(`Failed to link variant ${variantId}`);
         }
       }
 
-      alert(`Successfully linked ${productsToLink.length} product(s) to ${supplier.name}!`);
+      alert(`Successfully linked ${variantIdsToLink.length} variant${variantIdsToLink.length !== 1 ? 's' : ''} to ${supplier.name}!`);
       onProductLinked(); // Refresh the supplier products list
       onClose(); // Close the modal
     } catch (error) {
-      console.error('Error linking products:', error);
-      alert('Failed to link some products: ' + error.message);
+      console.error('Error linking variants:', error);
+      alert('Failed to link some variants: ' + error.message);
     } finally {
       setLinking(false);
     }
@@ -977,12 +753,12 @@ const LinkProductModal = ({ supplier, onClose, onProductLinked, linkedProductIds
             <div className="space-y-4">
               <div className="bg-blue-50 p-4 rounded-lg">
                 <p className="text-sm text-blue-800">
-                  Select products from your inventory to link to <strong>{supplier.name}</strong>. 
-                  Set the supplier price for each selected product. The supplier SKU will be automatically set to match your internal product ID.
+                  Select variants from your inventory to link to <strong>{supplier.name}</strong>. 
+                  Set the supplier price for each selected variant. Each variant will be linked individually.
                 </p>
                 {selectedCount > 0 && (
                   <p className="text-sm text-blue-700 mt-2 font-medium">
-                    {selectedCount} product{selectedCount !== 1 ? 's' : ''} selected
+                    {selectedCount} variant{selectedCount !== 1 ? 's' : ''} selected
                   </p>
                 )}
               </div>
@@ -1027,14 +803,32 @@ const LinkProductModal = ({ supplier, onClose, onProductLinked, linkedProductIds
                           </svg>
                         </div>
                       )}
+                      
+                      {/* Variant Badge */}
+                      {product.variantName && (
+                        <div className="absolute bottom-3 right-3 bg-purple-500 text-white text-xs px-2 py-1 rounded-full">
+                          Variant
+                        </div>
+                      )}
                     </div>
 
                     {/* Product Info */}
                     <div className="p-4">
                       <div className="mb-3">
-                        <h3 className="text-sm font-semibold text-gray-900 mb-1 line-clamp-2">
-                          {product.name || 'Unknown Product'}
+                        {/* Product Name from Master */}
+                        <h3 className="text-sm font-semibold text-gray-900 mb-1 line-clamp-1">
+                          {product.productName || product.name || 'Unknown Product'}
                         </h3>
+                        
+                        {/* Variant Name - displayed prominently below product name */}
+                        {product.variantName && (
+                          <div className="mb-2">
+                            <span className="inline-flex items-center px-2 py-1 rounded text-sm font-medium bg-purple-50 text-purple-700 border border-purple-200">
+                              {product.variantName}
+                            </span>
+                          </div>
+                        )}
+                        
                         {product.brand && (
                           <p className="text-xs text-gray-500 mb-1">Brand: {product.brand}</p>
                         )}
@@ -1099,7 +893,7 @@ const LinkProductModal = ({ supplier, onClose, onProductLinked, linkedProductIds
         <div className="border-t border-gray-200 bg-gray-50 p-6 flex-shrink-0">
           <div className="flex justify-between items-center">
             <div className="text-sm text-gray-600">
-              {allProducts.length} available product{allProducts.length !== 1 ? 's' : ''} • {selectedCount} selected
+              {allProducts.length} available variant{allProducts.length !== 1 ? 's' : ''} • {selectedCount} selected
             </div>
             <div className="flex gap-3">
               <button
@@ -1128,7 +922,7 @@ const LinkProductModal = ({ supplier, onClose, onProductLinked, linkedProductIds
                   </>
                 ) : (
                   <>
-                    Link {selectedCount} Product{selectedCount !== 1 ? 's' : ''}
+                    Link {selectedCount} Variant{selectedCount !== 1 ? 's' : ''}
                   </>
                 )}
               </button>

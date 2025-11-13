@@ -10,10 +10,11 @@ import {
   Area,
   AreaChart,
 } from 'recharts';
-import { FiDownload, FiPrinter, FiLoader, FiFileText, FiX, FiInfo, FiChevronLeft, FiChevronRight, FiDatabase } from 'react-icons/fi';
+import { FiDownload, FiPrinter, FiLoader, FiFileText, FiX, FiInfo, FiChevronLeft, FiChevronRight, FiDatabase, FiTrendingUp, FiTrendingDown } from 'react-icons/fi';
 import { X, Printer, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { AiOutlineFilePdf } from 'react-icons/ai';
 import { ReportingService } from '../../../../services/firebase/ReportingService';
+import StockMovementService from '../../../../services/StockMovementService';
 import jsPDF from 'jspdf';
 import InfoModal from '../Dashboard/InfoModal';
 import { AnalyticsService } from '../../../../services/firebase/AnalyticsService';
@@ -34,6 +35,9 @@ function InventoryTurnoverReport({
 
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Filter type: 'last7days', 'last30days', 'month'
+  const [filterType, setFilterType] = useState('month');
+  
   // Date range filters
   const [startDate, setStartDate] = useState(() => {
     const today = new Date();
@@ -45,62 +49,70 @@ function InventoryTurnoverReport({
     return today.toISOString().split('T')[0];
   });
 
+  // Month picker state
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  });
+
   // Add chart update key to force re-render
   const [chartUpdateKey, setChartUpdateKey] = useState(0);
 
-  // Helper function to determine granularity based on date range
-  const getGranularity = (start, end) => {
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    const daysDiff = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
-    return daysDiff <= 31 ? 'weekly' : 'monthly';
-  };
-
-  // Helper function to get status based on turnover rate
-  const getProductStatus = (turnoverRate) => {
-    const avgDays = Math.round(365 / turnoverRate);
-    if (turnoverRate >= 10) {
-      return { status: 'Very High', color: 'text-green-700 bg-green-50', avgDays };
-    } else if (turnoverRate >= 6) {
-      return { status: 'High', color: 'text-blue-700 bg-blue-50', avgDays };
-    } else if (turnoverRate >= 3) {
-      return { status: 'Medium', color: 'text-yellow-700 bg-yellow-50', avgDays };
-    } else {
-      return { status: 'Low', color: 'text-red-700 bg-red-50', avgDays };
-    }
-  };
-
-  // Helper function to get concise paragraph-style performance analysis
-const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
-    const rate = turnoverRate.toFixed(2);
+  // Handle filter type changes
+  const handleFilterChange = (type) => {
+    setFilterType(type);
+    const today = new Date();
     
-    if (turnoverRate >= 3) {
-      return `Your inventory is showing excellent performance with a turnover rate of ${rate}x. This indicates that your products are moving quickly through your store and your stock levels are perfectly aligned with customer demand. You're doing a great job at managing your inventory - keep monitoring your best-selling items and maintain healthy stock levels of popular products to continue this strong performance.`;
-    } else if (turnoverRate >= 2) {
-      return `With a turnover rate of ${rate}x, your inventory is performing well. Your store has achieved a good balance between stock levels and sales. To maintain this positive trend, consider focusing on your most successful product categories and explore opportunities for bulk purchasing. Your current approach to inventory management is effective, and with some fine-tuning, you can make it even better.`;
-    } else if (turnoverRate >= 1) {
-      return `Your current turnover rate of ${rate}x indicates that while your inventory is moving, there's potential for improvement. We've noticed that some products could sell faster. Consider reviewing which items are moving slower than others and think about adjusting your pricing or running targeted promotions. Small improvements in how you manage your stock levels could make a significant difference in your overall performance.`;
-    } else {
-      return `Currently, your inventory turnover rate is ${rate}x, which suggests your stock is moving slower than ideal. However, this is something we can work on improving. A good start would be running a clearance sale for older stock and adjusting your pricing strategy. Consider ordering smaller quantities in future purchases and focus on promoting your faster-moving products. These adjustments will help improve your stock flow and business performance.`;
+    if (type === 'last7days') {
+      const sevenDaysAgo = new Date(today);
+      sevenDaysAgo.setDate(today.getDate() - 7);
+      setStartDate(sevenDaysAgo.toISOString().split('T')[0]);
+      setEndDate(today.toISOString().split('T')[0]);
+    } else if (type === 'last30days') {
+      const thirtyDaysAgo = new Date(today);
+      thirtyDaysAgo.setDate(today.getDate() - 30);
+      setStartDate(thirtyDaysAgo.toISOString().split('T')[0]);
+      setEndDate(today.toISOString().split('T')[0]);
+    } else if (type === 'month') {
+      // Set to selected month's first and last day
+      const [year, month] = selectedMonth.split('-');
+      const firstDay = new Date(parseInt(year), parseInt(month) - 1, 1);
+      const lastDay = new Date(parseInt(year), parseInt(month), 0);
+      setStartDate(firstDay.toISOString().split('T')[0]);
+      setEndDate(lastDay.toISOString().split('T')[0]);
     }
   };
 
-  // Helper function to get performance level string
-  const getPerformanceLevel = (turnoverRate) => {
-    if (turnoverRate >= 3) return 'EXCELLENT';
-    if (turnoverRate >= 2) return 'GOOD';
-    if (turnoverRate >= 1) return 'MODERATE';
-    return 'NEEDS IMPROVEMENT';
+  // Handle month selection
+  const handleMonthChange = (newMonth) => {
+    setSelectedMonth(newMonth);
+    const [year, month] = newMonth.split('-');
+    const firstDay = new Date(parseInt(year), parseInt(month) - 1, 1);
+    const lastDay = new Date(parseInt(year), parseInt(month), 0);
+    setStartDate(firstDay.toISOString().split('T')[0]);
+    setEndDate(lastDay.toISOString().split('T')[0]);
   };
-  
 
-  const getTurnoverColor = (rate) => {
-    switch(rate) {
-      case 'Fast-moving': return 'text-green-700 bg-green-50';
-      case 'Moderate': return 'text-yellow-700 bg-yellow-50';
-      case 'Slow-moving': return 'text-red-700 bg-red-50';
-      default: return 'text-gray-700 bg-gray-50';
+  // Helper function to get classification badge color
+  const getClassificationColor = (classification) => {
+    switch(classification) {
+      case 'Class A':
+        return 'text-green-700 bg-green-50 border-green-200';
+      case 'Class B':
+        return 'text-blue-700 bg-blue-50 border-blue-200';
+      case 'Class C':
+        return 'text-red-700 bg-red-50 border-red-200';
+      default:
+        return 'text-gray-700 bg-gray-50 border-gray-200';
     }
+  };
+
+  // Helper function to format product age
+  const formatProductAge = (days) => {
+    if (days === 0) return 'New';
+    if (days < 30) return `${days} days`;
+    if (days < 365) return `${Math.floor(days / 30)} months`;
+    return `${Math.floor(days / 365)} years`;
   };
 
   // Function to generate analysis report
@@ -111,7 +123,7 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
 
     const analysis = getPerformanceAnalysis(
       data.averageTurnoverRate,
-      data.totalSales,
+      data.totalMovement,
       data.averageInventory
     );
 
@@ -131,6 +143,9 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
         performanceLevel,
         performanceColor,
         totalSales: data.totalSales.toLocaleString(),
+        totalInbound: data.totalInbound?.toLocaleString() || '0',
+        totalOutbound: data.totalOutbound?.toLocaleString() || '0',
+        totalMovement: data.totalMovement?.toLocaleString() || '0',
         averageInventory: data.averageInventory.toLocaleString()
       },
       analysis,
@@ -319,8 +334,8 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       yPos += 15;
 
 
-  // Key Metrics Section - 3 separate boxes like in the image
-  const boxWidth = (contentWidth - 8) / 3; // 3 boxes with gaps
+  // Key Metrics Section - 4 separate boxes with movement data
+  const boxWidth = (contentWidth - 12) / 4; // 4 boxes with gaps
   const boxHeight = 28;
   const boxGap = 4;
       
@@ -335,7 +350,7 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(107, 114, 128);
-  pdf.text('AVERAGE TURNOVER RATE', boxX + boxWidth / 2, yPos + 6, { align: 'center' });
+  pdf.text('TURNOVER RATE', boxX + boxWidth / 2, yPos + 6, { align: 'center' });
       
   pdf.setFontSize(22);
   pdf.setFont('helvetica', 'bold');
@@ -345,9 +360,27 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(107, 114, 128);
-  pdf.text('Times Inventory turned', boxX + boxWidth / 2, yPos + 23, { align: 'center' });
+  pdf.text('Inventory circulated', boxX + boxWidth / 2, yPos + 23, { align: 'center' });
 
-  // Box 2: Total Sales
+  // Box 2: Total Movement
+  boxX += boxWidth + boxGap;
+  pdf.setFillColor(255, 255, 255);
+  pdf.roundedRect(boxX, yPos, boxWidth, boxHeight, 2, 2, 'FD');
+      
+  pdf.setFontSize(7);
+  pdf.text('TOTAL MOVEMENT', boxX + boxWidth / 2, yPos + 6, { align: 'center' });
+      
+  pdf.setFontSize(22);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(31, 41, 55);
+  pdf.text(`${((data.totalMovement || 0) / 1000).toFixed(1)}K`, boxX + boxWidth / 2, yPos + 17, { align: 'center' });
+      
+  pdf.setFontSize(7);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(107, 114, 128);
+  pdf.text('IN + OUT movements', boxX + boxWidth / 2, yPos + 23, { align: 'center' });
+
+  // Box 3: Total Sales
   boxX += boxWidth + boxGap;
   pdf.setFillColor(255, 255, 255);
   pdf.roundedRect(boxX, yPos, boxWidth, boxHeight, 2, 2, 'FD');
@@ -363,15 +396,15 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(107, 114, 128);
-  pdf.text('Period revenue', boxX + boxWidth / 2, yPos + 23, { align: 'center' });
+  pdf.text('Outbound value', boxX + boxWidth / 2, yPos + 23, { align: 'center' });
 
-  // Box 3: Average Inventory
+  // Box 4: Average Inventory
   boxX += boxWidth + boxGap;
   pdf.setFillColor(255, 255, 255);
   pdf.roundedRect(boxX, yPos, boxWidth, boxHeight, 2, 2, 'FD');
       
   pdf.setFontSize(7);
-  pdf.text('AVERAGE INVENTORY', boxX + boxWidth / 2, yPos + 6, { align: 'center' });
+  pdf.text('AVG INVENTORY', boxX + boxWidth / 2, yPos + 6, { align: 'center' });
       
   pdf.setFontSize(22);
   pdf.setFont('helvetica', 'bold');
@@ -394,22 +427,30 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
   pdf.setFont('helvetica', 'bold');
   pdf.text(`${inventoryData.length}`, margin + 23, yPos);
 
-  const centerX = pageWidth / 2;
+  const col2X = margin + 60;
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(107, 114, 128);
-  pdf.text('Avg Days to Sell:', centerX - 15, yPos);
-  pdf.setTextColor(31, 41, 55);
+  pdf.text('Inbound:', col2X, yPos);
+  pdf.setTextColor(34, 197, 94);
   pdf.setFont('helvetica', 'bold');
-  pdf.text(`${Math.round(365 / data.averageTurnoverRate)}d`, centerX + 13, yPos);
+  pdf.text(`${(data.totalInbound || 0).toLocaleString()}`, col2X + 17, yPos);
+      
+  const col3X = margin + 110;
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(107, 114, 128);
+  pdf.text('Outbound:', col3X, yPos);
+  pdf.setTextColor(239, 68, 68);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text(`${(data.totalOutbound || 0).toLocaleString()}`, col3X + 20, yPos);
       
   const rightX = pageWidth - margin;
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(107, 114, 128);
-  pdf.text('Total Qty Sold:', rightX - 30, yPos);
+  pdf.text('Avg Days:', rightX - 30, yPos);
   pdf.setTextColor(31, 41, 55);
   pdf.setFont('helvetica', 'bold');
-  const totalQty = inventoryData.reduce((sum, p) => sum + p.quantitySold, 0);
-  pdf.text(`${totalQty}`, rightX, yPos, { align: 'right' });
+  const avgDays = data.averageTurnoverRate > 0 ? Math.round(365 / data.averageTurnoverRate) : 0;
+  pdf.text(`${avgDays}d`, rightX, yPos, { align: 'right' });
 
       // Product Performance Table
       checkPageBreak(40);
@@ -429,26 +470,29 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       pdf.setTextColor(55, 65, 81);
       
       const colWidths = {
-        product: 55,  // Increased for better product name display
-        category: 28,
-        sales: 23,
-        qty: 15,
-        avgInv: 23,
-        rate: 15,
-        status: 22
+        product: 45,  // Product name
+        category: 22,  // Category
+        inQty: 12,     // IN quantity
+        outQty: 12,    // OUT quantity
+        movement: 15,  // Total movement
+        sales: 20,     // Sales value
+        rate: 12,      // Turnover rate
+        status: 20     // Status badge
       };
 
       let colX = margin + 2;
-      pdf.text('PRODUCT NAME', colX, yPos + 5.5);
+      pdf.text('PRODUCT', colX, yPos + 5.5);
       colX += colWidths.product;
       pdf.text('CATEGORY', colX, yPos + 5.5);
       colX += colWidths.category;
+      pdf.text('IN', colX, yPos + 5.5, { align: 'center' });
+      colX += colWidths.inQty;
+      pdf.text('OUT', colX, yPos + 5.5, { align: 'center' });
+      colX += colWidths.outQty;
+      pdf.text('TOTAL', colX, yPos + 5.5, { align: 'center' });
+      colX += colWidths.movement;
       pdf.text('SALES', colX, yPos + 5.5, { align: 'right' });
       colX += colWidths.sales;
-      pdf.text('QTY', colX, yPos + 5.5, { align: 'center' });
-      colX += colWidths.qty;
-      pdf.text('AVG INV', colX, yPos + 5.5, { align: 'right' });
-      colX += colWidths.avgInv;
       pdf.text('RATE', colX, yPos + 5.5, { align: 'center' });
       colX += colWidths.rate;
       pdf.text('STATUS', colX, yPos + 5.5, { align: 'center' });
@@ -462,7 +506,7 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       inventoryData.forEach((product, index) => {
         checkPageBreak(10);
 
-        const { status, color } = getProductStatus(product.turnoverRate);
+        const { status, color } = getProductStatus(product.turnoverRate, product.totalMovement);
         const rowY = yPos;
 
         // Alternating row background
@@ -482,34 +526,37 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
         
         colX = margin + 2;
         // Product name (truncate if too long)
-        const productName = product.productName.length > 30 ? product.productName.substring(0, 27) + '...' : product.productName;
+        const productName = product.productName.length > 25 ? product.productName.substring(0, 22) + '...' : product.productName;
         pdf.setFont('helvetica', 'bold');
         pdf.text(productName, colX, rowY + 5.5);
         
         colX += colWidths.product;
         pdf.setFont('helvetica', 'normal');
-        const categoryName = product.category.length > 15 ? product.category.substring(0, 12) + '...' : product.category;
+        const categoryName = product.category.length > 12 ? product.category.substring(0, 9) + '...' : product.category;
         pdf.text(categoryName, colX, rowY + 5.5);
         
-  colX += colWidths.category;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(`₱${product.sales.toLocaleString()}`, colX, rowY + 5.5, { align: 'right' });
-        
-  colX += colWidths.sales;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(`${product.quantitySold}`, colX, rowY + 5.5, { align: 'center' });
-        
-  colX += colWidths.qty;
-  pdf.setFont('helvetica', 'bold');
-  pdf.text(`₱${product.averageInventory.toLocaleString()}`, colX, rowY + 5.5, { align: 'right' });
-        
-        colX += colWidths.avgInv;
+        colX += colWidths.category;
         pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(34, 197, 94); // Green for IN
+        pdf.text(`${product.inQuantity || 0}`, colX, rowY + 5.5, { align: 'center' });
+        
+        colX += colWidths.inQty;
+        pdf.setTextColor(239, 68, 68); // Red for OUT
+        pdf.text(`${product.outQuantity || 0}`, colX, rowY + 5.5, { align: 'center' });
+        
+        colX += colWidths.outQty;
+        pdf.setTextColor(31, 41, 55);
+        pdf.text(`${product.totalMovement || 0}`, colX, rowY + 5.5, { align: 'center' });
+        
+        colX += colWidths.movement;
+        pdf.text(`₱${product.sales.toLocaleString()}`, colX, rowY + 5.5, { align: 'right' });
+        
+        colX += colWidths.sales;
         pdf.text(`${product.turnoverRate.toFixed(2)}x`, colX, rowY + 5.5, { align: 'center' });
         
         colX += colWidths.rate;
         // Status badge
-        const statusWidth = 22;
+        const statusWidth = 20;
         const statusHeight = 5;
         const statusX = colX - statusWidth / 2 + 12;
         
@@ -592,70 +639,34 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       alert('An error occurred while generating the report. Please check the console for details.');
     }
   };
-  
-  // Function to generate test data for demonstration
-  const handleGenerateTestData = async () => {
-    try {
-      setLoading(true);
-      console.log('Generating test analytics data...');
-      
-      // Generate test inventory snapshots
-      const inventorySnapshots = await AnalyticsService.createTestInventorySnapshots();
-      console.log('Created inventory snapshots:', inventorySnapshots);
-      
-      // Generate test sales aggregations
-      const salesAggregations = await AnalyticsService.createTestSalesAggregations();
-      console.log('Created sales aggregations:', salesAggregations);
-      
-      alert('Test data generated successfully! You can now view the inventory turnover report.');
-      
-      // Refresh the data
-      const granularity = getGranularity(startDate, endDate);
-      const result = await ReportingService.getInventoryTurnover(
-        startDate,
-        endDate,
-        granularity
-      );
-      console.log('Refreshed data after test generation:', result);
-      setData(result);
-      // Force chart re-render
-      setChartUpdateKey(prev => prev + 1);
-      
-    } catch (error) {
-      console.error('Error generating test data:', error);
-      alert('Error generating test data: ' + error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
         setError(null);
         
-        console.log('Fetching turnover data for:', { startDate, endDate });
+        console.log('🔍 Fetching inventory turnover data for:', { startDate, endDate });
         
-        const granularity = getGranularity(startDate, endDate);
+        // Call the new ReportingService method
+        const result = await ReportingService.getInventoryTurnover(startDate, endDate);
         
-        const result = await ReportingService.getInventoryTurnover(
-          startDate,
-          endDate,
-          granularity
-        );
+        console.log('✅ Received data:', result);
         
         setData(result);
-        // Force chart re-render by updating the key
-        setChartUpdateKey(prev => prev + 1);
-      } catch (err) {
-        console.error('Error fetching turnover data:', err);
-        setError('Failed to load report data. Please try again.');
+        setChartUpdateKey(prev => prev + 1); // Force chart re-render
+        
+      } catch (error) {
+        console.error('❌ Error fetching inventory turnover data:', error);
+        setError(error.message || 'Failed to load inventory turnover data');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
+    if (startDate && endDate) {
+      fetchData();
+    }
   }, [startDate, endDate]);
 
   const itemsPerPage = 8;
@@ -688,31 +699,38 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       title: "Understanding Turnover Rate",
       content: (
         <div className="space-y-4">
-          <p>The turnover rate measures how many times your inventory is sold and replaced over a period:</p>
+          <p>The turnover rate measures how efficiently your inventory moves:</p>
+          <div className="bg-gray-50 p-3 rounded">
+            <p className="font-medium mb-2">Formula:</p>
+            <p className="text-sm">Turnover Rate = Total Units Sold / Average Inventory</p>
+            <p className="text-sm mt-1">Average Inventory = (Beginning Stock + Ending Stock) / 2</p>
+          </div>
+          <p className="font-medium">Higher turnover rates indicate better inventory performance.</p>
+        </div>
+      )
+    },
+    totalVariants: {
+      title: "About Total Variants",
+      content: (
+        <div className="space-y-4">
+          <p>This shows the total number of product variants tracked in the selected period.</p>
           <ul className="list-disc pl-5 space-y-2">
-            <li><span className="font-medium">Excellent (≥3x):</span> Very efficient inventory management</li>
-            <li><span className="font-medium">Good (2-3x):</span> Healthy inventory movement</li>
-            <li><span className="font-medium">Moderate (1-2x):</span> Room for improvement</li>
-            <li><span className="font-medium">&lt;1x:</span> Potential overstocking issues</li>
+            <li>Each size/unit combination counts as a separate variant</li>
+            <li>Variants with stock movements or sales are included</li>
+            <li>Helps understand inventory breadth and complexity</li>
           </ul>
-          <p>The chart automatically adjusts its granularity based on your selected date range:</p>
-          <ul className="list-disc pl-5 space-y-2">
-            <li><span className="font-medium">Short periods (≤31 days):</span> Shows weekly data points</li>
-            <li><span className="font-medium">Long periods (&gt;31 days):</span> Shows monthly data points</li>
-          </ul>
-          <p>The orange reference line at 3x marks the threshold for excellent performance.</p>
         </div>
       )
     },
     totalSales: {
-      title: "About Total Sales",
+      title: "About Total Units Sold",
       content: (
         <div className="space-y-4">
-          <p>Total Sales represents the gross revenue from all inventory sold during the selected period:</p>
+          <p>Total units sold from the Transactions collection during the selected period.</p>
           <ul className="list-disc pl-5 space-y-2">
-            <li>Helps track revenue performance</li>
+            <li>Counts actual sales transactions</li>
             <li>Used in turnover rate calculation</li>
-            <li>Indicates market demand</li>
+            <li>Indicates demand and product velocity</li>
           </ul>
         </div>
       )
@@ -721,27 +739,38 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       title: "About Average Inventory",
       content: (
         <div className="space-y-4">
-          <p>Average Inventory shows the typical value of stock held during the period:</p>
+          <p>Average inventory represents the typical stock level during the period:</p>
           <ul className="list-disc pl-5 space-y-2">
-            <li>Calculated as (Beginning + Ending Inventory) ÷ 2</li>
-            <li>Helps assess capital tied up in stock</li>
+            <li>Calculated as: (Beginning Stock + Ending Stock) / 2</li>
+            <li>Beginning Stock: Oldest stock movement in period</li>
+            <li>Ending Stock: Newest stock movement in period</li>
             <li>Used to calculate turnover efficiency</li>
           </ul>
         </div>
       )
     },
-    monthlyTable: {
-      title: "Monthly Performance Table",
+    classification: {
+      title: "ABC Classification System",
       content: (
         <div className="space-y-4">
-          <p>The monthly breakdown table shows detailed performance metrics:</p>
-          <ul className="list-disc pl-5 space-y-2">
-            <li>Month-by-month comparison</li>
-            <li>Individual turnover rates</li>
-            <li>Sales and inventory trends</li>
-            <li>Color-coded performance levels</li>
-          </ul>
-          <p>Use this to identify seasonal patterns and opportunities for improvement.</p>
+          <p className="font-medium">Products are classified based on turnover rate:</p>
+          <div className="space-y-3">
+            <div className="bg-green-50 p-3 rounded border border-green-200">
+              <p className="font-semibold text-green-800">Class A - Fast Moving</p>
+              <p className="text-sm text-green-700">Turnover Rate ≥ 8x</p>
+              <p className="text-sm mt-1">High demand products that move quickly. Prioritize stock availability.</p>
+            </div>
+            <div className="bg-blue-50 p-3 rounded border border-blue-200">
+              <p className="font-semibold text-blue-800">Class B - Moderate Moving</p>
+              <p className="text-sm text-blue-700">Turnover Rate 4-8x</p>
+              <p className="text-sm mt-1">Steady sellers with regular demand. Maintain consistent stock levels.</p>
+            </div>
+            <div className="bg-red-50 p-3 rounded border border-red-200">
+              <p className="font-semibold text-red-800">Class C - Slow Moving</p>
+              <p className="text-sm text-red-700">Turnover Rate &lt; 4x</p>
+              <p className="text-sm mt-1">Low demand or aging inventory. Consider promotions or reducing stock.</p>
+            </div>
+          </div>
         </div>
       )
     }
@@ -801,30 +830,62 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
       </div>
 
       {/* Filter Section */}
-      <div className="flex flex-wrap gap-3 justify-end mb-6">
-        <div className="flex flex-col">
-          <label className="text-sm font-medium text-gray-700 mb-1">Start Date</label>
-          <input
-            type="date"
-            className="px-3 py-2 border border-gray-200 text-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-          />
+      <div className="flex flex-wrap gap-3 items-end justify-between mb-6">
+        {/* Filter Type Toggles */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleFilterChange('last7days')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              filterType === 'last7days'
+                ? 'bg-orange-600 text-white'
+                : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            Last 7 Days
+          </button>
+          <button
+            onClick={() => handleFilterChange('last30days')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              filterType === 'last30days'
+                ? 'bg-orange-600 text-white'
+                : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            Last 30 Days
+          </button>
+          <button
+            onClick={() => handleFilterChange('month')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              filterType === 'month'
+                ? 'bg-orange-600 text-white'
+                : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            By Month
+          </button>
         </div>
 
-        <div className="flex flex-col">
-          <label className="text-sm font-medium text-gray-700 mb-1">End Date</label>
-          <input
-            type="date"
-            className="px-3 py-2 border border-gray-200 text-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-          />
+        {/* Month Picker (only show when filter type is 'month') */}
+        {filterType === 'month' && (
+          <div className="flex flex-col">
+            <label className="text-sm font-medium text-gray-700 mb-1">Select Month</label>
+            <input
+              type="month"
+              className="px-3 py-2 border border-gray-200 text-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300"
+              value={selectedMonth}
+              onChange={(e) => handleMonthChange(e.target.value)}
+            />
+          </div>
+        )}
+
+        {/* Date Range Display */}
+        <div className="text-sm text-gray-600">
+          <span className="font-medium">Period:</span> {new Date(startDate).toLocaleDateString()} - {new Date(endDate).toLocaleDateString()}
         </div>
       </div>
 
       {/* KPI Cards with Info Buttons */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
         {/* Average Turnover Rate */}
         <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-100">
           <div className="flex justify-between items-start">
@@ -843,15 +904,37 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
             {data.averageTurnoverRate.toFixed(2)}x
           </p>
           <p className="text-sm text-gray-500 mt-1">
-            Times inventory turned over
+            Overall inventory turnover
           </p>
         </div>
 
-        {/* Total Sales */}
+        {/* Total Variants Tracked */}
         <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-100">
           <div className="flex justify-between items-start">
             <h3 className="text-gray-500 text-xs uppercase font-semibold tracking-wider mb-3">
-              TOTAL SALES
+              TOTAL VARIANTS
+            </h3>
+            <button
+              onClick={() => setActiveInfoModal('totalVariants')}
+              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+              title="Learn about total variants"
+            >
+              <FiInfo className="w-4 h-4 text-gray-400" />
+            </button>
+          </div>
+          <p className="text-4xl font-bold text-gray-800">
+            {data.totalVariants || 0}
+          </p>
+          <p className="text-sm text-gray-500 mt-1">
+            Product variants tracked
+          </p>
+        </div>
+
+        {/* Total Units Sold */}
+        <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-100">
+          <div className="flex justify-between items-start">
+            <h3 className="text-gray-500 text-xs uppercase font-semibold tracking-wider mb-3">
+              TOTAL UNITS SOLD
             </h3>
             <button
               onClick={() => setActiveInfoModal('totalSales')}
@@ -862,10 +945,10 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
             </button>
           </div>
           <p className="text-4xl font-bold text-gray-800">
-            ₱{data.totalSales.toLocaleString()}
+            {data.totalUnitsSold?.toLocaleString() || 0}
           </p>
           <p className="text-sm text-gray-500 mt-1">
-            Period total sales
+            Units sold in period
           </p>
         </div>
 
@@ -884,196 +967,204 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
             </button>
           </div>
           <p className="text-4xl font-bold text-gray-800">
-            ₱{data.averageInventory.toLocaleString()}
+            {data.totalAvgInventory?.toFixed(0).toLocaleString() || 0}
           </p>
           <p className="text-sm text-gray-500 mt-1">
-            Average inventory value
+            Average stock units
           </p>
         </div>
       </div>
 
-      {/* Generate Report Button */}
-      <div className="flex justify-end gap-3 mb-6">
-        <button 
-          onClick={handleGenerateTestData}
-          className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors flex items-center gap-2"
-        >
-          <FiDatabase size={16} />
-          <span>Generate Test Data</span>
-        </button>
-        <button 
-          onClick={handleGenerateReport}
-          className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
-        >
-          <FiFileText size={16} />
-          <span>Generate Report (Modal)</span>
-        </button>
-        <button
-          onClick={() => {
-            if (!data) {
-              alert('No data available. Please ensure data is loaded before printing.');
-              return;
-            }
-            printInventoryReportContent(data, { startDate, endDate });
-          }}
-          className="px-6 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors flex items-center gap-2"
-        >
-          <FiFileText size={16} />
-          <span>Print HTML Report</span>
-        </button>
+      {/* Classification Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
+        {/* Class A */}
+        <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-6 shadow-sm border border-green-200">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-green-800 text-sm uppercase font-bold tracking-wider">
+              Class A - Fast Moving
+            </h3>
+            <div className="bg-green-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-xs font-bold">
+              A
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-green-900">
+            {data.classACount || 0}
+          </p>
+          <p className="text-sm text-green-700 mt-1">
+            Turnover Rate ≥ 8x
+          </p>
+        </div>
+
+        {/* Class B */}
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-6 shadow-sm border border-blue-200">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-blue-800 text-sm uppercase font-bold tracking-wider">
+              Class B - Moderate Moving
+            </h3>
+            <div className="bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-xs font-bold">
+              B
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-blue-900">
+            {data.classBCount || 0}
+          </p>
+          <p className="text-sm text-blue-700 mt-1">
+            Turnover Rate 4-8x
+          </p>
+        </div>
+
+        {/* Class C */}
+        <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-6 shadow-sm border border-red-200">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-red-800 text-sm uppercase font-bold tracking-wider">
+              Class C - Slow Moving
+            </h3>
+            <div className="bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-xs font-bold">
+              C
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-red-900">
+            {data.classCCount || 0}
+          </p>
+          <p className="text-sm text-red-700 mt-1">
+            Turnover Rate &lt; 4x
+          </p>
+        </div>
       </div>
 
-      {/* Chart with Info Button */}
+      {/* Classification Chart */}
       <div className="bg-white rounded-lg shadow-sm mb-6 p-6 border border-gray-100">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-gray-800 font-semibold">
-            Inventory Turnover {data?.granularity === 'weekly' ? '(Weekly)' : '(Monthly)'}
+            Product Classification Distribution
           </h3>
           <button
-            onClick={() => setActiveInfoModal('turnoverRate')}
+            onClick={() => setActiveInfoModal('classification')}
             className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-            title="How to read this chart"
+            title="Understanding classification"
           >
             <FiInfo className="w-5 h-5 text-gray-400" />
           </button>
         </div>
 
-        <div className="h-[300px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
-              key={`${startDate}-${endDate}-${chartUpdateKey}`} // Force re-render when date range or data changes
-              data={data.chartData}
-              margin={{ top: 20, right: 20, left: 10, bottom: 20 }}>
-              <defs>
-                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                vertical={false}
-                stroke="#f1f1f1"
-              />
-              <XAxis
-                dataKey="name"
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: '#888', fontSize: 11 }}
-                tickFormatter={tick => {
-                  // Format '20251001' as 'Oct 01' for weekly, 'Oct' or 'Oct 2025' for monthly
-                  if (!tick) return '';
-                  if (data?.granularity === 'weekly') {
-                    // Show 'Oct 01' (month short + day)
-                    const year = tick.slice(0, 4);
-                    const month = tick.slice(4, 6);
-                    const day = tick.slice(6, 8);
-                    const date = new Date(`${year}-${month}-${day}`);
-                    return date.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
-                  } else if (data?.granularity === 'monthly') {
-                    // Show 'Oct 2025'
-                    const year = tick.slice(0, 4);
-                    const month = tick.slice(4, 6);
-                    const date = new Date(`${year}-${month}-01`);
-                    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-                  }
-                  return tick;
-                }}
-              />
-              <YAxis
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: '#888', fontSize: 11 }}
-                domain={[0, 'auto']}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <ReferenceLine y={3} stroke="#ff7b54" strokeDasharray="3 3" />
-              <Area
-                type="monotone"
-                dataKey="value"
-                stroke="#3b82f6"
-                fillOpacity={1}
-                fill="url(#colorValue)"
-                strokeWidth={2}
-                dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }}
-                activeDot={{
-                  r: 6,
-                  fill: '#3b82f6',
-                  strokeWidth: 2,
-                  stroke: '#fff',
-                }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+        <div className="grid grid-cols-3 gap-6">
+          {data.chartData && data.chartData.map((item, index) => (
+            <div key={index} className="text-center">
+              <div className="relative inline-flex items-center justify-center w-32 h-32 mb-3">
+                <svg className="w-32 h-32 transform -rotate-90">
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke="#e5e7eb"
+                    strokeWidth="16"
+                    fill="none"
+                  />
+                  <circle
+                    cx="64"
+                    cy="64"
+                    r="56"
+                    stroke={item.color}
+                    strokeWidth="16"
+                    fill="none"
+                    strokeDasharray={`${(item.value / data.totalVariants) * 352} 352`}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-2xl font-bold" style={{ color: item.color }}>
+                    {item.value}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {((item.value / data.totalVariants) * 100).toFixed(0)}%
+                  </span>
+                </div>
+              </div>
+              <p className="font-medium text-gray-800">{item.label}</p>
+              <p className="text-xs text-gray-500">Class {item.name.split(' ')[1]}</p>
+            </div>
+          ))}
         </div>
       </div>
 
       {/* Product-Level Turnover Table */}
       <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100 mb-6">
-        <h3 className="text-gray-800 font-semibold mb-4">Product Turnover Analysis</h3>
+        <h3 className="text-gray-800 font-semibold mb-4">Variant Turnover Analysis</h3>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Product Name
+                  Product / Variant
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Category
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Sales (₱)
+                  Beginning Stock
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Quantity Sold
+                  Ending Stock
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Average Inventory (₱)
+                  Avg Inventory
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Turnover Rate (x)
+                  Units Sold
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
+                  Turnover Rate
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Classification
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Product Age
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
               {data.productData && data.productData.length > 0 ? (
-                data.productData.map((product, index) => {
-                  const { status, color } = getProductStatus(product.turnoverRate);
-                  return (
+                data.productData.map((variant, index) => (
                     <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {product.productName}
+                      <td className="px-6 py-3 text-sm">
+                        <div>
+                          <p className="font-medium text-gray-900">{variant.productName}</p>
+                          <p className="text-xs text-gray-500">{variant.variantName}</p>
+                        </div>
                       </td>
                       <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
-                        {product.category}
+                        {variant.category}
                       </td>
-                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
-                        ₱{product.sales.toLocaleString()}
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-900 font-semibold">
+                        {variant.beginningStock}
                       </td>
-                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
-                        {product.quantitySold} pcs
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-900 font-semibold">
+                        {variant.endingStock}
                       </td>
-                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
-                        ₱{product.averageInventory.toLocaleString()}
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-blue-600 font-semibold">
+                        {variant.averageInventory.toFixed(1)}
                       </td>
-                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
-                        {product.turnoverRate.toFixed(2)}x
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-900 font-semibold">
+                        {variant.totalUnitsSold}
                       </td>
-                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${color}`}>
-                          {status}
+                      <td className="px-6 py-3 whitespace-nowrap text-sm font-bold text-gray-900">
+                        {variant.turnoverRate.toFixed(2)}x
+                      </td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm">
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${getClassificationColor(variant.classification)}`}>
+                          {variant.classification}
                         </span>
                       </td>
+                      <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-600">
+                        {formatProductAge(variant.productAge)}
+                      </td>
                     </tr>
-                  );
-                })
+                  ))
               ) : (
                 <tr>
-                  <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500" colSpan="7">
-                    No product data available for the selected period.
+                  <td className="px-6 py-3 whitespace-nowrap text-sm text-gray-500" colSpan="9">
+                    No variant data available for the selected period.
                   </td>
                 </tr>
               )}
@@ -1172,69 +1263,85 @@ const getPerformanceAnalysis = (turnoverRate, sales, avgInventory) => {
 
                   {/* Key Metrics Section - Invoice-style */}
                   <div className="bg-gray-50 p-8 border-b border-gray-200">
-                    <div className="grid grid-cols-3 gap-6">
+                    <div className="grid grid-cols-4 gap-6">
                       {/* Turnover Rate */}
                       <div className="bg-white rounded-lg p-5 border border-gray-200 shadow-sm">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Average Turnover Rate</p>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Turnover Rate</p>
                         <p className="text-3xl font-bold text-orange-600">{data.averageTurnoverRate.toFixed(2)}x</p>
-                        <p className="text-xs text-gray-600 mt-1">Times inventory turned</p>
+                        <p className="text-xs text-gray-600 mt-1">Inventory circulated</p>
+                      </div>
+
+                      {/* Total Movement */}
+                      <div className="bg-white rounded-lg p-5 border border-gray-200 shadow-sm">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Total Movement</p>
+                        <p className="text-3xl font-bold text-gray-800">{((data.totalMovement || 0) / 1000).toFixed(1)}K</p>
+                        <p className="text-xs text-gray-600 mt-1">
+                          <span className="text-green-600 font-semibold">{data.totalInbound?.toLocaleString() || 0} IN</span>
+                          {' + '}
+                          <span className="text-red-600 font-semibold">{data.totalOutbound?.toLocaleString() || 0} OUT</span>
+                        </p>
                       </div>
 
                       {/* Total Sales */}
                       <div className="bg-white rounded-lg p-5 border border-gray-200 shadow-sm">
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Total Sales</p>
                         <p className="text-3xl font-bold text-gray-800">₱{(data.totalSales / 1000).toFixed(1)}K</p>
-                        <p className="text-xs text-gray-600 mt-1">Period revenue</p>
+                        <p className="text-xs text-gray-600 mt-1">Outbound value</p>
                       </div>
 
                       {/* Average Inventory */}
                       <div className="bg-white rounded-lg p-5 border border-gray-200 shadow-sm">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Average Inventory</p>
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Avg Inventory</p>
                         <p className="text-3xl font-bold text-gray-800">₱{(data.averageInventory / 1000).toFixed(1)}K</p>
                         <p className="text-xs text-gray-600 mt-1">Average stock value</p>
                       </div>
                     </div>
 
                     {/* Additional Metrics Row */}
-                    <div className="grid grid-cols-3 gap-6 mt-4">
+                    <div className="grid grid-cols-4 gap-6 mt-4">
                       <div className="bg-white rounded-lg px-5 py-3 border border-gray-200 shadow-sm">
                         <p className="text-xs text-gray-600">Total Products: <span className="font-bold text-gray-800">{data.productData.length}</span></p>
                       </div>
                       <div className="bg-white rounded-lg px-5 py-3 border border-gray-200 shadow-sm">
-                        <p className="text-xs text-gray-600">Avg Days to Sell: <span className="font-bold text-gray-800">{Math.round(365 / data.averageTurnoverRate)}d</span></p>
+                        <p className="text-xs text-gray-600">Inbound Qty: <span className="font-bold text-green-600">{data.totalInbound?.toLocaleString() || 0}</span></p>
                       </div>
                       <div className="bg-white rounded-lg px-5 py-3 border border-gray-200 shadow-sm">
-                        <p className="text-xs text-gray-600">Total Qty Sold: <span className="font-bold text-gray-800">{data.productData.reduce((sum, item) => sum + item.quantitySold, 0)}</span></p>
+                        <p className="text-xs text-gray-600">Outbound Qty: <span className="font-bold text-red-600">{data.totalOutbound?.toLocaleString() || 0}</span></p>
+                      </div>
+                      <div className="bg-white rounded-lg px-5 py-3 border border-gray-200 shadow-sm">
+                        <p className="text-xs text-gray-600">Avg Days: <span className="font-bold text-gray-800">{data.averageTurnoverRate > 0 ? Math.round(365 / data.averageTurnoverRate) : 0}d</span></p>
                       </div>
                     </div>
                   </div>
 
                   {/* Product Table Section - Invoice-style */}
                   <div className="p-8">
-                    <h3 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-wide">Product Turnover Analysis</h3>
+                    <h3 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-wide">Product Movement Analysis</h3>
                     <div className="overflow-hidden border border-gray-200 rounded-lg">
                       <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-800">
                           <tr>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Product Name</th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Category</th>
+                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">IN Qty</th>
+                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">OUT Qty</th>
+                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">Total Move</th>
                             <th className="px-4 py-3 text-right text-xs font-semibold text-white uppercase tracking-wider">Sales</th>
-                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">Qty Sold</th>
-                            <th className="px-4 py-3 text-right text-xs font-semibold text-white uppercase tracking-wider">Avg Inventory</th>
-                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">Turnover</th>
+                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">Rate</th>
                             <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">Status</th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-100">
                           {currentItems.map((item, index) => {
-                            const { status, color, avgDays } = getProductStatus(item.turnoverRate);
+                            const { status, color, avgDays } = getProductStatus(item.turnoverRate, item.totalMovement);
                             return (
                               <tr key={index} className={index % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50 hover:bg-gray-100'}>
                                 <td className="px-4 py-3 text-sm font-medium text-gray-900">{item.productName}</td>
                                 <td className="px-4 py-3 text-sm text-gray-700">{item.category}</td>
+                                <td className="px-4 py-3 text-sm text-center font-semibold text-green-600">{item.inQuantity || 0}</td>
+                                <td className="px-4 py-3 text-sm text-center font-semibold text-red-600">{item.outQuantity || 0}</td>
+                                <td className="px-4 py-3 text-sm text-center font-bold text-gray-900">{item.totalMovement || 0}</td>
                                 <td className="px-4 py-3 text-sm text-right text-gray-900">₱{item.sales.toLocaleString()}</td>
-                                <td className="px-4 py-3 text-sm text-center text-gray-900">{item.quantitySold}</td>
-                                <td className="px-4 py-3 text-sm text-right text-gray-900">₱{item.averageInventory.toLocaleString()}</td>
                                 <td className="px-4 py-3 text-sm text-center font-semibold text-gray-900">{item.turnoverRate.toFixed(2)}x <span className="text-xs text-gray-500">({avgDays}d)</span></td>
                                 <td className="px-4 py-3 text-center">
                                   <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${color}`}>

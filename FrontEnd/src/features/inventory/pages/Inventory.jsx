@@ -1,3 +1,4 @@
+import { useAuth } from '../../auth/services/FirebaseAuth';
 import React, { useState, useEffect, useMemo } from 'react';
 import InventoryChart from '../components/Inventory/InventoryChart';
 import InventoryTrendChart from '../components/Inventory/InventoryTrendChart';
@@ -22,9 +23,19 @@ import StockTransfer from './StockTransfer';
 import BulkDeleteModal from '../components/Inventory/BulkDeleteModal';
 
 
-const Inventory = () => {
+const Inventory = ({ userRole: propUserRole }) => {
   // Feature flag: Set to true to use new Product/Variant architecture with Master collection
   const USE_NEW_ARCHITECTURE = true;
+  
+  // Get user role from auth context or prop (prop takes precedence for Admin accessing IM page)
+  const { currentUser } = useAuth();
+  const userRole = propUserRole || currentUser?.role || 'InventoryManager';
+  
+  // Role-based permissions
+  const canDelete = userRole === 'Admin';
+  const canChangeStatus = userRole === 'Admin';
+  const canAddProduct = true; // Both roles can add
+  const canUpdateProduct = true; // Both roles can update
   
   const [suppliers, setSuppliers] = useState([]); // Add suppliers state
   const db = getFirestore(app);
@@ -716,15 +727,22 @@ const Inventory = () => {
                       Clear selection
                     </button>
                   </div>
-                  <button
-                    onClick={handleBulkDelete}
-                    className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                    Delete Selected ({selectedProducts.length})
-                  </button>
+                  {canDelete && (
+                    <button
+                      onClick={handleBulkDelete}
+                      className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Delete Selected ({selectedProducts.length})
+                    </button>
+                  )}
+                  {!canDelete && (
+                    <div className="text-xs text-gray-500 italic">
+                      Only administrators can delete products
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -945,6 +963,9 @@ const Inventory = () => {
         product={selectedProduct}
         onProductUpdate={handleProductUpdate}
         initialTab={initialTab}
+        userRole={userRole}
+        canDelete={canDelete}
+        canChangeStatus={canChangeStatus}
       />
       <InfoModal
         isOpen={activeModal === 'stockLevel' || activeModal === 'stockTrend'}

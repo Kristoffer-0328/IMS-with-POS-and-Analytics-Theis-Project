@@ -34,6 +34,7 @@ import DashboardBarChart from '../components/Dashboard/DashboardBarChart';
 import InfoModal from '../components/Dashboard/InfoModal';
 import InventoryTrendChart from '../components/Inventory/InventoryTrendChart';
 import { useServices } from '../../../services/firebase/ProductServices';
+import StockMovementService from '../../../services/StockMovementService';
 
 // Import Restocking Alert Components
 import RestockingAlertModal from '../components/Admin/RestockingAlertModal';
@@ -46,6 +47,8 @@ const IMDashboard = () => {
   const [products, setProduct] = useState([]);
   const [lowStock, setLowstock] = useState([]);
   const [request, setRequest] = useState([]);
+  const [fastMovingProducts, setFastMovingProducts] = useState([]);
+  const [loadingFastMoving, setLoadingFastMoving] = useState(true);
   
   // Modal states
   const [activeModal, setActiveModal] = useState(null);
@@ -173,6 +176,95 @@ const IMDashboard = () => {
 
     getRequests();
   }, [fetchRestockRequests]);
+
+  // Fetch fast-moving products from stock movements (both IN and OUT)
+  useEffect(() => {
+    const fetchFastMovingProducts = async () => {
+      setLoadingFastMoving(true);
+      try {
+        // Get stock movements from last 30 days
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        
+        // Fetch both IN and OUT movements
+        const [inMovements, outMovements] = await Promise.all([
+          StockMovementService.getStockMovements({
+            movementType: 'IN',
+            startDate: thirtyDaysAgo,
+            endDate: new Date()
+          }),
+          StockMovementService.getStockMovements({
+            movementType: 'OUT',
+            startDate: thirtyDaysAgo,
+            endDate: new Date()
+          })
+        ]);
+
+        // Combine all movements
+        const allMovements = [...inMovements, ...outMovements];
+
+        // Aggregate by product - count total movement (IN + OUT)
+        const productMovements = {};
+        allMovements.forEach(movement => {
+          const key = movement.variantId || movement.productId;
+          if (!productMovements[key]) {
+            productMovements[key] = {
+              productId: movement.productId,
+              variantId: movement.variantId,
+              productName: movement.productName,
+              variantName: movement.variantName,
+              category: movement.category,
+              unitPrice: movement.unitPrice,
+              totalQuantity: 0,
+              inQuantity: 0,
+              outQuantity: 0,
+              totalValue: 0,
+              transactionCount: 0
+            };
+          }
+          
+          const quantity = movement.quantity || 0;
+          productMovements[key].totalQuantity += quantity;
+          productMovements[key].totalValue += movement.totalValue || 0;
+          productMovements[key].transactionCount += 1;
+          
+          // Track IN and OUT separately
+          if (movement.movementType === 'IN') {
+            productMovements[key].inQuantity += quantity;
+          } else if (movement.movementType === 'OUT') {
+            productMovements[key].outQuantity += quantity;
+          }
+        });
+
+        // Sort by total quantity moved (IN + OUT) and get top 10
+        const fastMoving = Object.values(productMovements)
+          .sort((a, b) => b.totalQuantity - a.totalQuantity)
+          .slice(0, 10)
+          .map((item, index) => ({
+            rank: index + 1,
+            name: item.variantName 
+              ? `${item.productName} (${item.variantName})`
+              : item.productName,
+            unitPrice: item.unitPrice,
+            quantity: item.totalQuantity,
+            inQuantity: item.inQuantity,
+            outQuantity: item.outQuantity,
+            value: item.totalValue,
+            transactions: item.transactionCount,
+            category: item.category || 'General'
+          }));
+
+        setFastMovingProducts(fastMoving);
+      } catch (error) {
+        console.error('Error fetching fast-moving products:', error);
+        setFastMovingProducts([]);
+      } finally {
+        setLoadingFastMoving(false);
+      }
+    };
+
+    fetchFastMovingProducts();
+  }, []);
   
   const groupedProducts = useMemo(() => {
     // Group by productBrand and variantName (or id if needed)
@@ -540,41 +632,71 @@ const IMDashboard = () => {
           </div>
         </div>
 
-        {/* Top Products by Value */}
+        {/* Fast Moving Products */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex justify-between items-center mb-4">
             <div>
               <h3 className="text-lg font-semibold text-gray-800">
-                Top Products by Value
+                Fast Moving Products
               </h3>
-              <p className="text-sm text-gray-500 mt-1">Highest value inventory items</p>
+              <p className="text-sm text-gray-500 mt-1">Highest inventory movement in the last 30 days</p>
             </div>
             <FiBarChart2 className="w-5 h-5 text-gray-400" />
           </div>
-          <div className="space-y-3 max-h-[350px] overflow-y-auto">
-            {topProductsByValue.slice(0, 8).map((product, index) => (
-              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                    {index + 1}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {product.name}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {product.quantity} units × ₱{product.unitPrice.toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex-shrink-0 ml-4">
-                  <p className="text-sm font-bold text-green-600">
-                    ₱{product.value.toLocaleString()}
-                  </p>
-                </div>
+          {loadingFastMoving ? (
+            <div className="flex items-center justify-center h-[350px]">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                <p className="text-sm text-gray-500">Loading fast-moving products...</p>
               </div>
-            ))}
-          </div>
+            </div>
+          ) : fastMovingProducts.length === 0 ? (
+            <div className="flex items-center justify-center h-[350px]">
+              <div className="text-center">
+                <FiBarChart2 className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm text-gray-500">No movement data available</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[350px] overflow-y-auto">
+              {fastMovingProducts.map((product) => (
+                <div key={product.rank} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div
+                      className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
+                      style={{
+                        background:
+                          product.rank === 1 ? '#FFD700' : // Gold
+                          product.rank === 2 ? '#C0C0C0' : // Silver
+                          product.rank === 3 ? '#CD7F32' : // Bronze
+                          COLORS[(product.rank - 1) % COLORS.length]
+                      }}
+                    >
+                      {product.rank}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {product.name}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {product.transactions} movement{product.transactions !== 1 ? 's' : ''} · {product.category}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex-shrink-0 ml-4 text-right">
+                    <p className="text-sm font-bold text-purple-600">
+                      {product.quantity} units moved
+                    </p>
+                    <div className="flex items-center justify-end gap-2 text-xs text-gray-500">
+                      <span className="text-blue-600">↓{product.inQuantity} in</span>
+                      <span>·</span>
+                      <span className="text-green-600">↑{product.outQuantity} out</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

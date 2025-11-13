@@ -24,6 +24,7 @@ import AdminPurchaseOrders from './features/admin/pages/AdminPurchaseOrders';
 import ReportsAndLogs from './features/admin/pages/ReportsAndLogs';
 import Settings from './features/admin/pages/Settings';
 import StorageFacilityMap from './features/admin/pages/StorageFacilityMap';
+import AdminStockManagement from './features/admin/pages/AdminStockManagement';
 
 // IM Interface
 import IMDashboard from './features/inventory/pages/IMDashboard';
@@ -38,6 +39,7 @@ import SupplierManagement from './features/inventory/pages/SupplierManagement';
 import ReleaseMobileView from './features/inventory/pages/release_mobile_view';
 import MobileReceive from './features/inventory/pages/MobileReceive';
 import RestockingAlertModal from './features/inventory/components/Admin/RestockingAlertModal';
+import StockMovementReport from './features/inventory/components/Reports/StockMovementReport';
 // POS cashier Interface
 
 import Pos_Sidebar from './features/pos/pages/Pos_Sidebar';
@@ -183,6 +185,14 @@ const AppRoutes = () => {
         }
       />
       <Route
+        path="/admin/stock-management"
+        element={
+          <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
+            <AdminStockManagement />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/admin/audit-trail"
         element={
           <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
@@ -220,6 +230,14 @@ const AppRoutes = () => {
         element={
           <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
             <AdminPurchaseOrders />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/suppliers"
+        element={
+          <ProtectedRoute allowedRole="Admin" layout={AdminLayout}>
+            <SupplierManagement />
           </ProtectedRoute>
         }
       />
@@ -297,12 +315,11 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
-      
       <Route
-        path="/im/suppliers"
+        path="/im/stock-movement-report"
         element={
           <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
-            <SupplierManagement/>
+            <StockMovementReport />
           </ProtectedRoute>
         }
       />

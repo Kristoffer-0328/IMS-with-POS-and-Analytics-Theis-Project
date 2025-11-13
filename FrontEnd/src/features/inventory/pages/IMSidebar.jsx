@@ -14,7 +14,8 @@ import {
   FiShoppingBag,
   FiTruck,
   FiAlertCircle,
-  FiUsers
+  FiUsers,
+  FiTrendingUp
 } from 'react-icons/fi';
 import GloryStarLogo from '../../../assets/Glory_Star_Logo.png';
 
@@ -42,9 +43,15 @@ const IMSidebar = ({ collapsed, setCollapsed }) => {
       badge: null
     },
     { 
-      path: '/im/suppliers', 
-      icon: <FiUsers size={20} />, 
-      label: 'Supplier Management',
+      path: '/im/purchase-orders', 
+      icon: <FiShoppingBag size={20} />, 
+      label: 'Purchase Orders',
+      badge: null
+    },
+    { 
+      path: '/im/stock-movement-report', 
+      icon: <FiTrendingUp size={20} />, 
+      label: 'Stock Movement',
       badge: null
     },
     { 

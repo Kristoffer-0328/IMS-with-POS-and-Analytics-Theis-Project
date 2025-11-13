@@ -23,9 +23,11 @@ const ProductList = ({ cartItems: addedProducts, onRemoveItem, isProcessing }) =
         <div key={`item-${index}`} className="border border-gray-200 rounded-lg p-4 bg-white">
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <h4 className="font-medium text-gray-900 text-sm leading-tight mb-2">
-                {item.variantName || item.name}
-              </h4>
+                <h4 className="font-medium text-gray-900 text-sm leading-tight mb-2">
+                  {item.name && item.variantName
+                    ? `${item.name} - ${item.variantName}`
+                    : item.productName || item.variantName || item.name}
+                </h4>
               <div className="flex flex-col gap-1">
                 {/* Bundle or dimension info */}
                 {item.isBundle && item.piecesPerBundle ? (

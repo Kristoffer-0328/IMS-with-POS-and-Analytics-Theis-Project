@@ -202,13 +202,16 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
         console.log(`✅ Updated ${variantData.variantName}: ${currentQty} → ${newQuantity}`);
         
         // Track stock movement
+        const itemUnitPrice = cartItem.unitPrice || variantData.unitPrice || 0;
         stockMovements.push({
           variantId: variantRef.id,
           productName: variantData.productName,
           variantName: variantData.variantName,
           previousQty: currentQty,
           newQty: newQuantity,
-          deducted: cartItem.quantity
+          deducted: cartItem.quantity,
+          unitPrice: itemUnitPrice,
+          totalValue: itemUnitPrice * cartItem.quantity
         });
       }
       
@@ -383,19 +386,25 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
  */
 const createStockMovementLogs = async (stockMovements, transactionId, currentUser) => {
   try {
+    const now = new Date();
     const promises = stockMovements.map(movement => 
       addDoc(collection(db, STOCK_MOVEMENTS_COLLECTION), {
         movementType: 'OUT',
         referenceType: 'sale',
         referenceId: transactionId,
+        transactionId: transactionId, // Add transactionId for easier querying
         variantId: movement.variantId,
         productName: movement.productName,
         variantName: movement.variantName,
         quantity: movement.deducted,
         previousQuantity: movement.previousQty,
+        reason: "Sale Transaction",
         newQuantity: movement.newQty,
         performedBy: currentUser.uid,
+        unitPrice: movement.unitPrice || 0,
+        totalValue: (movement.unitPrice * movement.deducted) * 0.12 || 0,
         performedByName: currentUser.displayName || currentUser.email || 'Unknown',
+        movementDate: now, // Add movementDate for OUT movements
         timestamp: serverTimestamp(),
         createdAt: serverTimestamp()
       })

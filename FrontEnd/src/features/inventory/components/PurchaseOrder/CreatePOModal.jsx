@@ -73,9 +73,9 @@ const CreatePOModal = ({ onClose, onSuccess , }) => {
               supplier: variant.supplier || masterProduct?.supplier || null,
               masterProductName: masterProduct?.name || null
             };
+            
           });
-          
-          console.log('📦 Enriched products:', enrichedProducts.length);
+         
           setProducts(enrichedProducts);
           
           // Find products that need restocking
@@ -176,8 +176,33 @@ const CreatePOModal = ({ onClose, onSuccess , }) => {
   const findSuppliersForVariant = (variant, allSuppliers) => {
     const suppliers = [];
     
-    // Get supplier from variant
-    const variantSupplier = variant.supplier || (variant.suppliers && variant.suppliers.length > 0 ? variant.suppliers[0] : null);
+    // Check if variant has suppliers array (NEW structure from Firebase)
+    if (variant.suppliers && Array.isArray(variant.suppliers) && variant.suppliers.length > 0) {
+      variant.suppliers.forEach((sup) => {
+        const supplierCode = sup.primaryCode || sup.code || sup.supplierId;
+        const supplierName = sup.name || sup.supplierName;
+        
+        const supplier = allSuppliers.find(s => 
+          (s.primaryCode === supplierCode) || (s.code === supplierCode) || (s.name === supplierName)
+        );
+        
+        if (supplier && !suppliers.find(s => s.id === (supplier.primaryCode || supplier.code))) {
+          suppliers.push({
+            id: supplier.primaryCode || supplier.code,
+            primaryCode: supplier.primaryCode || supplier.code,
+            code: supplier.code,
+            name: supplier.name,
+            supplierPrice: sup.price || 0, // Price from supplier (what we buy at)
+            contactInfo: supplier.contactInfo || supplier.email || supplier.phone || ''
+          });
+        }
+      });
+      
+      return suppliers;
+    }
+    
+    // Fallback: Get supplier from variant.supplier field (OLD structure)
+    const variantSupplier = variant.supplier;
     
     if (!variantSupplier) return suppliers;
 
@@ -191,7 +216,7 @@ const CreatePOModal = ({ onClose, onSuccess , }) => {
           primaryCode: supplier.primaryCode || supplier.code,
           code: supplier.code,
           name: supplier.name,
-          unitPrice: variant.unitPrice || variant.price || 0,
+          supplierPrice: variant.supplierPrice || 0, // Use supplierPrice field
           contactInfo: supplier.contactInfo || supplier.email || supplier.phone || ''
         });
       }
@@ -210,35 +235,10 @@ const CreatePOModal = ({ onClose, onSuccess , }) => {
           primaryCode: supplier.primaryCode || supplier.code,
           code: supplier.code,
           name: supplier.name,
-          unitPrice: variant.unitPrice || variant.price || 0,
+          supplierPrice: variantSupplier.price || variant.supplierPrice || 0, // Get price from supplier object
           contactInfo: supplier.contactInfo || supplier.email || supplier.phone || ''
         });
       }
-    }
-
-    // Check if variant has multiple suppliers in 'suppliers' array
-    if (variant.suppliers && Array.isArray(variant.suppliers) && variant.suppliers.length > 1) {
-      variant.suppliers.forEach((sup, index) => {
-        if (index === 0) return; // Skip first one as it's already added
-        
-        const supplierCode = sup.primaryCode || sup.code || sup.supplierId;
-        const supplierName = sup.name || sup.supplierName;
-        
-        const supplier = allSuppliers.find(s => 
-          (s.primaryCode === supplierCode) || (s.code === supplierCode) || (s.name === supplierName)
-        );
-        
-        if (supplier && !suppliers.find(s => s.id === (supplier.primaryCode || supplier.code))) {
-          suppliers.push({
-            id: supplier.primaryCode || supplier.code,
-            primaryCode: supplier.primaryCode || supplier.code,
-            code: supplier.code,
-            name: supplier.name,
-            unitPrice: sup.unitPrice || variant.unitPrice || variant.price || 0,
-            contactInfo: supplier.contactInfo || supplier.email || supplier.phone || ''
-          });
-        }
-      });
     }
 
     return suppliers;
@@ -259,7 +259,7 @@ const CreatePOModal = ({ onClose, onSuccess , }) => {
       productId: selectedProduct.id,
       productName: selectedProduct.name,
       quantity: selectedProduct.suggestedQuantity || '',
-      unitPrice: supplier.unitPrice || '',
+      unitPrice: supplier.supplierPrice || '',
       total: 0,
       restockRequestId: selectedProduct.restockRequest?.id || null,
       currentQuantity: selectedProduct.currentQuantity,
@@ -602,10 +602,10 @@ const CreatePOModal = ({ onClose, onSuccess , }) => {
 
               {/* Price */}
               <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 mb-4 border border-green-200">
-                <p className="text-sm text-gray-600 mb-1">Unit Price</p>
-                <p className="text-2xl font-bold text-green-700">₱{supplier.unitPrice.toLocaleString()}</p>
+                <p className="text-sm text-gray-600 mb-1">Supplier Price (Buy)</p>
+                <p className="text-2xl font-bold text-green-700">₱{supplier.supplierPrice.toLocaleString()}</p>
                 <p className="text-xs text-gray-500 mt-2">
-                  Total for {selectedProduct?.suggestedQuantity} units: ₱{(supplier.unitPrice * selectedProduct?.suggestedQuantity).toLocaleString()}
+                  Total for {selectedProduct?.suggestedQuantity} units: ₱{(supplier.supplierPrice * selectedProduct?.suggestedQuantity).toLocaleString()}
                 </p>
               </div>
 
@@ -679,7 +679,7 @@ const CreatePOModal = ({ onClose, onSuccess , }) => {
                     </div>
                     <div>
                       <span className="text-gray-600">Price:</span>
-                      <span className="ml-1 font-semibold text-green-600">₱{selectedSupplierForProduct?.unitPrice || 0}</span>
+                      <span className="ml-1 font-semibold text-green-600">₱{selectedSupplierForProduct?.supplierPrice || 0}</span>
                     </div>
                   </div>
                 </div>
@@ -748,7 +748,7 @@ const CreatePOModal = ({ onClose, onSuccess , }) => {
                           if (product && supplier) {
                             handleItemChange(index, 'productName', product.name);
                             handleItemChange(index, 'quantity', product.suggestedQuantity);
-                            handleItemChange(index, 'unitPrice', supplier.unitPrice);
+                            handleItemChange(index, 'unitPrice', supplier.supplierPrice);
                             handleItemChange(index, 'restockRequestId', product.restockRequest?.id || null);
                             handleItemChange(index, 'currentQuantity', product.currentQuantity);
                             handleItemChange(index, 'requestedQuantity', product.suggestedQuantity);
@@ -824,7 +824,7 @@ const CreatePOModal = ({ onClose, onSuccess , }) => {
                           '. Product is below restock level.' :
                           '. Product is adequately stocked.'
                         }
-                        {supplierForProduct && ` Unit price from ${selectedSupplierForProduct?.name}: ₱${supplierForProduct.unitPrice}`}
+                        {supplierForProduct && ` Supplier price from ${selectedSupplierForProduct?.name}: ₱${supplierForProduct.supplierPrice}`}
                       </span>
                     </div>
                   )}

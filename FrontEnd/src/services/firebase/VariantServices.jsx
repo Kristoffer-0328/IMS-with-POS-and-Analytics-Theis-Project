@@ -334,9 +334,16 @@ export const updateVariantStock = async (variantId, newQuantity, reason = 'Manua
             lastUpdated: new Date().toISOString()
         });
 
-        // Update product aggregate stats
+        // Update product aggregate stats (gracefully handle missing parent product)
         const variantData = variantSnap.data();
-        await updateProductAggregateStats(variantData.parentProductId);
+        if (variantData.parentProductId) {
+            try {
+                await updateProductAggregateStats(variantData.parentProductId);
+            } catch (statsError) {
+                console.warn('⚠️ Could not update parent product stats, but variant was updated successfully');
+                // Continue - variant update succeeded, stats update is non-critical
+            }
+        }
 
         console.log(`✅ Stock updated for variant ${variantId}: ${oldQuantity} → ${newQuantity} (${quantityChange > 0 ? '+' : ''}${quantityChange})`);
         console.log(`   Reason: ${reason}`);
@@ -444,6 +451,16 @@ export const getVariantsBySupplier = async (supplierId) => {
  */
 export const updateProductAggregateStats = async (productId) => {
     try {
+        // First check if the product document exists
+        const productRef = doc(db, PRODUCTS_COLLECTION, productId);
+        const productSnap = await getDoc(productRef);
+        
+        if (!productSnap.exists()) {
+            console.warn(`⚠️ Product ${productId} does not exist in Products collection - skipping aggregate stats update`);
+            console.log('💡 This is normal if variants were created without a parent product document');
+            return; // Gracefully exit - this is not an error
+        }
+        
         // Get all variants for this product
         const variants = await getVariantsByProduct(productId);
 
@@ -459,7 +476,6 @@ export const updateProductAggregateStats = async (productId) => {
         const highestPrice = prices.length > 0 ? Math.max(...prices) : null;
 
         // Update product document
-        const productRef = doc(db, PRODUCTS_COLLECTION, productId);
         await updateDoc(productRef, {
             totalVariants,
             totalStock,

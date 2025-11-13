@@ -186,6 +186,12 @@ export default function Pos_NewSale_V2() {
             price: v.unitPrice || v.price || 0,
             quantity: v.quantity || 0,
             totalQuantity: v.quantity || 0,
+            
+            // Sale/Discount info
+            onSale: v.onSale || false,
+            salePrice: v.salePrice || null,
+            originalPrice: v.originalPrice || v.unitPrice || v.price || 0,
+            discountPercentage: v.discountPercentage || 0,
 
             // Units & sizing
             size: v.size,
@@ -369,6 +375,12 @@ export default function Pos_NewSale_V2() {
 
     // Compute effective unit price
     let effectiveUnitPrice = variant.price || variant.unitPrice || 0;
+    
+    // Apply sale price if variant is on sale
+    if (variant.onSale && variant.salePrice) {
+      effectiveUnitPrice = variant.salePrice;
+    }
+    
     // If variant represents a bundle, convert price to per-piece for cart consistency
     if (variant.isBundle && variant.piecesPerBundle) {
       const pieces = Number(variant.piecesPerBundle) || 1;
@@ -394,7 +406,11 @@ export default function Pos_NewSale_V2() {
       isBundle: variant.isBundle,
       piecesPerBundle: variant.piecesPerBundle,
       bundlePackagingType: variant.bundlePackagingType,
-      bundlePrice: variant.unitPrice || variant.price
+      bundlePrice: variant.unitPrice || variant.price,
+      // Sale/Discount information
+      onSale: variant.onSale || false,
+      originalPrice: variant.originalPrice || (variant.unitPrice || variant.price || 0),
+      discountPercentage: variant.discountPercentage || 0
     };
 
     addProductToCart(cartItem);
@@ -588,13 +604,17 @@ export default function Pos_NewSale_V2() {
         variantId: item.variantId,
         parentProductId: item.productId,
         productName: item.baseName || item.name,
-        variantName: item.size ? `${item.size} ${item.unit || ''}`.trim() : '',
+        variantName: item.variantName || (item.size ? `${item.size} ${item.unit || ''}`.trim() : ''),
         qty: item.qty,
         unitPrice: item.price,
         category: item.category || 'Uncategorized',
         storageLocation: item.storageLocation || '',
         shelfName: item.shelfName || '',
-        rowName: item.rowName || ''
+        rowName: item.rowName || '',
+        // Include sale/discount info for receipt
+        onSale: item.onSale || false,
+        originalPrice: item.originalPrice || item.price,
+        discountPercentage: item.discountPercentage || 0
       }));
 
       console.log('🛒 Cart items:', cartItems);
@@ -642,12 +662,29 @@ export default function Pos_NewSale_V2() {
       // Prepare receipt data
       const receiptData = {
         ...saleResult,
-        items: cartItems.map((item) => ({
-          ...item,
-          name: item.productName,
-          variantName: item.variantName,
-          totalPrice: item.quantity * item.unitPrice
-        })),
+        items: cartItems.map((item) => {
+          // Combine product name and variant name for clear display
+          let displayName = item.productName;
+          if (item.variantName) {
+            displayName = `${item.productName} - ${item.variantName}`;
+          }
+          
+          return {
+            ...item,
+            name: displayName, // Combined name for display
+            productName: item.productName, // Keep master product name for reference
+            variantName: item.variantName, // Keep variant name for reference
+            quantity: item.qty,
+            qty: item.qty,
+            price: item.unitPrice,
+            unitPrice: item.unitPrice,
+            totalPrice: item.qty * item.unitPrice,
+            onSale: item.onSale || false,
+            originalPrice: item.originalPrice || item.unitPrice,
+            discountPercentage: item.discountPercentage || 0
+          };
+        }),
+        subTotal: subTotal,
         subtotal: subTotal,
         tax: tax,
         discount: discountAmount,

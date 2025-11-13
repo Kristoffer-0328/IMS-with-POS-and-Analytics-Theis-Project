@@ -4,13 +4,24 @@ import { getFirestore, doc, updateDoc, collection, query, where, getDocs, delete
 import app from '../../../../FirebaseConfig';
 import { getDoc } from 'firebase/firestore';
 import { FiPackage, FiDollarSign, FiMapPin, FiInfo, FiLayers, FiCalendar, FiMap, FiTrash2 } from 'react-icons/fi';
+import { Tag, TrendingDown } from 'lucide-react';
 import ShelfViewModal from './ShelfViewModal';
 import { uploadImage } from '../../../../services/cloudinary/CloudinaryService';
 import { getStorageUnitConfig, getAllStorageUnits } from '../../config/StorageUnitsConfig';
 import NewVariantForm from './CategoryModal/NewVariantForm';
 import ErrorModal from '../../../../components/modals/ErrorModal';
+import DiscountModal from './DiscountModal';
 
-const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTab = 'overview' }) => {
+const ViewProductModal = ({ 
+  isOpen, 
+  onClose, 
+  product, 
+  onProductUpdate, 
+  initialTab = 'overview',
+  userRole = 'InventoryManager',
+  canDelete = false,
+  canChangeStatus = false
+}) => {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
@@ -19,6 +30,7 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
   const [activeTab, setActiveTab] = useState(initialTab); // 'overview', 'variants', 'location', 'supplier', 'additional'
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [selectedUnitForMap, setSelectedUnitForMap] = useState(null);
+  const [selectedVariantForMap, setSelectedVariantForMap] = useState(null); // Track which variant to highlight
   const [variants, setVariants] = useState([]); // For flat structure variants
   const [loadingVariants, setLoadingVariants] = useState(false);
   const [showVariantCreationModal, setShowVariantCreationModal] = useState(false);
@@ -30,6 +42,8 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
   const [isDeleting, setIsDeleting] = useState(false);
   const [storageLocations, setStorageLocations] = useState([]);
   const [alertModal, setAlertModal] = useState({ isOpen: false, type: 'info', title: '', message: '', details: '' });
+  const [showDiscountModal, setShowDiscountModal] = useState(false);
+  const [selectedVariantForDiscount, setSelectedVariantForDiscount] = useState(null);
   const db = getFirestore(app);
   
   // Helper function to normalize supplier data - handles both old (suppliers array) and new (supplier object) structures
@@ -1011,11 +1025,7 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                       VARIANT
                     </span>
                   )}
-                  {!product.isVariant && (
-                    <span className="px-2 py-0.5 bg-white/20 backdrop-blur-sm text-white text-xs font-bold rounded-full border border-white/30">
-                      BASE PRODUCT
-                    </span>
-                  )}
+                 
                   {isEditMode && (
                     <span className="px-2 py-0.5 bg-blue-200 backdrop-blur-sm text-blue-800 text-xs font-bold rounded-full border border-blue-300">
                       EDIT MODE
@@ -1033,27 +1043,29 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
               </div>
             </div>
             <div className="flex items-center gap-3">
-              {/* Active/Inactive Toggle */}
-              <div className="flex items-center gap-2">
-                <span className="text-white text-sm font-medium">
-                  {isActive ? 'Active' : 'Inactive'}
-                </span>
-                <button
-                  onClick={handleActiveToggle}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    isActive ? 'bg-green-500' : 'bg-gray-400'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      isActive ? 'translate-x-6' : 'translate-x-1'
+              {/* Active/Inactive Toggle - Only for Admin */}
+              {canChangeStatus && (
+                <div className="flex items-center gap-2">
+                  <span className="text-white text-sm font-medium">
+                    {isActive ? 'Active' : 'Inactive'}
+                  </span>
+                  <button
+                    onClick={handleActiveToggle}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      isActive ? 'bg-green-500' : 'bg-gray-400'
                     }`}
-                  />
-                </button>
-              </div>
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        isActive ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+              )}
 
-              {/* Delete Button */}
-              {!isEditMode && (
+              {/* Delete Button - Only for Admin */}
+              {canDelete && !isEditMode && (
                 <button
                   onClick={() => setShowDeleteModal(true)}
                   className="px-4 py-2 bg-red-500/90 backdrop-blur-sm text-white border border-red-400 rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2"
@@ -1179,7 +1191,7 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                   {!product.isVariant && (
                     <span className="px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded-full flex items-center gap-1.5 shadow-sm">
                       <FiPackage size={12} />
-                      BASE PRODUCT
+                      MASTER PRODUCT
                     </span>
                   )}
                 </div>
@@ -1542,6 +1554,24 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
             {/* Overview Tab */}
             {activeTab === 'overview' && (
               <div className="space-y-6">
+                {/* Role-based Permissions Notice */}
+                {!canDelete && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-semibold text-blue-800 mb-1">Inventory Manager Access</h4>
+                        <p className="text-xs text-blue-700">
+                          You can add and update products, but only administrators can delete products or change product status (Active/Inactive).
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               
                
 
@@ -1953,10 +1983,44 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                                   {group.instances.length} locations
                                 </span>
                               )}
+                              {/* Show ON SALE badge if any variant in group is on sale */}
+                              {group.instances.some(v => v.onSale) && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full">
+                                  <Tag size={12} />
+                                  {group.instances.find(v => v.onSale)?.discountPercentage}% OFF
+                                </span>
+                              )}
                             </div>
-                            <span className="px-3 py-1 bg-white rounded-full text-xs font-medium text-purple-700 shadow-sm border border-purple-200">
-                              {group.totalQuantity} {group.unit}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="px-3 py-1 bg-white rounded-full text-xs font-medium text-purple-700 shadow-sm border border-purple-200">
+                                {group.totalQuantity} {group.unit}
+                              </span>
+                              {/* Set Sale Button - use first instance for modal */}
+                              <button
+                                onClick={() => {
+                                  setSelectedVariantForDiscount(group.instances[0]);
+                                  setShowDiscountModal(true);
+                                }}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                                  group.instances.some(v => v.onSale)
+                                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                    : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                                }`}
+                                title={group.instances.some(v => v.onSale) ? 'Manage Sale' : 'Set Discount'}
+                              >
+                                {group.instances.some(v => v.onSale) ? (
+                                  <>
+                                    <TrendingDown size={14} />
+                                    On Sale
+                                  </>
+                                ) : (
+                                  <>
+                                    <Tag size={14} />
+                                    Set Sale
+                                  </>
+                                )}
+                              </button>
+                            </div>
                           </div>
                         </div>
                         <div className="p-4">
@@ -1978,11 +2042,25 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                                 {group.isBundle && group.piecesPerBundle ? 'Bundle Price' : 'Unit Price'}
                               </div>
                               <div className="text-sm font-medium text-green-600">
-                                ₱{formatMoney(group.unitPrice)}
-                                {group.isBundle && group.piecesPerBundle && (
-                                  <span className="text-xs text-purple-600 block mt-0.5">
-                                    (₱{formatMoney(group.unitPrice / group.piecesPerBundle)} / {group.baseUnit || 'pc'})
-                                  </span>
+                                {/* Show sale price if on sale */}
+                                {group.instances.some(v => v.onSale) ? (
+                                  <div className="flex items-center gap-2">
+                                    <span className="line-through text-gray-400">
+                                      ₱{formatMoney(group.instances.find(v => v.onSale)?.originalPrice || group.unitPrice)}
+                                    </span>
+                                    <span className="text-red-600 font-bold">
+                                      ₱{formatMoney(group.instances.find(v => v.onSale)?.salePrice || group.unitPrice)}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <>
+                                    ₱{formatMoney(group.unitPrice)}
+                                    {group.isBundle && group.piecesPerBundle && (
+                                      <span className="text-xs text-purple-600 block mt-0.5">
+                                        (₱{formatMoney(group.unitPrice / group.piecesPerBundle)} / {group.baseUnit || 'pc'})
+                                      </span>
+                                    )}
+                                  </>
                                 )}
                               </div>
                             </div>
@@ -2071,9 +2149,9 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                       <FiMapPin className="text-white" size={24} />
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-gray-800">Storage Location Details</h3>
+                      <h3 className="text-lg font-bold text-gray-800">Storage Location Overview</h3>
                       <p className="text-sm text-blue-600">
-                        {variants.length} variant{variants.length !== 1 ? 's' : ''}
+                        {variants.length} variant{variants.length !== 1 ? 's' : ''} across multiple locations
                       </p>
                     </div>
                   </div>
@@ -2085,9 +2163,16 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                       <div className="text-sm font-bold text-gray-900">{variants.length}</div>
                     </div>
                     <div className="bg-white rounded-lg p-3 border border-blue-100">
-                      <div className="text-xs text-blue-600 mb-1">Total Locations</div>
+                      <div className="text-xs text-blue-600 mb-1">Storage Units</div>
                       <div className="text-sm font-bold text-gray-900">
-                        {variants.reduce((sum, v) => sum + (v.locations?.length || 0), 0)}
+                        {(() => {
+                          const uniqueUnits = new Set(
+                            variants.flatMap(v => 
+                              v.locations?.map(loc => loc.unit || loc.storageLocation) || []
+                            ).filter(Boolean)
+                          );
+                          return uniqueUnits.size;
+                        })()}
                       </div>
                     </div>
                     <div className="bg-white rounded-lg p-3 border border-blue-100">
@@ -2099,7 +2184,7 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                   </div>
                 </div>
 
-                {/* Simple Variant List with All Locations */}
+                {/* Variant Location Cards with Buttons */}
                 {variants.length === 0 ? (
                   <div className="bg-yellow-50 rounded-xl border-2 border-yellow-300 p-6 text-center">
                     <FiMapPin className="mx-auto mb-2 text-yellow-600" size={32} />
@@ -2107,72 +2192,128 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {variants.map((variant, idx) => (
-                      <div key={variant.id || idx} className="bg-white rounded-lg border border-gray-200 p-4">
-                        {/* Variant Header */}
-                        <div className="flex items-start justify-between mb-3 pb-3 border-b border-gray-100">
-                          <div>
-                            <h5 className="text-sm font-semibold text-gray-900">
-                              {variant.variantName || variant.size || variant.specifications || `Variant ${idx + 1}`}
-                            </h5>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              Total: {variant.quantity || 0} {variant.unit || variant.baseUnit || 'pcs'}
-                            </p>
-                          </div>
-                          {variant.unitPrice && (
-                            <span className="text-sm font-semibold text-green-600">
-                              ₱{formatMoney(variant.unitPrice)}
-                            </span>
-                          )}
-                        </div>
+                    {variants.map((variant, idx) => {
+                      // Group locations by storage unit
+                      const locationsByUnit = {};
+                      if (variant.locations && variant.locations.length > 0) {
+                        variant.locations.forEach(loc => {
+                          const unit = loc.unit || loc.storageLocation || 'Unknown Unit';
+                          if (!locationsByUnit[unit]) {
+                            locationsByUnit[unit] = [];
+                          }
+                          locationsByUnit[unit].push(loc);
+                        });
+                      }
 
-                        {/* All Locations for this Variant */}
-                        {variant.locations && variant.locations.length > 0 ? (
-                          <div className="space-y-2">
-                            <p className="text-xs font-medium text-gray-600 mb-2">
-                              Storage Locations ({variant.locations.length}):
-                            </p>
-                            {variant.locations.map((loc, locIdx) => (
-                              <div key={locIdx} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                <div className="flex items-start justify-between">
-                                  <div className="flex items-start gap-2 flex-1">
-                                    <FiMapPin className="text-blue-600 mt-0.5" size={14} />
-                                    <div className="flex-1">
-                                      <p className="text-sm font-medium text-gray-900">
-                                        {loc.location || loc.fullLocation || `${loc.unit || loc.storageLocation} - ${loc.shelfName || loc.shelf} - ${loc.rowName || loc.row}`}
-                                      </p>
-                                      <div className="flex items-center gap-2 mt-1">
-                                        {loc.shelfName && (
-                                          <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded">
-                                            {loc.shelfName}
-                                          </span>
-                                        )}
-                                        {loc.rowName && (
-                                          <span className="text-xs px-2 py-0.5 bg-green-50 text-green-700 rounded">
-                                            {loc.rowName}
-                                          </span>
-                                        )}
-                                        {loc.columnIndex !== undefined && (
-                                          <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-700 rounded">
-                                            Col {loc.columnIndex + 1}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="text-right ml-3">
-                                    <div className="text-sm font-bold text-blue-600">{loc.quantity || 0}</div>
-                                    <div className="text-xs text-gray-500">{variant.unit || 'pcs'}</div>
-                                  </div>
+                      return (
+                        <div key={variant.id || idx} className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+                          {/* Variant Header */}
+                          <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-4 border-b border-gray-200">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <h5 className="text-sm font-semibold text-gray-900">
+                                    {variant.variantName || variant.size || variant.specifications || `Variant ${idx + 1}`}
+                                  </h5>
+                                  {variant.onSale && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full">
+                                      <Tag size={12} />
+                                      {variant.discountPercentage}% OFF
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-3 text-xs text-gray-600">
+                                  <span className="flex items-center gap-1">
+                                    <FiPackage size={12} />
+                                    {variant.quantity || 0} {variant.unit || variant.baseUnit || 'pcs'}
+                                  </span>
+                                  {variant.unitPrice && (
+                                    <span className="flex items-center gap-1 text-green-600 font-semibold">
+                                      <FiDollarSign size={12} />
+                                      {variant.onSale ? (
+                                        <>
+                                          <span className="line-through text-gray-400">₱{formatMoney(variant.originalPrice || variant.unitPrice)}</span>
+                                          <span className="text-red-600">₱{formatMoney(variant.salePrice)}</span>
+                                        </>
+                                      ) : (
+                                        `₱${formatMoney(variant.unitPrice)}`
+                                      )}
+                                    </span>
+                                  )}
+                                  <span className="flex items-center gap-1">
+                                    <FiMapPin size={12} />
+                                    {Object.keys(locationsByUnit).length} storage unit{Object.keys(locationsByUnit).length !== 1 ? 's' : ''}
+                                  </span>
                                 </div>
                               </div>
-                            ))}
+                            </div>
                           </div>
-                        ) : (
-                          <p className="text-xs text-gray-400 italic">No location data</p>
-                        )}
-                      </div>
-                    ))}
+
+                          {/* Storage Unit Buttons */}
+                          <div className="p-4">
+                            {Object.keys(locationsByUnit).length > 0 ? (
+                              <div className="space-y-2">
+                                <p className="text-xs font-medium text-gray-600 mb-3">
+                                  Click to view location on storage map:
+                                </p>
+                                {Object.entries(locationsByUnit).map(([unitName, locations]) => {
+                                  const totalQtyInUnit = locations.reduce((sum, loc) => sum + (Number(loc.quantity) || 0), 0);
+                                  
+                                  return (
+                                    <button
+                                      key={unitName}
+                                      onClick={() => {
+                                        // Get the full storage unit config using the utility function
+                                        const unitConfig = getStorageUnitConfig(unitName);
+                                        
+                                        if (unitConfig) {
+                                          // Set the variant as the highlighted product so the modal can highlight its locations
+                                          setSelectedVariantForMap(variant);
+                                          setSelectedUnitForMap(unitConfig);
+                                          setShowLocationModal(true);
+                                        } else {
+                                          console.warn(`Could not find storage unit config for: ${unitName}`);
+                                        }
+                                      }}
+                                      className="w-full flex items-center justify-between p-3 bg-gradient-to-r from-blue-50 to-blue-100 hover:from-blue-100 hover:to-blue-200 rounded-lg border-2 border-blue-300 hover:border-blue-400 transition-all group"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-blue-500 rounded-lg group-hover:scale-110 transition-transform">
+                                          <FiMap className="text-white" size={16} />
+                                        </div>
+                                        <div className="text-left">
+                                          <p className="text-sm font-bold text-gray-900">{unitName}</p>
+                                          <p className="text-xs text-blue-700">
+                                            {locations.length} location{locations.length !== 1 ? 's' : ''} • {totalQtyInUnit} {variant.unit || 'pcs'}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs font-medium text-blue-700 group-hover:text-blue-800">
+                                          View on Map
+                                        </span>
+                                        <svg 
+                                          className="w-5 h-5 text-blue-600 group-hover:translate-x-1 transition-transform" 
+                                          fill="none" 
+                                          stroke="currentColor" 
+                                          viewBox="0 0 24 24"
+                                        >
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                        </svg>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="text-center py-4">
+                                <p className="text-xs text-gray-400 italic">No location data available</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -2311,9 +2452,13 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
       {/* Location View Modal */}
       <ShelfViewModal 
         isOpen={showLocationModal}
-        onClose={() => setShowLocationModal(false)}
+        onClose={() => {
+          setShowLocationModal(false);
+          setSelectedVariantForMap(null); // Clear selected variant when modal closes
+        }}
         selectedUnit={selectedUnitForMap}
-        highlightedProduct={product}
+        highlightedProduct={selectedVariantForMap || product}
+        viewOnly={true}
       />
 
       {/* Variant Creation Modal */}
@@ -2554,6 +2699,35 @@ const ViewProductModal = ({ isOpen, onClose, product, onProductUpdate, initialTa
         message={alertModal.message}
         details={alertModal.details}
       />
+
+      {/* Discount Modal */}
+      {showDiscountModal && selectedVariantForDiscount && (
+        <DiscountModal
+          isOpen={showDiscountModal}
+          onClose={() => {
+            setShowDiscountModal(false);
+            setSelectedVariantForDiscount(null);
+          }}
+          variant={selectedVariantForDiscount}
+          onSuccess={(result) => {
+            // Refresh variants after discount change
+            setShowDiscountModal(false);
+            setSelectedVariantForDiscount(null);
+            onProductUpdate && onProductUpdate();
+            
+            // Show success message
+            setAlertModal({
+              isOpen: true,
+              type: 'success',
+              title: 'Discount Updated',
+              message: result.salePrice 
+                ? `Discount applied successfully. New sale price: ₱${result.salePrice.toFixed(2)}`
+                : 'Discount removed successfully',
+              details: ''
+            });
+          }}
+        />
+      )}
     </div>
   );
 };

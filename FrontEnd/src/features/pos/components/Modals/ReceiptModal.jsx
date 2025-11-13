@@ -143,17 +143,47 @@ const ReceiptModal = ({ transaction, onClose }) => {
                 <tbody className="divide-y divide-gray-200 bg-white">
                   {transaction.items.map((item, index) => {
                     // Handle multiple possible field name variations
-                    const itemName = item.name || item.productName || item.variantName || 'Unknown Item';
+                    // If we have both productName and variantName, combine them
+                    let itemName;
+                    if (item.name) {
+                      itemName = item.name; // Already formatted
+                    } else if (item.productName && item.variantName) {
+                      itemName = `${item.productName} - ${item.variantName}`;
+                    } else {
+                      itemName = item.productName || item.variantName || 'Unknown Item';
+                    }
+                    
                     const quantity = item.quantity || item.qty || 0;
                     const price = item.price || item.unitPrice || 0;
                     const total = item.totalPrice || (price * quantity);
                     
+                    // Check if item was purchased with a discount/sale
+                    const isOnSale = item.onSale || false;
+                    const originalPrice = item.originalPrice || null;
+                    const discountPercentage = item.discountPercentage || 0;
+                    
                     return (
                       <tr key={index} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-sm text-gray-900">{itemName}</td>
+                        <td className="px-6 py-4 text-sm">
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-900">{itemName}</span>
+                            {isOnSale && discountPercentage > 0 && (
+                              <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded">
+                                🏷️ {discountPercentage}% OFF
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-6 py-4 text-sm text-gray-600 text-center">{quantity}</td>
-                        <td className="px-6 py-4 text-sm text-gray-600 text-right">
-                          ₱{formatCurrency(price)}
+                        <td className="px-6 py-4 text-sm text-right">
+                          {isOnSale && originalPrice ? (
+                            <div className="flex flex-col items-end">
+                              <span className="text-gray-400 line-through text-xs">₱{formatCurrency(originalPrice)}</span>
+                              <span className="text-red-600 font-semibold">₱{formatCurrency(price)}</span>
+                            </div>
+                          ) : (
+                            <span className="text-gray-600">₱{formatCurrency(price)}</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-sm font-medium text-gray-900 text-right">
                           ₱{formatCurrency(total)}
@@ -167,6 +197,29 @@ const ReceiptModal = ({ transaction, onClose }) => {
 
             {/* Enhanced Totals Section */}
             <div className="space-y-3 p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100">
+              {/* Show total savings if any items were on sale */}
+              {transaction.items.some(item => item.onSale) && (
+                <>
+                  <div className="flex justify-between text-sm font-medium text-green-700 bg-green-100 px-3 py-2 rounded-lg">
+                    <span className="flex items-center gap-1">
+                      <span>🏷️</span>
+                      <span>Total Savings</span>
+                    </span>
+                    <span>
+                      ₱{formatCurrency(
+                        transaction.items.reduce((total, item) => {
+                          if (item.onSale && item.originalPrice) {
+                            const savings = (item.originalPrice - (item.price || item.unitPrice || 0)) * (item.quantity || item.qty || 0);
+                            return total + savings;
+                          }
+                          return total;
+                        }, 0)
+                      )}
+                    </span>
+                  </div>
+                  <div className="h-px bg-gray-200"></div>
+                </>
+              )}
               <div className="flex justify-between text-sm text-gray-600">
                 <span>Subtotal</span>
                 <span>₱{formatCurrency(transaction.subTotal || transaction.subtotal || 0)}</span>

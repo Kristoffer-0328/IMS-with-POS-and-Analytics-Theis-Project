@@ -19,6 +19,8 @@ import storage from '../../../services/firebase/StorageConfig';
 import { useAuth } from '../../auth/services/FirebaseAuth';
 import { AnalyticsService } from '../../../services/firebase/AnalyticsService';
 import { uploadImage } from '../../../services/cloudinary/CloudinaryService';
+import ErrorModal from '../../../components/modals/ErrorModal';
+import { getVariantById, updateVariantStock, updateProductAggregateStats, searchVariants } from '../../../services/firebase/VariantServices';
 
 // Helper function to generate receiving notification
 const generateReceivingNotification = async (receivingData, currentUser) => {
@@ -109,6 +111,7 @@ const MobileReceive = () => {
   const [completionData, setCompletionData] = useState(null);
   const [uploadProgress, setUploadProgress] = useState({});
   const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '', type: 'error' });
   
   const containerRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -445,17 +448,36 @@ const MobileReceive = () => {
 
     if (product && product.status !== 'not_received') {
       if (!product.photo) {
-        newErrors.photo = 'Photo is required for inspection';
+        setErrorModal({
+          isOpen: true,
+          title: 'Photo Required',
+          message: 'Please take or upload a photo of the product before proceeding. This is required for quality inspection documentation.',
+          type: 'warning'
+        });
+        return false;
       }
 
       const totalCounted = (parseInt(product.acceptedQty) || 0) + (parseInt(product.rejectedQty) || 0);
       
       if (totalCounted > product.expectedQty) {
-        newErrors.quantity = `Total cannot exceed expected quantity of ${product.expectedQty}`;
+        setErrorModal({
+          isOpen: true,
+          title: 'Quantity Error',
+          message: `Total counted (${totalCounted}) cannot exceed expected quantity of ${product.expectedQty} ${product.unit}.`,
+          type: 'error',
+          details: `Accepted: ${product.acceptedQty || 0}\nRejected: ${product.rejectedQty || 0}\nExpected: ${product.expectedQty}`
+        });
+        return false;
       }
 
       if ((parseInt(product.rejectedQty) || 0) > 0 && !product.rejectionReason.trim()) {
-        newErrors.rejectionReason = 'Rejection reason is required when rejecting items';
+        setErrorModal({
+          isOpen: true,
+          title: 'Rejection Reason Required',
+          message: 'Please provide a reason for rejected/damaged items before proceeding.',
+          type: 'warning'
+        });
+        return false;
       }
     }
 
@@ -554,246 +576,181 @@ const MobileReceive = () => {
     return { totalExpected, totalAccepted, totalRejected, totalReceived, notReceived, forInspection, totalProducts: deliveryData.products.length };
   };
 
-  // Function to find product in inventory using NEW NESTED STRUCTURE
+  // Function to find variant in inventory using NEW FLAT VARIANTS COLLECTION
   const findProductInInventory = async (productId, productName, variantId = null) => {
     try {
+      console.log('🔍 Searching for variant:', { productId, productName, variantId });
       
-      // Get all storage units (top-level documents in Products collection)
-      const productsCollection = collection(db, 'Products');
-      const storageSnapshot = await getDocs(productsCollection);
-      
-      // If we have a variantId, try to find the variant directly first
+      // Strategy 1: If we have a variantId, try direct lookup first (most efficient)
       if (variantId) {
-        for (const storageDoc of storageSnapshot.docs) {
-          const storageLocation = storageDoc.id;
-          
-          // Access the products subcollection for this storage unit
-          const productsRef = collection(db, 'Products', storageLocation, 'products');
-          
-          // Try to find by exact variant ID
-          const variantRef = doc(db, 'Products', storageLocation, 'products', variantId);
-          const variantDoc = await getDoc(variantRef);
-          
-          if (variantDoc.exists()) {
-            const variantData = variantDoc.data();
-            
-            return {
-              ref: variantRef,
-              data: variantData,
-              location: {
-                storageLocation,
-                shelfName: variantData.shelfName,
-                rowName: variantData.rowName,
-                columnIndex: variantData.columnIndex
-              }
-            };
-          }
+        const variant = await getVariantById(variantId);
+        if (variant) {
+          console.log('✅ Found variant by ID:', variantId);
+          return {
+            id: variant.id,
+            data: variant,
+            isVariant: true
+          };
         }
       }
       
-      // Search through each storage unit's products subcollection
-      for (const storageDoc of storageSnapshot.docs) {
-        const storageLocation = storageDoc.id;
-        
-        // Access the products subcollection for this storage unit
-        const productsRef = collection(db, 'Products', storageLocation, 'products');
-        
-        // Try to find by exact product ID
-        const productRef = doc(db, 'Products', storageLocation, 'products', productId);
-        const productDoc = await getDoc(productRef);
-        
-        if (productDoc.exists()) {
-          const productData = productDoc.data();
-          
+      // Strategy 2: Try treating productId as a variant ID directly
+      if (productId) {
+        const variant = await getVariantById(productId);
+        if (variant) {
+          console.log('✅ Found variant by treating productId as variantId:', productId);
           return {
-            ref: productRef,
-            data: productData,
-            location: {
-              storageLocation,
-              shelfName: productData.shelfName,
-              rowName: productData.rowName,
-              columnIndex: productData.columnIndex
-            }
+            id: variant.id,
+            data: variant,
+            isVariant: true
           };
         }
+      }
+      
+      // Strategy 3: Search by parentProductId (if productId is actually a product ID)
+      // This handles cases where the PO references the parent product
+      // Note: This query only uses a simple where clause to avoid index requirements
+      if (productId) {
+        try {
+          const variantsCollection = collection(db, 'Variants');
+          const productQuery = query(
+            variantsCollection, 
+            where('parentProductId', '==', productId)
+          );
+          const productSnapshot = await getDocs(productQuery);
+          
+          if (!productSnapshot.empty) {
+            // If multiple variants exist, try to match by name
+            if (productName && productSnapshot.docs.length > 1) {
+              const matchingVariant = productSnapshot.docs.find(doc => {
+                const data = doc.data();
+                return data.variantName === productName || 
+                       data.productName === productName ||
+                       `${data.productName} - ${data.variantName}` === productName;
+              });
+              
+              if (matchingVariant) {
+                const variantData = matchingVariant.data();
+                console.log('✅ Found variant by parentProductId and name match:', matchingVariant.id);
+                return {
+                  id: matchingVariant.id,
+                  data: { id: matchingVariant.id, ...variantData },
+                  isVariant: true
+                };
+              }
+            }
+            
+            // Return first variant if no name match
+            const firstVariant = productSnapshot.docs[0];
+            const variantData = firstVariant.data();
+            console.log('✅ Found variant by parentProductId (first match):', firstVariant.id);
+            return {
+              id: firstVariant.id,
+              data: { id: firstVariant.id, ...variantData },
+              isVariant: true
+            };
+          }
+        } catch (indexError) {
+          console.warn('⚠️ Index not available for parentProductId query, skipping this strategy:', indexError.message);
+          // Continue to next strategy
+        }
+      }
+      
+      // Strategy 4: Search by product name using searchVariants
+      if (productName && productName.trim() !== '') {
+        console.log('🔍 Searching variants by name:', productName);
+        const searchResults = await searchVariants(productName.trim());
         
-        // If not found by ID, try querying by name in this storage unit
-        // First prioritize variants over base products
-        if (productName && productName.trim() !== '') {
-          const variantNameQuery = query(productsRef, where('name', '==', productName), where('isVariant', '==', true));
-          const variantNameSnapshot = await getDocs(variantNameQuery);
-          
-          if (!variantNameSnapshot.empty) {
-            const firstVariantDoc = variantNameSnapshot.docs[0];
-            const variantData = firstVariantDoc.data();
-            
-            return {
-              ref: firstVariantDoc.ref,
-              data: variantData,
-              location: {
-                storageLocation,
-                shelfName: variantData.shelfName,
-                rowName: variantData.rowName,
-                columnIndex: variantData.columnIndex
-              }
-            };
-          }
-          
-          // If no variants found, try base products
-          const baseNameQuery = query(productsRef, where('name', '==', productName), where('isVariant', '==', false));
-          const baseNameSnapshot = await getDocs(baseNameQuery);
-          
-          // If we found both variants and base products, prefer variants (they're more specific)
-          if (!variantNameSnapshot.empty && !baseNameSnapshot.empty) {
-            const firstVariantDoc = variantNameSnapshot.docs[0];
-            const variantData = firstVariantDoc.data();
-            
-            return {
-              ref: firstVariantDoc.ref,
-              data: variantData,
-              location: {
-                storageLocation,
-                shelfName: variantData.shelfName,
-                rowName: variantData.rowName,
-                columnIndex: variantData.columnIndex
-              }
-            };
-          }
-          
-          if (!baseNameSnapshot.empty) {
-            const firstBaseDoc = baseNameSnapshot.docs[0];
-            const baseData = firstBaseDoc.data();
-            
-            return {
-              ref: firstBaseDoc.ref,
-              data: baseData,
-              location: {
-                storageLocation,
-                shelfName: baseData.shelfName,
-                rowName: baseData.rowName,
-                columnIndex: baseData.columnIndex
-              }
-            };
-          }
+        if (searchResults && searchResults.length > 0) {
+          const firstMatch = searchResults[0];
+          console.log('✅ Found variant by name search:', firstMatch.id);
+          return {
+            id: firstMatch.id,
+            data: firstMatch,
+            isVariant: true
+          };
         }
       }
 
+      console.warn('⚠️ No variant found for:', { productId, productName, variantId });
       return null;
       
     } catch (error) {
-      console.error(`Error searching for product ${productName}:`, error);
+      console.error(`❌ Error searching for variant ${productName}:`, error);
       throw error;
     }
   };
 
-  // Function to update inventory quantities by adding received items
+  // Function to update inventory quantities by adding received items using NEW VARIANTS COLLECTION
   const updateInventoryQuantities = async (receivedProducts) => {
     try {
+      console.log('📦 Starting inventory update for', receivedProducts.length, 'products');
 
       for (const product of receivedProducts) {
         if (!product.receivedQuantity || product.receivedQuantity <= 0) {
+          console.log('⏭️ Skipping product with no received quantity:', product.productName);
           continue;
         }
 
+        console.log('🔄 Processing:', product.productName, 'Qty:', product.receivedQuantity);
 
-        // Find the product in inventory
-        const productInfo = await findProductInInventory(product.productId, product.productName || 'Unknown Product', product.variantId);
+        // Find the variant in the new Variants collection
+        const variantInfo = await findProductInInventory(
+          product.productId, 
+          product.productName || 'Unknown Product', 
+          product.variantId
+        );
 
-        if (!productInfo) {
-          throw new Error(`Product "${product.productName}" (ID: ${product.productId}, Variant ID: ${product.variantId || 'N/A'}) not found in inventory. Cannot update stock levels.`);
+        if (!variantInfo) {
+          throw new Error(
+            `Variant "${product.productName}" (ID: ${product.productId}, Variant ID: ${product.variantId || 'N/A'}) not found in inventory. Cannot update stock levels.`
+          );
         }
 
+        console.log('✅ Found variant:', variantInfo.id);
 
-        // Update the product using a transaction
-        await runTransaction(db, async (transaction) => {
-          // Re-fetch the latest product data in the transaction
-          const currentProductDoc = await transaction.get(productInfo.ref);
+        // Get current variant data
+        const currentVariant = variantInfo.data;
+        const currentQty = Number(currentVariant.quantity) || 0;
+        const receivedQty = Number(product.receivedQuantity);
+        const newQty = currentQty + receivedQty;
 
-          if (!currentProductDoc.exists()) {
-            throw new Error(`Product "${product.productName}" was deleted during update process.`);
+        console.log(`📊 Updating stock: ${currentQty} + ${receivedQty} = ${newQty}`);
+
+        // Update the variant using VariantServices
+        await updateVariantStock(
+          variantInfo.id, 
+          newQty, 
+          'Receiving - Purchase Order',
+          {
+            poNumber: deliveryData.poNumber,
+            drNumber: deliveryData.drNumber,
+            invoiceNumber: deliveryData.invoiceNumber,
+            supplierName: deliveryData.supplierName,
+            receivedBy: deliveryData.receivedBy || currentUser?.email || 'System',
+            deliveryDate: deliveryData.deliveryDate,
+            previousQuantity: currentQty,
+            receivedQuantity: receivedQty,
+            timestamp: new Date().toISOString()
           }
+        );
 
-          const productData = currentProductDoc.data();
-
-          // Check if this is a variant document (separate document) or base product with nested variants
-          const isVariantDocument = productData.isVariant === true;
-
-          if (isVariantDocument) {
-            // VARIANT DOCUMENT: Update the variant document directly
-
-            const currentQty = Number(productData.quantity) || 0;
-            const receivedQty = Number(product.receivedQuantity);
-            const newQty = currentQty + receivedQty;
-
-
-            // Update variant document quantity
-            transaction.update(productInfo.ref, {
-              quantity: newQty,
-              lastReceived: serverTimestamp(),
-              totalReceived: (productData.totalReceived || 0) + receivedQty,
-              lastUpdated: serverTimestamp()
-            });
-
-          } else {
-            // BASE PRODUCT: Check if this product has nested variants (legacy structure)
-            const hasVariants = productData.variants && Array.isArray(productData.variants) && productData.variants.length > 0;
-
-            if (hasVariants && product.variantId) {
-              // LEGACY: Product has nested variants - update the specific variant's quantity
-
-              const variants = [...productData.variants];
-              const variantIndex = variants.findIndex(v =>
-                v.variantId === product.variantId ||
-                (v.size && product.variantName && v.size === product.variantName) ||
-                (v.name && product.variantName && v.name === product.variantName)
-              );
-
-              if (variantIndex === -1) {
-                throw new Error(`Variant ${product.variantName || product.variantId} not found in product ${product.productName}`);
-              }
-
-              const variant = variants[variantIndex];
-              const currentQty = Number(variant.quantity) || 0;
-              const receivedQty = Number(product.receivedQuantity);
-              const newQty = currentQty + receivedQty;
-
-
-              // Update the variant quantity
-              variants[variantIndex] = {
-                ...variant,
-                quantity: newQty,
-                lastReceived: serverTimestamp(),
-                totalReceived: (variant.totalReceived || 0) + receivedQty,
-                lastUpdated: serverTimestamp()
-              };
-
-              // Update the product document with modified variants
-              transaction.update(productInfo.ref, {
-                variants: variants,
-                lastUpdated: serverTimestamp()
-              });
-
-            } else {
-              // BASE PRODUCT: Non-variant product - update base product quantity
-
-              const currentQty = Number(productData.quantity) || 0;
-              const receivedQty = Number(product.receivedQuantity);
-              const newQty = currentQty + receivedQty;
-
-
-              // Update product quantity
-              transaction.update(productInfo.ref, {
-                quantity: newQty,
-                lastReceived: serverTimestamp(),
-                totalReceived: (productData.totalReceived || 0) + receivedQty,
-                lastUpdated: serverTimestamp()
-              });
-
-            }
+        // Update the parent product's aggregate statistics (optional - gracefully handle if product doesn't exist)
+        if (currentVariant.parentProductId) {
+          try {
+            await updateProductAggregateStats(currentVariant.parentProductId);
+            console.log('✅ Updated aggregate stats for parent product:', currentVariant.parentProductId);
+          } catch (aggregateError) {
+            // Non-critical error - variant was updated successfully, but parent product stats couldn't be updated
+            console.warn('⚠️ Could not update parent product aggregate stats (product may not exist):', aggregateError.message);
+            // Continue processing - this is not a fatal error
           }
-        });
+        }
+
+        console.log('✅ Successfully updated variant:', variantInfo.id);
       }
 
+      console.log('✅ All inventory updates completed successfully');
 
     } catch (error) {
       console.error('❌ Error in inventory update:', error);
@@ -1495,9 +1452,6 @@ const MobileReceive = () => {
                 onChange={(e) => handlePhotoUpload(currentProductIndex, e)}
                 className="hidden"
               />
-              {errors.photo && (
-                <p className="text-red-600 text-sm mt-2 font-medium">📷 {errors.photo}</p>
-              )}
             </div>
 
             {/* Quantity Inputs */}
@@ -1570,12 +1524,6 @@ const MobileReceive = () => {
                   )}
                 </div>
               )}
-
-              {errors.quantity && (
-                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm font-medium text-red-700">{errors.quantity}</p>
-                </div>
-              )}
             </div>
 
             {/* Rejection Reason - Shows when rejected > 0 */}
@@ -1603,9 +1551,6 @@ const MobileReceive = () => {
                       <option value="Quality Failed">Quality Check Failed</option>
                       <option value="Other">Other</option>
                     </select>
-                    {errors.rejectionReason && (
-                      <p className="text-red-600 text-sm mt-2">{errors.rejectionReason}</p>
-                    )}
                   </div>
 
                   <div>
@@ -1783,7 +1728,69 @@ const MobileReceive = () => {
               </div>
             </div>
 
-            {/* Delivery Info Summary */}
+         
+
+            {/* Product List Summary */}
+            <div className="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+              <h3 className="font-semibold text-gray-900 mb-4">Product Summary</h3>
+              <div className="space-y-3">
+                {deliveryData.products.map((product, index) => (
+                  <div key={product.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3 mb-3">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-gray-900 truncate">{product.name}</h4>
+                          <p className="text-sm text-gray-500 truncate" title={product.sku}>
+                            SKU: {product.sku.length > 32 ? product.sku.slice(0, 32) + '...' : product.sku}
+                          </p>
+                      </div>
+                      {product.photoPreview && (
+                        <div className="flex-shrink-0">
+                          <img 
+                            src={product.photoPreview} 
+                            alt={product.name}
+                            className="w-16 h-16 object-cover rounded border border-gray-200"
+                          />
+                        </div>  
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-3 text-sm mb-3">
+                      <div>
+                        <p className="text-gray-600 text-xs mb-1">Expected</p>
+                        <p className="font-semibold text-gray-900">{product.expectedQty} {product.unit}</p>
+                      </div>
+                      <div>
+                        <p className="text-green-600 text-xs mb-1">Accepted</p>
+                        <p className="font-semibold text-green-700">{product.acceptedQty} {product.unit}</p>
+                      </div>
+                      <div>
+                        <p className="text-red-600 text-xs mb-1">Rejected</p>
+                        <p className="font-semibold text-red-700">{product.rejectedQty} {product.unit}</p>
+                      </div>
+                    </div>
+
+                    {product.status === 'not_received' && (
+                      <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700 break-words">
+                        <span className="font-medium">Not Received:</span> {product.rejectionReason}
+                      </div>
+                    )}
+
+                    {product.rejectedQty > 0 && product.rejectionReason && product.status !== 'not_received' && (
+                      <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-700 break-words">
+                        <span className="font-medium">Rejection Reason:</span> {product.rejectionReason}
+                      </div>
+                    )}
+
+                    {product.notes && (
+                      <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700 break-words">
+                        <span className="font-medium">Notes:</span> {product.notes}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+               {/* Delivery Info Summary */}
             <div className="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
               <h3 className="font-semibold text-gray-900 mb-4">Delivery Details</h3>
               <div className="space-y-3 text-sm">
@@ -1811,63 +1818,6 @@ const MobileReceive = () => {
                   <span className="text-gray-600">Received By:</span>
                   <span className="font-medium text-gray-900">{deliveryData.receivedBy || '—'}</span>
                 </div>
-              </div>
-            </div>
-
-            {/* Product List Summary */}
-            <div className="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
-              <h3 className="font-semibold text-gray-900 mb-4">Product Summary</h3>
-              <div className="space-y-3">
-                {deliveryData.products.map((product, index) => (
-                  <div key={product.id} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-gray-900">{product.name}</h4>
-                        <p className="text-sm text-gray-500">SKU: {product.sku}</p>
-                      </div>
-                      {product.photoPreview && (
-                        <img 
-                          src={product.photoPreview} 
-                          alt={product.name}
-                          className="w-16 h-16 object-cover rounded ml-3"
-                        />
-                      )}
-                    </div>
-                    
-                    <div className="grid grid-cols-3 gap-3 text-sm">
-                      <div>
-                        <p className="text-gray-600 text-xs">Expected</p>
-                        <p className="font-semibold text-gray-900">{product.expectedQty}</p>
-                      </div>
-                      <div>
-                        <p className="text-green-600 text-xs">Accepted</p>
-                        <p className="font-semibold text-green-700">{product.acceptedQty}</p>
-                      </div>
-                      <div>
-                        <p className="text-red-600 text-xs">Rejected</p>
-                        <p className="font-semibold text-red-700">{product.rejectedQty}</p>
-                      </div>
-                    </div>
-
-                    {product.status === 'not_received' && (
-                      <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
-                        <span className="font-medium">Not Received:</span> {product.rejectionReason}
-                      </div>
-                    )}
-
-                    {product.rejectedQty > 0 && product.rejectionReason && (
-                      <div className="mt-3 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-700">
-                        <span className="font-medium">Reason:</span> {product.rejectionReason}
-                      </div>
-                    )}
-
-                    {product.notes && (
-                      <div className="mt-3 p-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700">
-                        <span className="font-medium">Notes:</span> {product.notes}
-                      </div>
-                    )}
-                  </div>
-                ))}
               </div>
             </div>
           </div>
@@ -1986,6 +1936,16 @@ const MobileReceive = () => {
         )}
       </div>
     </div>
+
+    {/* Error Modal */}
+    <ErrorModal
+      isOpen={errorModal.isOpen}
+      onClose={() => setErrorModal({ ...errorModal, isOpen: false })}
+      title={errorModal.title}
+      message={errorModal.message}
+      type={errorModal.type}
+      details={errorModal.details}
+    />
     </>
   );
 };

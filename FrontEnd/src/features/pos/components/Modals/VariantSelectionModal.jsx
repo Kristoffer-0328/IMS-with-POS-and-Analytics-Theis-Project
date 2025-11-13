@@ -25,20 +25,20 @@ const formatDimensions = (variant) => {
         if (!hasLength && !hasThickness) return null;
         
         if (hasLength && hasThickness && !hasWidth) {
-          return `${variant.length}m × ⌀${variant.thickness}mm pcs`;
+          return `${variant.length}m × ⌀${variant.thickness}mm`;
         } else if (hasLength && hasWidth && hasThickness) {
-          return `${variant.length}m × ${variant.width}cm × ${variant.thickness}pcs`;
+          return `${variant.length}m × ${variant.width}cm × ${variant.thickness}mm`;
         } else if (hasThickness) {
           return `${variant.thickness}mm thick`;
         } else if (hasLength) {
-          return `${variant.length}pcs`;
+          return `${variant.length}m`;
         }
       }
       return null;
       
     case 'weight':
       if (variant.unitWeightKg && parseFloat(variant.unitWeightKg) > 0) {
-        return `${variant.unitWeightKg}pcs`;
+        return `${variant.unitWeightKg}kg`;
       }
       return null;
       
@@ -184,7 +184,7 @@ export default function VariantSelectionModal({
       if (inputMode === 'bundle') {
         return activeVariant.bundlePackagingType || 'bundle';
       } else {
-        return  'pcs';
+        return activeVariant.baseUnit || 'pcs';
       }
     }
     // For non-bundle dimensional products, use the base unit (pcs, not meters)
@@ -246,11 +246,41 @@ export default function VariantSelectionModal({
             {/* For single variant, show variant info here prominently */}
             {product.variants.length === 1 && (
               <div className="mt-3 space-y-2">
-                {/* Variant Name */}
+                {/* Variant Name with Sale Badge */}
                 {activeVariant?.variantName && (
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-gray-600">Variant:</span>
                     <span className="text-sm font-semibold text-gray-900">{activeVariant.variantName}</span>
+                    {activeVariant.onSale && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-red-500 text-white">
+                        🏷️ {activeVariant.discountPercentage}% OFF
+                      </span>
+                    )}
+                  </div>
+                )}
+                
+                {/* Sale Price Display */}
+                {activeVariant?.onSale && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-red-600 font-medium mb-1">Sale Price</p>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-lg font-bold text-red-600">
+                            ₱{formatCurrency(activeVariant.salePrice)}
+                          </span>
+                          <span className="text-sm text-gray-500 line-through">
+                            ₱{formatCurrency(activeVariant.originalPrice || activeVariant.unitPrice)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-600">You Save</p>
+                        <p className="text-sm font-bold text-green-600">
+                          ₱{formatCurrency((activeVariant.originalPrice || activeVariant.unitPrice) - activeVariant.salePrice)}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 )}
                 
@@ -292,9 +322,16 @@ export default function VariantSelectionModal({
                   <div className="text-center w-full">
                     {/* Variant Name - Always show prominently */}
                     {variant.variantName && (
-                      <p className="text-sm font-semibold text-gray-900 mb-1.5">
-                        {variant.variantName}
-                      </p>
+                      <div className="flex items-center justify-center gap-1.5 mb-1.5">
+                        <p className="text-sm font-semibold text-gray-900">
+                          {variant.variantName}
+                        </p>
+                        {variant.onSale && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-red-500 text-white">
+                            {variant.discountPercentage}% OFF
+                          </span>
+                        )}
+                      </div>
                     )}
                     
                     {/* Bundle Badge */}
@@ -324,14 +361,45 @@ export default function VariantSelectionModal({
                     <p className="text-sm font-medium text-orange-600 mt-1">
                       {isBundle ? (
                         <>
-                          ₱{formatCurrency(variant.unitPrice || variant.price || 0)} / {variant.bundlePackagingType || 'bundle'}
-                          <span className="block text-xs text-gray-500 mt-0.5">
-                            (₱{formatCurrency((variant.unitPrice || variant.price || 0) / variant.piecesPerBundle)} / {variant.baseUnit || 'pc'})
-                          </span>
+                          {variant.onSale ? (
+                            <div className="space-y-0.5">
+                              <div className="flex items-center justify-center gap-2">
+                                <span className="line-through text-gray-400 text-xs">
+                                  ₱{formatCurrency(variant.originalPrice || variant.unitPrice || variant.price || 0)}
+                                </span>
+                                <span className="text-red-600 font-bold">
+                                  ₱{formatCurrency(variant.salePrice)} / {variant.bundlePackagingType || 'bundle'}
+                                </span>
+                              </div>
+                              <span className="block text-xs text-gray-500">
+                                (₱{formatCurrency(variant.salePrice / variant.piecesPerBundle)} / {variant.baseUnit || 'pc'})
+                              </span>
+                            </div>
+                          ) : (
+                            <>
+                              ₱{formatCurrency(variant.unitPrice || variant.price || 0)} / {variant.bundlePackagingType || 'bundle'}
+                              <span className="block text-xs text-gray-500 mt-0.5">
+                                (₱{formatCurrency((variant.unitPrice || variant.price || 0) / variant.piecesPerBundle)} / {variant.baseUnit || 'pc'})
+                              </span>
+                            </>
+                          )}
                         </>
                       ) : (
                         <>
-                          ₱{formatCurrency(variant.unitPrice || variant.price || 0)} / {variant.baseUnit || variant.unit || 'pc'}
+                          {variant.onSale ? (
+                            <div className="flex items-center justify-center gap-2">
+                              <span className="line-through text-gray-400 text-xs">
+                                ₱{formatCurrency(variant.originalPrice || variant.unitPrice || variant.price || 0)}
+                              </span>
+                              <span className="text-red-600 font-bold">
+                                ₱{formatCurrency(variant.salePrice)} / {variant.baseUnit || variant.unit || 'pc'}
+                              </span>
+                            </div>
+                          ) : (
+                            <>
+                              ₱{formatCurrency(variant.unitPrice || variant.price || 0)} / {variant.baseUnit || variant.unit || 'pc'}
+                            </>
+                          )}
                         </>
                       )}
                     </p>
