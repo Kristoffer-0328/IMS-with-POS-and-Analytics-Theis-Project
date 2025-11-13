@@ -1,13 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { FiPlus, FiEdit2, FiTrash2, FiPackage, FiGrid, FiList, FiBell, FiCalendar, FiUsers, FiShoppingBag, FiUpload } from 'react-icons/fi';
-import DashboardHeader from '../components/Dashboard/DashboardHeader';
+import { FiPlus, FiEdit2, FiTrash2, FiPackage, FiGrid, FiList } from 'react-icons/fi';
 import { useSupplierServices } from '../../../services/firebase/SupplierServices';
 import EditSupplierModal from '../components/Supplier/EditSupplierModal';
 import SupplierProducts from '../components/Supplier/SupplierProducts';
-import BulkProductImport from '../components/BulkProductImport';
-
-// Import Purchase Orders component
-import PurchaseOrders from './PurchaseOrders';
 
 const SupplierManagement = () => {
   const supplierServices = useSupplierServices();
@@ -15,12 +10,8 @@ const SupplierManagement = () => {
   const [loading, setLoading] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showProductsModal, setShowProductsModal] = useState(false);
-  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [viewMode, setViewMode] = useState('card'); // 'table' or 'card'
-  
-  // New state for tabs
-  const [activeTab, setActiveTab] = useState('suppliers'); // 'suppliers' or 'purchase-orders'
 
   useEffect(() => {
     loadSuppliers();
@@ -196,114 +187,61 @@ const SupplierManagement = () => {
   );
 
   return (
-    <div >
-
+    <div>
      
-        {/* Tab Navigation */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
-          <div className="flex border-b border-gray-200">
-            <button
-              onClick={() => setActiveTab('suppliers')}
-              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors border-b-2 ${
-                activeTab === 'suppliers'
-                  ? 'border-orange-500 text-orange-600 bg-orange-50'
-                  : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <FiUsers size={20} />
-              <span>Suppliers</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('purchase-orders')}
-              className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors border-b-2 ${
-                activeTab === 'purchase-orders'
-                  ? 'border-orange-500 text-orange-600 bg-orange-50'
-                  : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <FiShoppingBag size={20} />
-              <span>Purchase Orders</span>
-            </button>
-          </div>
+
+      {/* Action Bar */}
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center space-x-4">
+          <button
+            onClick={() => setShowEditModal(true)}
+            className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+          >
+            <FiPlus size={20} />
+            <span>Add New Supplier</span>
+          </button>
         </div>
+        <button
+          onClick={toggleViewMode}
+          className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white rounded-lg hover:bg-gray-50 border"
+        >
+          {viewMode === 'table' ? (
+            <>
+              <FiGrid size={20} />
+              <span>Card View</span>
+            </>
+          ) : (
+            <>
+              <FiList size={20} />
+              <span>Table View</span>
+            </>
+          )}
+        </button>
+      </div>
 
-        {/* Tab Content */}
-        {activeTab === 'suppliers' && (
-          <>
-            <div className="flex justify-between items-center mb-6">
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={() => setShowEditModal(true)}
-                  className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-                >
-                  <FiPlus size={20} />
-                  <span>Add New Supplier</span>
-                </button>
-                <button
-                  onClick={() => setShowBulkImportModal(true)}
-                  className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-                >
-                  <FiUpload size={20} />
-                  <span>Bulk Import Products</span>
-                </button>
-              </div>
-              <button
-                onClick={toggleViewMode}
-                className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white rounded-lg hover:bg-gray-50 border"
-              >
-                {viewMode === 'table' ? (
-                  <>
-                    <FiGrid size={20} />
-                    <span>Card View</span>
-                  </>
-                ) : (
-                  <>
-                    <FiList size={20} />
-                    <span>Table View</span>
-                  </>
-                )}
-              </button>
-            </div>
+      {/* Supplier List */}
+      {loading ? (
+        <div className="text-center py-4">Loading suppliers...</div>
+      ) : suppliers.length === 0 ? (
+        <div className="text-center py-4 text-gray-500">No suppliers found</div>
+      ) : (
+        viewMode === 'table' ? renderTableView() : renderCardView()
+      )}
 
-            {loading ? (
-              <div className="text-center py-4">Loading suppliers...</div>
-            ) : suppliers.length === 0 ? (
-              <div className="text-center py-4 text-gray-500">No suppliers found</div>
-            ) : (
-              viewMode === 'table' ? renderTableView() : renderCardView()
-            )}
-          </>
-        )}
+      {/* Modals */}
+      {showEditModal && (
+        <EditSupplierModal
+          supplier={selectedSupplier}
+          onClose={handleModalClose}
+        />
+      )}
 
-        {/* Purchase Orders Tab Content */}
-        {activeTab === 'purchase-orders' && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            <PurchaseOrders />
-          </div>
-        )}
-
-        {showEditModal && (
-          <EditSupplierModal
-            supplier={selectedSupplier}
-            onClose={handleModalClose}
-          />
-        )}
-
-        {showProductsModal && (
-          <SupplierProducts
-            supplier={selectedSupplier}
-            onClose={handleModalClose}
-          />
-        )}
-
-        {showBulkImportModal && (
-          <BulkProductImport
-            isOpen={showBulkImportModal}
-            onClose={() => setShowBulkImportModal(false)}
-            suppliers={suppliers}
-          />
-        )}
-   
+      {showProductsModal && (
+        <SupplierProducts
+          supplier={selectedSupplier}
+          onClose={handleModalClose}
+        />
+      )}
     </div>
   );
 };

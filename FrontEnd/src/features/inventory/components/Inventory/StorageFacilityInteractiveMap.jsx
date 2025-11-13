@@ -18,16 +18,28 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
   // Transform storage units into a lookup object for modal display
   const shelfLayouts = useMemo(() => {
     return storageUnits.reduce((acc, unit) => {
-      // Map unit-01 to unit1, unit-02 to unit2, etc. (remove hyphen and leading zero)
-      const unitNumber = unit.id.split('-')[1]; // Gets "01", "02", etc.
-      const unitKey = 'unit' + parseInt(unitNumber); // Converts to "unit1", "unit2", etc.
+      // Handle special cases like "unit-03-yard"
+      let unitKey;
+      
+      if (unit.id === 'unit-03-yard') {
+        unitKey = 'unit3-yard';
+      } else {
+        // Map unit-01 to unit1, unit-02 to unit2, etc. (remove hyphen and leading zero)
+        const unitNumber = unit.id.split('-')[1]; // Gets "01", "02", etc.
+        unitKey = 'unit' + parseInt(unitNumber); // Converts to "unit1", "unit2", etc.
+      }
       
       // Extract name from title (e.g., "Unit 01 - Steel & Heavy Materials" -> "Steel & Heavy Materials")
       // If no title, use type as fallback
       const unitName = unit.title ? unit.title.split(' - ')[1] : (unit.name || unit.type || 'Unknown Unit');
       
+      // Determine display title
+      const displayTitle = unit.id === 'unit-03-yard' 
+        ? 'Unit 03 Yard - Bulk Cement Storage'
+        : `Unit ${unit.id.split('-')[1]} - ${unitName}`;
+      
       acc[unitKey] = {
-        title: `Unit ${unitNumber} - ${unitName}`,
+        title: displayTitle,
         type: unit.type,
         shelves: unit.shelves,
         info: {
@@ -79,58 +91,60 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
         unitTotalSlots[displayName] = unit.capacity;
       });
 
-      // Fetch products from nested structure: Products/{storageUnit}/products/{productId}
-      const productsRef = collection(db, 'Products');
-      const storageUnitsSnapshot = await getDocs(productsRef);
+      // NEW FLAT STRUCTURE: Fetch variants from Variants collection
+      const variantsRef = collection(db, 'Variants');
+      const variantsSnapshot = await getDocs(variantsRef);
       
-      // Count products per unit (group base products + variants)
+      console.log('🔍 Fetching unit capacities from Variants collection');
+      
+      // Count unique products per unit
+      // A variant can have multiple locations (locations array)
       const unitProductCounts = {};
-      const processedParentIds = new Set(); // Track base products we've already counted
       
-      // Iterate through each storage unit
-      for (const storageUnitDoc of storageUnitsSnapshot.docs) {
-        const unitId = storageUnitDoc.id;
+      variantsSnapshot.docs.forEach(doc => {
+        const variant = doc.data();
+        const productId = variant.parentProductId;
         
-        // Skip non-storage unit documents
-        if (!unitId.startsWith('Unit ')) {
-          continue;
-        }
+        // Skip if no parent product ID
+        if (!productId) return;
         
-        // Fetch products subcollection for this storage unit
-        const productsSubcollectionRef = collection(db, 'Products', unitId, 'products');
-        const productsSnapshot = await getDocs(productsSubcollectionRef);
-        
-        // Initialize counter for this unit
-        if (!unitProductCounts[unitId]) {
-          unitProductCounts[unitId] = 0;
-        }
-        
-        productsSnapshot.docs.forEach(doc => {
-          const product = doc.data();
+        // Check if variant has locations array (multi-location support)
+        if (variant.locations && Array.isArray(variant.locations)) {
+          // Process each location in the array
+          variant.locations.forEach(location => {
+            const storageLocation = location.unit || location.storageLocation;
+            
+            if (storageLocation) {
+              // Initialize set for this unit if needed
+              if (!unitProductCounts[storageLocation]) {
+                unitProductCounts[storageLocation] = new Set();
+              }
+              
+              // Add product ID to the set (automatically handles uniqueness)
+              unitProductCounts[storageLocation].add(productId);
+            }
+          });
+        } 
+        // Fallback: Check legacy single location field
+        else if (variant.storageLocation) {
+          const storageLocation = variant.storageLocation;
           
-          // If it's a variant, only count if we haven't counted its parent
-          if (product.isVariant && product.parentProductId) {
-            const parentKey = `${unitId}_${product.parentProductId}`;
-            if (!processedParentIds.has(parentKey)) {
-              processedParentIds.add(parentKey);
-              unitProductCounts[unitId]++;
-            }
-          } else if (!product.isVariant) {
-            // It's a base product, count it once
-            const productKey = `${unitId}_${doc.id}`;
-            if (!processedParentIds.has(productKey)) {
-              processedParentIds.add(productKey);
-              unitProductCounts[unitId]++;
-            }
+          // Initialize set for this unit if needed
+          if (!unitProductCounts[storageLocation]) {
+            unitProductCounts[storageLocation] = new Set();
           }
-        });
-      }
+          
+          // Add product ID to the set
+          unitProductCounts[storageLocation].add(productId);
+        }
+      });
       
       // Calculate capacities for each unit
       for (const unitName in unitTotalSlots) {
-        const productCount = unitProductCounts[unitName] || 0;
+        const productSet = unitProductCounts[unitName];
+        const productCount = productSet ? productSet.size : 0;
         const totalSlots = unitTotalSlots[unitName];
-        const occupancyRate = productCount / totalSlots;
+        const occupancyRate = totalSlots > 0 ? productCount / totalSlots : 0;
         
         capacities[unitName] = {
           productCount,
@@ -138,6 +152,8 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           occupancyRate,
           status: getCapacityStatus(occupancyRate)
         };
+        
+        console.log(`📦 ${unitName}: ${productCount} unique products (${(occupancyRate * 100).toFixed(1)}% capacity)`);
         
       }
       
@@ -402,7 +418,7 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           <div 
             className="bg-white border-2 border-slate-800 p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm border-red-500 bg-red-50 row-start-3 col-start-3"
             onClick={() => !editMode && openShelfView('unit3')}
-            title={`Unit 03 - Cement & Aggregates`}
+            title={`Unit 03 - Cement & Aggregates (Pallet Storage)`}
           >
             {editMode && (
               <div className="absolute top-1 right-1 flex gap-1 z-20">
@@ -431,7 +447,36 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
             )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 03')}`}></div>
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 03</div>
-            <div className="text-sm text-gray-600 font-medium">Cement & Aggregates</div>
+            <div className="text-sm text-gray-600 font-medium">Bagged Cement (Pallets)</div>
+          </div>
+          
+          {/* Unit 03 Yard - Bulk Storage Area for Cement in m³ */}
+          <div 
+            className="bg-amber-100 border-2 border-amber-600 p-4 cursor-pointer hover:bg-amber-200 hover:border-amber-700 transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[80px] text-sm row-start-2 col-start-3"
+            onClick={() => !editMode && openShelfView('unit3-yard')}
+            title={`Unit 03 - Yard (Bulk Cement Storage)`}
+          >
+            {editMode && (
+              <div className="absolute top-1 right-1 flex gap-1 z-20">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleAddShelf('unit-03-yard'); }}
+                  className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Add Zone"
+                >
+                  +
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEditUnit('unit-03-yard'); }}
+                  className="w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs"
+                  title="Edit Yard"
+                >
+                  Edit
+                </button>
+              </div>
+            )}
+            <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 03 Yard')}`}></div>
+            <div className="text-lg font-bold mb-1 text-amber-800">Unit 03 Yard</div>
+            <div className="text-xs text-amber-700 font-medium">Bulk Cement (m³)</div>
           </div>
           
           <div 

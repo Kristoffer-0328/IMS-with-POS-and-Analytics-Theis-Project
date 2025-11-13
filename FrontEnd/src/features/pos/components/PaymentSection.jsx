@@ -18,6 +18,10 @@ const PaymentSection = ({
   setAmountPaid,
   paymentReference,
   setPaymentReference,
+  discount,
+  setDiscount,
+  discountType,
+  setDiscountType,
   total,
   formattedTotal,
   formattedChange,
@@ -35,6 +39,11 @@ const PaymentSection = ({
   const handleReferenceChange = (e) => {
     const value = e.target.value.toUpperCase();
     setPaymentReference(value);
+  };
+
+  const handleDiscountChange = (e) => {
+    const value = e.target.value.replace(/[^0-9.]/g, '');
+    setDiscount(value);
   };
 
   const change = Number(amountPaid) - total;
@@ -104,7 +113,7 @@ const PaymentSection = ({
           <h3 className="text-sm font-semibold text-gray-700">Transaction Reference</h3>
           <input
             type="text"
-            value={paymentReference}
+            value={paymentReference || ''}
             onChange={handleReferenceChange}
             disabled={isProcessing}
             placeholder="Transaction Reference # "
@@ -116,6 +125,33 @@ const PaymentSection = ({
         </div>
       )}
 
+      {/* Discount */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold text-gray-700">Discount</h3>
+        <div className="flex gap-2">
+          <div className="flex-1 relative">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">
+              {discountType === 'percentage' ? '%' : '₱'}
+            </span>
+            <input
+              type="text"
+              value={discount || ''}
+              onChange={handleDiscountChange}
+              disabled={isProcessing}
+              placeholder="0.00"
+              className="w-full pl-8 pr-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+            />
+          </div>
+          <button
+            onClick={() => setDiscountType(discountType === 'percentage' ? 'fixed' : 'percentage')}
+            disabled={isProcessing}
+            className="px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed text-sm font-medium"
+          >
+            {discountType === 'percentage' ? '%' : '₱'}
+          </button>
+        </div>
+      </div>
+
       {/* Amount Paid - Always show for invoice transactions */}
       <div className="space-y-3">
         <h3 className="text-sm font-semibold text-gray-700">Amount Paid</h3>
@@ -123,7 +159,7 @@ const PaymentSection = ({
           <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500">₱</span>
           <input
             type="text"
-            value={amountPaid}
+            value={amountPaid || ''}
             onChange={handleAmountChange}
             disabled={isProcessing}
             placeholder="0.00"

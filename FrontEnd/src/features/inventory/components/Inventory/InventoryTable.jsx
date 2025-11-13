@@ -1,7 +1,7 @@
 import { FiAlertTriangle, FiEye } from 'react-icons/fi';
 import React from 'react';
 
-const InventoryTable = ({ data, onViewProduct }) => {
+const InventoryTable = ({ data, onViewProduct, selectedProducts = [], onSelectionChange, showCheckboxes = false }) => {
   const getStatusBadge = (status) => {
     switch (status) {
       case 'in-stock':
@@ -30,11 +30,41 @@ const InventoryTable = ({ data, onViewProduct }) => {
     }
   };
 
+  const isAllSelected = data.length > 0 && selectedProducts.length === data.length;
+  const isIndeterminate = selectedProducts.length > 0 && selectedProducts.length < data.length;
+
+  const handleSelectAll = () => {
+    if (isAllSelected) {
+      onSelectionChange([]);
+    } else {
+      onSelectionChange(data.map(item => item.id));
+    }
+  };
+
+  const handleSelectProduct = (productId) => {
+    if (selectedProducts.includes(productId)) {
+      onSelectionChange(selectedProducts.filter(id => id !== productId));
+    } else {
+      onSelectionChange([...selectedProducts, productId]);
+    }
+  };
+
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-200">
       <table className="min-w-full divide-y divide-gray-200">
         <thead className="bg-gray-50">
           <tr>
+            {showCheckboxes && (
+              <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                <input
+                  type="checkbox"
+                  checked={isAllSelected}
+                  ref={(el) => el && (el.indeterminate = isIndeterminate)}
+                  onChange={handleSelectAll}
+                  className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
+                />
+              </th>
+            )}
             <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
               Product Name
             </th>
@@ -62,8 +92,18 @@ const InventoryTable = ({ data, onViewProduct }) => {
           {data.map((item) => (
             <tr 
               key={item.id} 
-              className="hover:bg-gray-50/50 transition-colors duration-150"
+              className={`hover:bg-gray-50/50 transition-colors duration-150 ${selectedProducts.includes(item.id) ? 'bg-orange-50' : ''}`}
             >
+              {showCheckboxes && (
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={selectedProducts.includes(item.id)}
+                    onChange={() => handleSelectProduct(item.id)}
+                    className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
+                  />
+                </td>
+              )}
               <td className="px-6 py-4 whitespace-nowrap">
                 <div className="text-sm font-medium text-gray-900">{item.name}</div>
               </td>

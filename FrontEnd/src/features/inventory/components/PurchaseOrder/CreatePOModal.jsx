@@ -8,7 +8,7 @@ import { generatePurchaseOrderNotification } from '../../../../services/firebase
 import { getFirestore, collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import app from '../../../../FirebaseConfig';
 
-const CreatePOModal = ({ onClose, onSuccess }) => {
+const CreatePOModal = ({ onClose, onSuccess , }) => {
   const { currentUser } = useAuth();
   const poServices = usePurchaseOrderServices();
   const { listenToProducts } = useServices();
@@ -20,13 +20,14 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
   const [products, setProducts] = useState([]);
   const [restockRequests, setRestockRequests] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
-  const [selectedSupplier, setSelectedSupplier] = useState(null);
-  const [suppliersWithRestockNeeds, setSuppliersWithRestockNeeds] = useState([]);
+  const [productsNeedingRestock, setProductsNeedingRestock] = useState([]);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [selectedSupplierForProduct, setSelectedSupplierForProduct] = useState(null);
   const [items, setItems] = useState([]);
   const [deliveryDate, setDeliveryDate] = useState('');
   const [paymentTerms, setPaymentTerms] = useState('');
   const [notes, setNotes] = useState('');
-  const [currentStep, setCurrentStep] = useState('supplier-selection');
+  const [currentStep, setCurrentStep] = useState('product-selection');
   const [searchTerm, setSearchTerm] = useState('');
 
   // Load data on component mount
@@ -34,12 +35,13 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
     const loadData = async () => {
       try {
         const restockRequestsRef = collection(db, 'RestockingRequests');
-        const q = query(restockRequestsRef, where('status', '==', 'pending'));
+        const q = query(restockRequestsRef, where("status", "in", ["pending", "resolved_safety_stock"]));
         const querySnapshot = await getDocs(q);
         const requests = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
+        console.log('Fetched restock requests:', requests);
 
         setRestockRequests(requests);
 
@@ -48,21 +50,38 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
           setSuppliers(supplierResult.data);
         }
 
-        const unsubscribeProducts = listenToProducts((fetchedProducts) => {
-          setProducts(fetchedProducts);
-        const suppliersWithNeeds = findSuppliersWithRestockNeeds(fetchedProducts, requests);
-        
-        // Add total product count for each supplier
-        suppliersWithNeeds.forEach(supplier => {
-          const supplierCode = supplier.primaryCode || supplier.code;
-          const totalProducts = fetchedProducts.filter(product => {
-            const productSupplierCode = product.supplier?.primaryCode || product.supplier?.code;
-            return productSupplierCode === supplierCode;
-          }).length;
-          supplier.totalProducts = totalProducts;
+        // Fetch Master products to get supplier info
+        const masterRef = collection(db, 'Master');
+        const masterSnapshot = await getDocs(masterRef);
+        const masterProducts = {};
+        masterSnapshot.docs.forEach(doc => {
+          masterProducts[doc.id] = {
+            id: doc.id,
+            ...doc.data()
+          };
         });
-        
-        setSuppliersWithRestockNeeds(suppliersWithNeeds);
+        console.log('📦 Master products loaded:', Object.keys(masterProducts).length);
+
+        const unsubscribeProducts = listenToProducts((fetchedProducts) => {
+          console.log('📦 Products loaded:', fetchedProducts.length);
+          
+          // Enrich variants with supplier info from Master
+          const enrichedProducts = fetchedProducts.map(variant => {
+            const masterProduct = masterProducts[variant.parentProductId];
+            return {
+              ...variant,
+              supplier: variant.supplier || masterProduct?.supplier || null,
+              masterProductName: masterProduct?.name || null
+            };
+            
+          });
+         
+          setProducts(enrichedProducts);
+          
+          // Find products that need restocking
+          const productsWithRestockNeeds = findProductsNeedingRestock(enrichedProducts, requests, supplierResult.data || []);
+          setProductsNeedingRestock(productsWithRestockNeeds);
+          console.log('� Products needing restock:', productsWithRestockNeeds.length);
         });
 
         return () => unsubscribeProducts();
@@ -75,96 +94,195 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
     loadData();
   }, []);
 
-  const findSuppliersWithRestockNeeds = (products, requests) => {
-    const supplierMap = new Map();
+  const findProductsNeedingRestock = (products, requests, allSuppliers) => {
+    const productMap = new Map();
 
+    console.log('🔍 Finding products needing restock:', {
+      productsCount: products.length,
+      requestsCount: requests.length,
+      suppliersCount: allSuppliers.length
+    });
+
+    // Process each restock request
     requests.forEach(request => {
-      const product = products.find(p => 
-        p.id === request.productId || 
-        p.variants?.some(v => v.id === request.productId)
+      const variant = products.find(v => 
+        v.id === request.variantId ||
+        v.id === request.productId ||
+        v.parentProductId === request.productId ||
+        (v.parentProductId && request.variantDetails && 
+         v.size === request.variantDetails.size && 
+         (v.unit === request.variantDetails.unit || v.baseUnit === request.variantDetails.unit))
       );
 
-      if (product && product.supplier) {
-        const supplierName = typeof product.supplier.name === 'string' 
-          ? product.supplier.name 
-          : (typeof product.supplier.name === 'object' ? product.supplier.name?.name || 'Unknown Supplier' : 'Unknown Supplier');
+      if (variant) {
+        const productKey = variant.id;
         
-        const fallbackId = supplierName.replace(/\s+/g, '_').toLowerCase() + '_' + Date.now();
-        const supplierKey = product.supplier.primaryCode || product.supplier.code || fallbackId;
-        
-        if (!supplierMap.has(supplierKey)) {
-          supplierMap.set(supplierKey, {
-            code: product.supplier.code || fallbackId,
-            primaryCode: product.supplier.primaryCode || fallbackId,
-            name: supplierName,
-            restockCount: 0,
-            products: []
+        if (!productMap.has(productKey)) {
+          // Find all suppliers for this variant
+          const variantSuppliers = findSuppliersForVariant(variant, allSuppliers);
+          
+          productMap.set(productKey, {
+            id: variant.id,
+            name: variant.variantName || variant.name || 'Unnamed Product',
+            parentProductId: variant.parentProductId,
+            masterProductName: variant.masterProductName,
+            size: variant.size,
+            unit: variant.unit || variant.baseUnit,
+            currentQuantity: variant.quantity || 0,
+            restockLevel: variant.restockLevel || variant.rop || 0,
+            restockRequest: request,
+            suggestedQuantity: request.suggestedQty,
+            suppliers: variantSuppliers,
+            needsRestocking: true
           });
         }
-        
-        const supplierData = supplierMap.get(supplierKey);
-        supplierData.restockCount++;
-        supplierData.products.push({
-          ...product,
-          restockRequest: request
-        });
       }
     });
 
-    return Array.from(supplierMap.values());
+    // Also check for products below restock level without requests
+    products.forEach(variant => {
+      const needsRestocking = (variant.quantity || 0) < (variant.restockLevel || variant.rop || 0);
+      const productKey = variant.id;
+      
+      if (needsRestocking && !productMap.has(productKey)) {
+        const variantSuppliers = findSuppliersForVariant(variant, allSuppliers);
+        
+        if (variantSuppliers.length > 0) {
+          const suggestedQty = Math.max(0, (variant.restockLevel || variant.rop || 0) - (variant.quantity || 0) + 10);
+          
+          productMap.set(productKey, {
+            id: variant.id,
+            name: variant.variantName || variant.name || 'Unnamed Product',
+            parentProductId: variant.parentProductId,
+            masterProductName: variant.masterProductName,
+            size: variant.size,
+            unit: variant.unit || variant.baseUnit,
+            currentQuantity: variant.quantity || 0,
+            restockLevel: variant.restockLevel || variant.rop || 0,
+            restockRequest: null,
+            suggestedQuantity: suggestedQty,
+            suppliers: variantSuppliers,
+            needsRestocking: true
+          });
+        }
+      }
+    });
+
+    const result = Array.from(productMap.values());
+    console.log('✅ Found products needing restock:', result.length, result);
+    return result;
+  };
+
+  const findSuppliersForVariant = (variant, allSuppliers) => {
+    const suppliers = [];
+    
+    // Check if variant has suppliers array (NEW structure from Firebase)
+    if (variant.suppliers && Array.isArray(variant.suppliers) && variant.suppliers.length > 0) {
+      variant.suppliers.forEach((sup) => {
+        const supplierCode = sup.primaryCode || sup.code || sup.supplierId;
+        const supplierName = sup.name || sup.supplierName;
+        
+        const supplier = allSuppliers.find(s => 
+          (s.primaryCode === supplierCode) || (s.code === supplierCode) || (s.name === supplierName)
+        );
+        
+        if (supplier && !suppliers.find(s => s.id === (supplier.primaryCode || supplier.code))) {
+          suppliers.push({
+            id: supplier.primaryCode || supplier.code,
+            primaryCode: supplier.primaryCode || supplier.code,
+            code: supplier.code,
+            name: supplier.name,
+            supplierPrice: sup.price || 0, // Price from supplier (what we buy at)
+            contactInfo: supplier.contactInfo || supplier.email || supplier.phone || ''
+          });
+        }
+      });
+      
+      return suppliers;
+    }
+    
+    // Fallback: Get supplier from variant.supplier field (OLD structure)
+    const variantSupplier = variant.supplier;
+    
+    if (!variantSupplier) return suppliers;
+
+    // Handle different supplier formats
+    if (typeof variantSupplier === 'string') {
+      // Supplier is stored as a string (name)
+      const supplier = allSuppliers.find(s => s.name === variantSupplier);
+      if (supplier) {
+        suppliers.push({
+          id: supplier.primaryCode || supplier.code,
+          primaryCode: supplier.primaryCode || supplier.code,
+          code: supplier.code,
+          name: supplier.name,
+          supplierPrice: variant.supplierPrice || 0, // Use supplierPrice field
+          contactInfo: supplier.contactInfo || supplier.email || supplier.phone || ''
+        });
+      }
+    } else if (typeof variantSupplier === 'object' && variantSupplier) {
+      // Supplier is stored as an object
+      const supplierCode = variantSupplier.primaryCode || variantSupplier.code || variantSupplier.supplierId;
+      const supplierName = variantSupplier.name || variantSupplier.supplierName;
+      
+      const supplier = allSuppliers.find(s => 
+        (s.primaryCode === supplierCode) || (s.code === supplierCode) || (s.name === supplierName)
+      );
+      
+      if (supplier) {
+        suppliers.push({
+          id: supplier.primaryCode || supplier.code,
+          primaryCode: supplier.primaryCode || supplier.code,
+          code: supplier.code,
+          name: supplier.name,
+          supplierPrice: variantSupplier.price || variant.supplierPrice || 0, // Get price from supplier object
+          contactInfo: supplier.contactInfo || supplier.email || supplier.phone || ''
+        });
+      }
+    }
+
+    return suppliers;
+  };
+
+  const handleProductSelect = (product) => {
+    console.log('📦 Product selected:', product);
+    setSelectedProduct(product);
+    setCurrentStep('supplier-selection');
   };
 
   const handleSupplierSelect = (supplier) => {
-    setSelectedSupplier(supplier);
+    console.log('🏢 Supplier selected for product:', supplier);
+    setSelectedSupplierForProduct(supplier);
     
-    // Get all products from this supplier
-    const supplierProducts = products.filter(product => {
-      const productSupplierCode = product.supplier?.primaryCode || product.supplier?.code;
-      const selectedSupplierCode = supplier.primaryCode || supplier.code;
-      return productSupplierCode === selectedSupplierCode;
-    }).map(product => {
-      // Find if there's a restock request for this product
-      const restockRequest = restockRequests.find(request => 
-        request.productId === product.id || 
-        product.variants?.some(v => v.id === request.productId)
-      );
-      
-      // Check if product needs restocking based on restock level
-      const needsRestocking = product.quantity < (product.restockLevel || 0);
-      
-      return {
-        ...product,
-        restockRequest,
-        needsRestocking,
-        suggestedQuantity: restockRequest ? restockRequest.suggestedOrderQuantity : 
-                          needsRestocking ? Math.max(0, (product.restockLevel || 0) - product.quantity + 10) : 0
-      };
-    });
+    // Initialize items with the selected product and supplier
+    setItems([{
+      productId: selectedProduct.id,
+      productName: selectedProduct.name,
+      quantity: selectedProduct.suggestedQuantity || '',
+      unitPrice: supplier.supplierPrice || '',
+      total: 0,
+      restockRequestId: selectedProduct.restockRequest?.id || null,
+      currentQuantity: selectedProduct.currentQuantity,
+      requestedQuantity: selectedProduct.suggestedQuantity,
+      needsRestocking: selectedProduct.needsRestocking,
+      restockLevel: selectedProduct.restockLevel,
+      supplierId: supplier.id,
+      supplierName: supplier.name
+    }]);
+    
+    setCurrentStep('order-details');
+  };
 
-    setItems(supplierProducts.length > 0 ? 
-      supplierProducts.filter(p => p.restockRequest).map(product => ({
-        productId: product.id,
-        productName: product.name,
-        quantity: product.restockRequest.suggestedOrderQuantity || '',
-        unitPrice: product.unitPrice || product.variants?.[0]?.unitPrice || '',
-        total: 0,
-        restockRequestId: product.restockRequest.id,
-        currentQuantity: product.quantity,
-        requestedQuantity: product.restockRequest.suggestedOrderQuantity,
-        needsRestocking: product.needsRestocking
-      })) : 
-      [{ productId: '', quantity: '', unitPrice: '', total: 0 }]
-    );
-    
-    // Store all supplier products for selection
-    setSelectedSupplier(prev => ({ ...prev, allProducts: supplierProducts }));
-    
+  const handleBackToProductSelection = () => {
+    setSelectedProduct(null);
+    setSelectedSupplierForProduct(null);
+    setItems([]);
     setCurrentStep('product-selection');
   };
 
   const handleBackToSupplierSelection = () => {
-    setSelectedSupplier(null);
-    setItems([{ productId: '', quantity: '', unitPrice: '', total: 0 }]);
+    setSelectedSupplierForProduct(null);
+    setItems([]);
     setCurrentStep('supplier-selection');
   };
 
@@ -178,30 +296,31 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
     const newItems = [...items];
     newItems[index] = { ...newItems[index], [field]: value };
     
-    if (field === 'productId') {
-      const product = selectedSupplier.allProducts?.find(p => p.id === value);
-      if (product) {
-        newItems[index] = {
-          ...newItems[index],
-          productName: product.name,
-          quantity: product.restockRequest ? product.restockRequest.suggestedOrderQuantity.toString() : 
-                   product.needsRestocking ? product.suggestedQuantity.toString() : '',
-          unitPrice: product.unitPrice || product.variants?.[0]?.unitPrice || 0,
-          restockRequestId: product.restockRequest?.id || null,
-          currentQuantity: product.quantity,
-          requestedQuantity: product.restockRequest?.suggestedOrderQuantity || null,
-          needsRestocking: product.needsRestocking,
-          restockLevel: product.restockLevel
-        };
-      }
-    }
-    
+    // Recalculate total for this item
     newItems[index].total = calculateItemTotal(newItems[index]);
     setItems(newItems);
   };
 
   const addItem = () => {
-    setItems([...items, { productId: '', quantity: '', unitPrice: '', total: 0 }]);
+    // Find more products from the same supplier
+    const currentSupplierId = selectedSupplierForProduct?.id;
+    const availableProducts = productsNeedingRestock.filter(product => 
+      product.suppliers.some(s => s.id === currentSupplierId) &&
+      !items.some(item => item.productId === product.id)
+    );
+
+    if (availableProducts.length > 0) {
+      setItems([...items, { 
+        productId: '', 
+        quantity: '', 
+        unitPrice: '', 
+        total: 0,
+        supplierId: currentSupplierId,
+        supplierName: selectedSupplierForProduct?.name
+      }]);
+    } else {
+      alert('No more products available from this supplier that need restocking.');
+    }
   };
 
   const removeItem = (index) => {
@@ -217,15 +336,15 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
     setLoading(true);
 
     try {
-      const supplierIdToUse = selectedSupplier.primaryCode || selectedSupplier.code;
+      const supplierIdToUse = selectedSupplierForProduct.primaryCode || selectedSupplierForProduct.code || selectedSupplierForProduct.id;
 
       if (!supplierIdToUse) {
-        throw new Error('Supplier ID (primaryCode or code) is missing');
+        throw new Error('Supplier ID is missing');
       }
 
       const poData = {
         supplierId: String(supplierIdToUse),
-        supplierName: String(selectedSupplier.name || 'Unknown Supplier'),
+        supplierName: String(selectedSupplierForProduct.name || 'Unknown Supplier'),
         items: items.filter(item => item.productId).map(item => ({
           productId: item.productId,
           productName: item.productName,
@@ -252,28 +371,24 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
       }
 
       // Generate notification for PO creation
-      // Use the PO data that was just created, but add the generated fields
       const notificationData = {
         ...poData,
         id: result.id,
         poNumber: result.poNumber,
         status: 'draft'
       };
-      // Generate notification asynchronously (fire-and-forget)
       generatePurchaseOrderNotification(notificationData, currentUser, 'created')
         .catch(notificationError => {
           console.error('Failed to generate PO creation notification:', notificationError);
-          // Don't fail the PO creation if notification fails
         });
+      
       try {
         const restockRequestsRef = collection(db, 'RestockingRequests');
         
-        // Get all restock request IDs that were used in this PO
         const restockRequestIds = items
           .filter(item => item.restockRequestId)
           .map(item => item.restockRequestId);
 
-        // Update each restocking request to mark it as processed
         for (const requestId of restockRequestIds) {
           const requestRef = doc(db, 'RestockingRequests', requestId);
           await updateDoc(requestRef, {
@@ -286,7 +401,6 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
 
       } catch (restockError) {
         console.error('Failed to update restocking requests:', restockError);
-        // Don't fail the PO creation if restock request update fails
       }
 
       onSuccess();
@@ -298,17 +412,18 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
     }
   };
 
-  const filteredSuppliers = suppliersWithRestockNeeds.filter(supplier =>
-    supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (supplier.primaryCode || supplier.code || '').toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredProducts = productsNeedingRestock.filter(product =>
+    product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (product.masterProductName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (product.size || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const renderSupplierSelection = () => (
+  const renderProductSelectionStep = () => (
     <div className="p-8">
       <div className="mb-8">
-        <h3 className="text-2xl font-semibold text-gray-900 mb-2">Select Supplier</h3>
+        <h3 className="text-2xl font-semibold text-gray-900 mb-2">Products Needing Restock</h3>
         <p className="text-gray-600">
-          Choose a supplier with products that need restocking
+          Select a product to view available suppliers and pricing options
         </p>
       </div>
 
@@ -316,56 +431,85 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
       <div className="mb-6">
         <input
           type="text"
-          placeholder="Search suppliers..."
+          placeholder="Search products..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
         />
       </div>
 
-      {filteredSuppliers.length === 0 ? (
+      {filteredProducts.length === 0 ? (
         <div className="text-center py-16 bg-gray-50 rounded-2xl">
           <div className="inline-flex items-center justify-center w-20 h-20 bg-gray-200 rounded-full mb-4">
             <FiPackage className="text-gray-400" size={36} />
           </div>
-          <h4 className="text-xl font-medium text-gray-900 mb-2">No Suppliers Found</h4>
+          <h4 className="text-xl font-medium text-gray-900 mb-2">No Products Found</h4>
           <p className="text-gray-500">
             {searchTerm ? 'Try adjusting your search' : 'All products are adequately stocked'}
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredSuppliers.map((supplier) => (
+          {filteredProducts.map((product) => (
             <button
-              key={supplier.primaryCode || supplier.code}
-              onClick={() => handleSupplierSelect(supplier)}
+              key={product.id}
+              onClick={() => handleProductSelect(product)}
               className="group relative border-2 border-gray-200 rounded-2xl p-6 hover:border-blue-500 hover:shadow-lg transition-all duration-200 text-left bg-white"
             >
-              {/* Badge */}
-              <div className="absolute -top-3 -right-3 bg-gradient-to-br from-red-500 to-red-600 text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg">
-                {supplier.restockCount} pending
+              {/* Status Badge */}
+              <div className={`absolute -top-3 -right-3 px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg ${
+                product.restockRequest 
+                  ? 'bg-gradient-to-br from-red-500 to-red-600 text-white'
+                  : 'bg-gradient-to-br from-yellow-500 to-yellow-600 text-white'
+              }`}>
+                {product.restockRequest ? 'Pending Request' : 'Below Level'}
               </div>
 
               {/* Icon */}
               <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-100 rounded-xl mb-4 group-hover:bg-blue-500 transition-colors">
-                <FiUser className="text-blue-600 group-hover:text-white transition-colors" size={24} />
+                <FiPackage className="text-blue-600 group-hover:text-white transition-colors" size={24} />
               </div>
 
               {/* Content */}
-              <h4 className="font-semibold text-gray-900 text-lg mb-2 line-clamp-1">
-                {String(supplier.name || 'Unknown Supplier')}
+              <h4 className="font-semibold text-gray-900 text-lg mb-2 line-clamp-2">
+                {product.name}
               </h4>
-              <p className="text-sm text-gray-500 mb-3">
-                Code: <span className="font-medium text-gray-700">{String(supplier.primaryCode || supplier.code || 'N/A')}</span>
-              </p>
-              <div className="flex items-center text-sm text-gray-600 mb-4">
-                <FiPackage size={16} className="mr-2" />
-                <span>{supplier.totalProducts || supplier.products.length} total products • {supplier.restockCount} need restocking</span>
+              {product.masterProductName && (
+                <p className="text-xs text-gray-500 mb-2">
+                  {product.masterProductName}
+                </p>
+              )}
+              {product.size && (
+                <p className="text-sm text-gray-600 mb-3">
+                  Size: <span className="font-medium">{product.size} {product.unit}</span>
+                </p>
+              )}
+              
+              {/* Stock Info */}
+              <div className="space-y-2 mb-4">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Current Stock:</span>
+                  <span className="font-semibold text-gray-900">{product.currentQuantity}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Restock Level:</span>
+                  <span className="font-semibold text-gray-900">{product.restockLevel}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Suggested Qty:</span>
+                  <span className="font-semibold text-blue-600">{product.suggestedQuantity}</span>
+                </div>
+              </div>
+
+              {/* Suppliers Count */}
+              <div className="flex items-center text-sm text-gray-600 mb-4 pt-4 border-t">
+                <FiUser size={16} className="mr-2" />
+                <span>{product.suppliers.length} supplier{product.suppliers.length !== 1 ? 's' : ''} available</span>
               </div>
               
               {/* Arrow */}
               <div className="flex items-center text-blue-600 font-medium text-sm group-hover:text-blue-700">
-                <span>Create Purchase Order</span>
+                <span>View Suppliers</span>
                 <svg className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
@@ -377,7 +521,115 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
     </div>
   );
 
-  const renderProductSelection = () => (
+  const renderSupplierSelectionStep = () => (
+    <div className="p-8">
+      <div className="mb-8">
+        <button
+          type="button"
+          onClick={handleBackToProductSelection}
+          className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-4 transition-colors"
+        >
+          <FiChevronLeft className="mr-1" />
+          <span className="text-sm font-medium">Back to Products</span>
+        </button>
+        
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-100 mb-6">
+          <div className="flex items-start">
+            <div className="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center mr-4 flex-shrink-0">
+              <FiPackage className="text-white" size={24} />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                {selectedProduct?.name}
+              </h3>
+              {selectedProduct?.masterProductName && (
+                <p className="text-sm text-gray-600 mb-2">{selectedProduct.masterProductName}</p>
+              )}
+              <div className="grid grid-cols-3 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-600">Current Stock:</span>
+                  <span className="ml-2 font-semibold text-gray-900">{selectedProduct?.currentQuantity}</span>
+                </div>
+                <div>
+                  <span className="text-gray-600">Restock Level:</span>
+                  <span className="ml-2 font-semibold text-gray-900">{selectedProduct?.restockLevel}</span>
+                </div>
+                <div>
+                  <span className="text-gray-600">Suggested:</span>
+                  <span className="ml-2 font-semibold text-blue-600">{selectedProduct?.suggestedQuantity}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <h3 className="text-2xl font-semibold text-gray-900 mb-2">Select Supplier</h3>
+        <p className="text-gray-600">
+          Compare prices and choose the best supplier for this product
+        </p>
+      </div>
+
+      {selectedProduct?.suppliers.length === 0 ? (
+        <div className="text-center py-16 bg-gray-50 rounded-2xl">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-gray-200 rounded-full mb-4">
+            <FiUser className="text-gray-400" size={36} />
+          </div>
+          <h4 className="text-xl font-medium text-gray-900 mb-2">No Suppliers Available</h4>
+          <p className="text-gray-500">
+            This product doesn't have any suppliers assigned
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {selectedProduct?.suppliers.map((supplier) => (
+            <button
+              key={supplier.id}
+              onClick={() => handleSupplierSelect(supplier)}
+              className="group relative border-2 border-gray-200 rounded-2xl p-6 hover:border-green-500 hover:shadow-lg transition-all duration-200 text-left bg-white"
+            >
+              {/* Icon */}
+              <div className="inline-flex items-center justify-center w-12 h-12 bg-green-100 rounded-xl mb-4 group-hover:bg-green-500 transition-colors">
+                <FiUser className="text-green-600 group-hover:text-white transition-colors" size={24} />
+              </div>
+
+              {/* Content */}
+              <h4 className="font-semibold text-gray-900 text-lg mb-2 line-clamp-1">
+                {supplier.name}
+              </h4>
+              <p className="text-sm text-gray-500 mb-4">
+                Code: <span className="font-medium text-gray-700">{supplier.code || supplier.primaryCode || 'N/A'}</span>
+              </p>
+
+              {/* Price */}
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 mb-4 border border-green-200">
+                <p className="text-sm text-gray-600 mb-1">Supplier Price (Buy)</p>
+                <p className="text-2xl font-bold text-green-700">₱{supplier.supplierPrice.toLocaleString()}</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  Total for {selectedProduct?.suggestedQuantity} units: ₱{(supplier.supplierPrice * selectedProduct?.suggestedQuantity).toLocaleString()}
+                </p>
+              </div>
+
+              {supplier.contactInfo && (
+                <p className="text-xs text-gray-500 mb-4">
+                  Contact: {supplier.contactInfo}
+                </p>
+              )}
+              
+              {/* Arrow */}
+              <div className="flex items-center text-green-600 font-medium text-sm group-hover:text-green-700">
+                <span>Select This Supplier</span>
+                <svg className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderOrderDetailsStep = () => (
     <div className="max-h-[80vh] overflow-y-auto">
       <div className="flex-1 overflow-y-auto p-8">
         {/* Header */}
@@ -391,18 +643,46 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
             <span className="text-sm font-medium">Change Supplier</span>
           </button>
           
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-100">
-            <div className="flex items-center mb-2">
-              <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center mr-3">
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-6 border border-green-100">
+            <div className="flex items-start mb-4">
+              <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center mr-3">
                 <FiUser className="text-white" size={20} />
               </div>
               <div>
                 <h3 className="text-xl font-semibold text-gray-900">
-                  {String(selectedSupplier.name || 'Unknown Supplier')}
+                  {selectedSupplierForProduct?.name || 'Unknown Supplier'}
                 </h3>
                 <p className="text-sm text-gray-600">
-                  Supplier Code: {String(selectedSupplier.primaryCode || selectedSupplier.code || 'N/A')}
+                  Supplier Code: {selectedSupplierForProduct?.code || selectedSupplierForProduct?.primaryCode || 'N/A'}
                 </p>
+              </div>
+            </div>
+            
+            <div className="bg-white bg-opacity-60 rounded-lg p-4 border border-green-200">
+              <div className="flex items-start">
+                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3 flex-shrink-0">
+                  <FiPackage className="text-blue-600" size={20} />
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-900 mb-1">{selectedProduct?.name}</p>
+                  {selectedProduct?.masterProductName && (
+                    <p className="text-xs text-gray-600 mb-2">{selectedProduct.masterProductName}</p>
+                  )}
+                  <div className="grid grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <span className="text-gray-600">Stock:</span>
+                      <span className="ml-1 font-semibold">{selectedProduct?.currentQuantity}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Level:</span>
+                      <span className="ml-1 font-semibold">{selectedProduct?.restockLevel}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Price:</span>
+                      <span className="ml-1 font-semibold text-green-600">₱{selectedSupplierForProduct?.supplierPrice || 0}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -443,7 +723,13 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
 
           <div className="space-y-4">
             {items.map((item, index) => {
-              const selectedProduct = selectedSupplier.allProducts?.find(p => p.id === item.productId);
+              const availableProducts = productsNeedingRestock.filter(product => 
+                product.suppliers.some(s => s.id === selectedSupplierForProduct?.id) &&
+                !items.some((existingItem, existingIndex) => existingIndex !== index && existingItem.productId === product.id)
+              );
+              
+              const currentProduct = productsNeedingRestock.find(p => p.id === item.productId);
+              const supplierForProduct = currentProduct?.suppliers.find(s => s.id === selectedSupplierForProduct?.id);
               
               return (
                 <div key={index} className="border-2 border-gray-200 rounded-xl p-5 bg-white hover:border-gray-300 transition-colors">
@@ -453,17 +739,29 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
                       <select
                         required
                         value={item.productId}
-                        onChange={(e) => handleItemChange(index, 'productId', e.target.value)}
+                        onChange={(e) => {
+                          const productId = e.target.value;
+                          const product = productsNeedingRestock.find(p => p.id === productId);
+                          const supplier = product?.suppliers.find(s => s.id === selectedSupplierForProduct?.id);
+                          
+                          handleItemChange(index, 'productId', productId);
+                          if (product && supplier) {
+                            handleItemChange(index, 'productName', product.name);
+                            handleItemChange(index, 'quantity', product.suggestedQuantity);
+                            handleItemChange(index, 'unitPrice', supplier.supplierPrice);
+                            handleItemChange(index, 'restockRequestId', product.restockRequest?.id || null);
+                            handleItemChange(index, 'currentQuantity', product.currentQuantity);
+                            handleItemChange(index, 'requestedQuantity', product.suggestedQuantity);
+                            handleItemChange(index, 'needsRestocking', product.needsRestocking);
+                            handleItemChange(index, 'restockLevel', product.restockLevel);
+                          }
+                        }}
                         className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
                       >
                         <option value="">Select Product</option>
-                        {selectedSupplier.allProducts?.filter(product => 
-                          (product.restockRequest || product.needsRestocking) &&
-                          !items.some((item, itemIndex) => itemIndex !== index && item.productId === product.id)
-                        ).map((product) => (
+                        {availableProducts.map((product) => (
                           <option key={product.id} value={product.id}>
-                            {product.name} (Stock: {product.quantity}, Level: {product.restockLevel || 0})
-                            {product.restockRequest ? ' - Pending Request' : ' - Needs Restock'}
+                            {product.name} {product.size ? `(${product.size} ${product.unit})` : ''} - Stock: {product.currentQuantity}
                           </option>
                         ))}
                       </select>
@@ -480,7 +778,7 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
                       />
                     </div>
                     <div className="col-span-2">
-                      <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Supplier Price</label>
+                      <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Unit Price</label>
                       <input
                         type="number"
                         required
@@ -510,22 +808,23 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
                     </div>
                   </div>
                   
-                  {selectedProduct && (
+                  {currentProduct && (
                     <div className={`mt-4 flex items-start gap-2 text-sm p-3 rounded-lg ${
-                      selectedProduct.restockRequest ? 'bg-orange-50 text-orange-700 border border-orange-200' :
-                      selectedProduct.needsRestocking ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' :
+                      currentProduct.restockRequest ? 'bg-orange-50 text-orange-700 border border-orange-200' :
+                      currentProduct.needsRestocking ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' :
                       'bg-green-50 text-green-700 border border-green-200'
                     }`}>
                       <FiAlertCircle className="mt-0.5 flex-shrink-0" size={16} />
                       <span>
-                        <strong>Stock Status:</strong> Current stock is {item.currentQuantity} units
-                        {selectedProduct.restockLevel && ` (Restock level: ${selectedProduct.restockLevel})`}
-                        {selectedProduct.restockRequest ? 
-                          `. Pending restock request for ${item.requestedQuantity} units.` :
-                          selectedProduct.needsRestocking ? 
-                          '. Product is below restock level and may need ordering.' :
+                        <strong>Stock Status:</strong> Current stock is {currentProduct.currentQuantity} units
+                        {currentProduct.restockLevel && ` (Restock level: ${currentProduct.restockLevel})`}
+                        {currentProduct.restockRequest ? 
+                          `. Pending restock request for ${currentProduct.suggestedQuantity} units.` :
+                          currentProduct.needsRestocking ? 
+                          '. Product is below restock level.' :
                           '. Product is adequately stocked.'
                         }
+                        {supplierForProduct && ` Supplier price from ${selectedSupplierForProduct?.name}: ₱${supplierForProduct.supplierPrice}`}
                       </span>
                     </div>
                   )}
@@ -615,10 +914,14 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
         <div className="flex justify-between items-center px-8 py-6 border-b bg-gradient-to-r from-gray-50 to-gray-100">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">
-              {currentStep === 'supplier-selection' ? 'Create Purchase Order' : 'Purchase Order Details'}
+              {currentStep === 'product-selection' ? 'Create Purchase Order' : 
+               currentStep === 'supplier-selection' ? 'Select Supplier' : 
+               'Purchase Order Details'}
             </h2>
             <p className="text-sm text-gray-600 mt-1">
-              {currentStep === 'supplier-selection' ? 'Step 1: Select a supplier' : 'Step 2: Add order details'}
+              {currentStep === 'product-selection' ? 'Step 1: Select a product that needs restocking' : 
+               currentStep === 'supplier-selection' ? 'Step 2: Choose supplier and compare prices' : 
+               'Step 3: Review and complete order details'}
             </p>
           </div>
           <button 
@@ -631,7 +934,9 @@ const CreatePOModal = ({ onClose, onSuccess }) => {
 
         {/* Content */}
         <div className="flex-1 overflow-hidden">
-          {currentStep === 'supplier-selection' ? renderSupplierSelection() : renderProductSelection()}
+          {currentStep === 'product-selection' && renderProductSelectionStep()}
+          {currentStep === 'supplier-selection' && renderSupplierSelectionStep()}
+          {currentStep === 'order-details' && renderOrderDetailsStep()}
         </div>
       </div>
     </div>

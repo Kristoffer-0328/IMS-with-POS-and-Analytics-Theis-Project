@@ -1,17 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { getFirestore, collection, getDocs, doc, setDoc, query, where } from 'firebase/firestore';
-import NewProductForm from './NewProductForm';
-import NewVariantForm from './NewVariantForm';
-import ProductList from './ProductList';
+import { getFirestore, collection, getDocs } from 'firebase/firestore';
+import NewProductForm_GeneralInfo from './NewProductForm_GeneralInfo';
 import app from '../../../../../FirebaseConfig';
 import { useServices } from '../../../../../services/firebase/ProductServices';
 
-const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
+const CategoryModalIndex = ({ CategoryOpen, CategoryClose, onOpenViewProductModal, supplier }) => {
     const { linkProductToSupplier } = useServices();
     const [storageLocations, setStorageLocations] = useState([]);
-    const [selectedStorageLocation, setSelectedStorageLocation] = useState(null);
-    const [showAddProductModal, setShowAddProductModal] = useState(false);
-    const [activeForm, setActiveForm] = useState(null); // 'product' or 'variant'
     const [unitCapacities, setUnitCapacities] = useState({});
     const [loading, setLoading] = useState(false);
     const db = getFirestore(app);
@@ -20,13 +15,22 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
         const fetchStorageLocations = async () => {
             try {
                 setLoading(true);
-                const querySnapshot = await getDocs(collection(db, "Products"));
-                const fetchedStorageLocations = querySnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    name: doc.id,
-                    category: doc.data().category
-                }));
-                setStorageLocations(fetchedStorageLocations);
+                
+                // Define storage units with their categories (static configuration)
+                const storageUnitsConfig = [
+                    { id: 'Unit 01', name: 'Unit 01', category: 'Steel & Heavy Materials' },
+                    { id: 'Unit 02', name: 'Unit 02', category: 'Plywood & Sheet Materials' },
+                    { id: 'Unit 03', name: 'Unit 03', category: 'Cement & Aggregates' },
+                    { id: 'Unit 03 Yard', name: 'Unit 03 Yard', category: 'Cement & Aggregates' },
+                    { id: 'Unit 04', name: 'Unit 04', category: 'Roofing Materials' },
+                    { id: 'Unit 05', name: 'Unit 05', category: 'Electrical & Plumbing' },
+                    { id: 'Unit 06', name: 'Unit 06', category: 'Paint & Coatings' },
+                    { id: 'Unit 07', name: 'Unit 07', category: 'Insulation & Foam' },
+                    { id: 'Unit 08', name: 'Unit 08', category: 'Hardware & Fasteners' },
+                    { id: 'Unit 09', name: 'Unit 09', category: 'Miscellaneous' },
+                ];
+                
+                setStorageLocations(storageUnitsConfig);
                 
                 // Fetch capacity data for each unit
                 await fetchUnitCapacities();
@@ -53,6 +57,7 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
                 'Unit 01': 4 * 8 + 5 * 13 + 6 * 6, // Shelf A (4 cols * 8 rows) + Shelf B (5 cols * 13 rows) + Shelf C (6 cols * 6 rows)
                 'Unit 02': 4 * 8, // Shelf A only (4 cols * 8 rows)
                 'Unit 03': 4 * 8 + 4 * 8, // Shelf A + Shelf B (4 cols * 8 rows each)
+                'Unit 03 Yard': 10000, // Large bulk storage area for raw cement in m³
                 'Unit 04': 4 * 8 + 4 * 8, // Shelf A + Shelf B (4 cols * 8 rows each)
                 'Unit 05': 4 * 8 + 4 * 8, // Shelf A + Shelf B (4 cols * 8 rows each)
                 'Unit 06': 4 * 8 + 4 * 8, // Shelf A + Shelf B (4 cols * 8 rows each)
@@ -125,25 +130,16 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
         return `${capacity.productCount}/${capacity.totalSlots} slots (${percentage}%)`;
     };
 
-    const handleStorageLocationClick = (storageLocation) => {
-        setSelectedStorageLocation(storageLocation);
-        setShowAddProductModal(true);
-        if (supplier) {
-            setActiveForm('product'); // Automatically go to product form when supplier is provided
-        }
-    };
-
     const handleClose = () => {
-        setShowAddProductModal(false);
-        setSelectedStorageLocation(null);
-        setActiveForm(null);
         CategoryClose();
     };
 
-    const handleBack = () => {
-        setShowAddProductModal(false);
-        setSelectedStorageLocation(null);
-        setActiveForm(null);
+    const handleProductCreated = (product) => {
+        // After product is created, close modal and open ViewProductModal on Variants tab
+        handleClose();
+        if (onOpenViewProductModal) {
+            onOpenViewProductModal(product, 'variants');
+        }
     };
 
 
@@ -152,158 +148,20 @@ const CategoryModalIndex = ({ CategoryOpen, CategoryClose, supplier }) => {
     return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center">
             <div className="fixed inset-0 bg-black/40 backdrop-blur-sm"></div>
-            <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-4xl p-8 animate-scaleUp z-10">
+            <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[95vh] overflow-hidden animate-scaleUp z-10">
                 <button 
                     onClick={handleClose}
-                    className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                    className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors z-20"
                 >
                     <span className="text-xl">✕</span>
                 </button>
 
-                {!showAddProductModal ? (
-                    <>
-                        <h2 className="text-center text-2xl font-semibold mb-8 text-gray-800">
-                            Select Storage Location
-                            <span className="block text-sm text-gray-500 font-normal mt-1">Choose a storage unit to add new product</span>
-                        </h2>
-                        
-                        {/* Storage Facility Map Layout */}
-                        <div className="bg-transparent rounded-2xl p-6 relative min-h-[400px] mb-6">
-                            <div className="grid grid-cols-7 grid-rows-3 gap-0.5 h-[350px] relative bg-gray-50 border-4 border-slate-800 p-1 w-full">
-                                {/* Construction Materials Units 01-05 (Bottom row) */}
-                                {storageLocations.filter(loc => ['Unit 01', 'Unit 02', 'Unit 03', 'Unit 04', 'Unit 05'].includes(loc.name)).map((storageLocation, index) => (
-                                    <button
-                                        key={storageLocation.id}
-                                        onClick={() => handleStorageLocationClick(storageLocation)}
-                                        className="bg-white border-2 border-slate-800 p-3 cursor-pointer transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[70px] text-sm hover:bg-blue-50 hover:border-blue-500 border-red-500 bg-red-50 row-start-3"
-                                        style={{ gridColumnStart: index + 1 }}
-                                        title={`${storageLocation.name} - ${getCapacityInfo(storageLocation.name)}`}
-                                    >
-                                        <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${getStatusColor(storageLocation.name)}`}></div>
-                                        <div className="text-sm font-bold mb-1 text-slate-800">{storageLocation.name}</div>
-                                        <div className="text-xs text-gray-600 font-medium">{storageLocation.category}</div>
-                                    </button>
-                                ))}
-                                
-                                {/* Upper units */}
-                                {storageLocations.filter(loc => ['Unit 06', 'Unit 07'].includes(loc.name)).map((storageLocation, index) => (
-                                    <button
-                                        key={storageLocation.id}
-                                        onClick={() => handleStorageLocationClick(storageLocation)}
-                                        className="bg-white border-2 border-slate-800 p-3 cursor-pointer transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[70px] text-sm hover:bg-blue-50 hover:border-blue-500 border-orange-500 bg-orange-50"
-                                        style={{ 
-                                            gridColumnStart: 6, 
-                                            gridRowStart: index === 0 ? 1 : 2 
-                                        }}
-                                        title={`${storageLocation.name} - ${getCapacityInfo(storageLocation.name)}`}
-                                    >
-                                        <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${getStatusColor(storageLocation.name)}`}></div>
-                                        <div className="text-sm font-bold mb-1 text-slate-800">{storageLocation.name}</div>
-                                        <div className="text-xs text-gray-600 font-medium">{storageLocation.category}</div>
-                                    </button>
-                                ))}
-                                
-                                {storageLocations.filter(loc => ['Unit 08', 'Unit 09'].includes(loc.name)).map((storageLocation, index) => (
-                                    <button
-                                        key={storageLocation.id}
-                                        onClick={() => handleStorageLocationClick(storageLocation)}
-                                        className="bg-white border-2 border-slate-800 p-3 cursor-pointer transition-all duration-200 relative z-10 flex flex-col justify-center items-center text-center min-h-[70px] text-sm hover:bg-blue-50 hover:border-blue-500 border-green-500 bg-green-50"
-                                        style={{ 
-                                            gridColumnStart: 7, 
-                                            gridRowStart: index === 0 ? 1 : 2 
-                                        }}
-                                        title={`${storageLocation.name} - ${getCapacityInfo(storageLocation.name)}`}
-                                    >
-                                        <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${getStatusColor(storageLocation.name)}`}></div>
-                                        <div className="text-sm font-bold mb-1 text-slate-800">{storageLocation.name}</div>
-                                        <div className="text-xs text-gray-600 font-medium">{storageLocation.category}</div>
-                                    </button>
-                                ))}
-                                
-                                {/* Front Desk - Static, non-clickable */}
-                                <div className="bg-gray-300 border-2 border-gray-500 p-3 relative z-10 flex flex-col justify-center items-center text-center min-h-[70px] text-sm font-bold row-start-3 col-start-6 col-span-2">
-                                    <div className="text-xs text-gray-600 font-medium">Front Desk</div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        {/* Legend */}
-                        <div className="flex justify-center gap-4 mb-4 flex-wrap">
-                            <div className="flex items-center gap-2 px-3 py-1 bg-white/90 rounded-full text-xs font-medium">
-                                <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                                <span>Available (&lt;60%)</span>
-                            </div>
-                            <div className="flex items-center gap-2 px-3 py-1 bg-white/90 rounded-full text-xs font-medium">
-                                <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-                                <span>Occupied (60-89%)</span>
-                            </div>
-                            <div className="flex items-center gap-2 px-3 py-1 bg-white/90 rounded-full text-xs font-medium">
-                                <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                                <span>Full (90%+)</span>
-                            </div>
-                            {loading && (
-                                <div className="flex items-center gap-2 px-3 py-1 bg-blue-100 rounded-full text-xs font-medium">
-                                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-                                    <span>Loading...</span>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="text-center">
-                            <p className="text-sm text-gray-500">
-                                Available storage units are pre-configured and cannot be modified.
-                            </p>
-                        </div>
-                    </>
-                ) : (
-                    <div className="mt-8">
-                        {!activeForm ? (
-                            <>
-                                <div className="text-center mb-8">
-                                    <h3 className="text-xl font-semibold text-gray-800">
-                                        {supplier ? 'Add Product to Supplier' : 'Add New Item'}
-                                        <span className="block text-blue-600 text-sm mt-1">{selectedStorageLocation?.name}</span>
-                                    </h3>
-                                </div>
-                                <div className="space-y-4">
-                                    <button
-                                        onClick={() => setActiveForm('product')}
-                                        className="w-full p-6 text-left border border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 group"
-                                    >
-                                        <span className="text-lg font-medium text-gray-800 group-hover:text-blue-600">New Product</span>
-                                        <p className="text-sm text-gray-500 mt-1">Add a completely new product to inventory</p>
-                                    </button>
-                                    {!supplier && (
-                                        <button
-                                            onClick={() => setActiveForm('variant')}
-                                            className="w-full p-6 text-left border border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all duration-200 group"
-                                        >
-                                            <span className="text-lg font-medium text-gray-800 group-hover:text-blue-600">Add Variant</span>
-                                            <p className="text-sm text-gray-500 mt-1">Add a variation to existing product</p>
-                                        </button>
-                                    )}
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                {activeForm === 'product' ? (
-                                    <NewProductForm
-                                        selectedCategory={selectedStorageLocation}
-                                        onClose={handleClose}
-                                        onBack={handleBack}
-                                        supplier={supplier}
-                                        
-                                    />
-                                ) : (
-                                    <NewVariantForm
-                                        selectedCategory={selectedStorageLocation}
-                                        onBack={handleBack}
-                                    />
-                                )}
-                            </>
-                        )}
-                    </div>
-                )}
+                <NewProductForm_GeneralInfo
+                    storageLocations={storageLocations}
+                    unitCapacities={unitCapacities}
+                    onClose={handleClose}
+                    onProductCreated={handleProductCreated}
+                />
             </div>
         </div>
     );

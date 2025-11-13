@@ -361,7 +361,7 @@ const StockMovementReport = ({ onClose }) => {
         return {
           id: doc.id,
           date: data.movementDate?.toDate ? data.movementDate.toDate() : new Date(data.movementDate),
-          type: data.movementType || 'OUT',
+          type: data.movementType, // Always use movementType from Firestore
           reason: data.reason || 'Unknown',
           productName: data.productName || 'Unknown Product',
           quantity: data.quantity || 0,
@@ -384,24 +384,17 @@ const StockMovementReport = ({ onClose }) => {
       setMovementData(movements);
 
       // Calculate summary
-      const totalIn = movements
-        .filter(m => m.type === 'IN')
-        .reduce((sum, m) => sum + m.quantity, 0);
-      
-      const totalOut = movements
-        .filter(m => m.type === 'OUT')
-        .reduce((sum, m) => sum + m.quantity, 0);
-      
+      const totalIn = movements.filter(m => m.type === 'IN').reduce((sum, m) => sum + m.quantity, 0);
+      const totalOut = movements.filter(m => m.type === 'OUT').reduce((sum, m) => sum + m.quantity, 0);
       const totalMovements = movements.length;
       const netChange = totalIn - totalOut;
-      
       setSummary({
         totalMovements,
         totalIn,
         totalOut,
         netChange,
-        inPercentage: totalMovements > 0 ? ((totalIn / (totalIn + totalOut)) * 100).toFixed(1) : 0,
-        outPercentage: totalMovements > 0 ? ((totalOut / (totalIn + totalOut)) * 100).toFixed(1) : 0
+        inPercentage: (totalIn + totalOut) > 0 ? ((totalIn / (totalIn + totalOut)) * 100).toFixed(1) : 0,
+        outPercentage: (totalIn + totalOut) > 0 ? ((totalOut / (totalIn + totalOut)) * 100).toFixed(1) : 0
       });
 
       // Generate chart data (daily aggregation)
@@ -449,7 +442,7 @@ const StockMovementReport = ({ onClose }) => {
 
   const getReasonColor = (reason) => {
     const colors = {
-      'POS Sale': 'text-blue-600 bg-blue-50',
+      'Sale Transaction': 'text-blue-600 bg-blue-50',
       'Supplier Delivery': 'text-green-600 bg-green-50',
       'Project Release': 'text-orange-600 bg-orange-50',
       'Restock Request': 'text-purple-600 bg-purple-50',

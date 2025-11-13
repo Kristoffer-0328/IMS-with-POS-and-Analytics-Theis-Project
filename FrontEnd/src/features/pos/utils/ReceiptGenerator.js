@@ -59,6 +59,15 @@ export const generateInvoiceHtml = (data) => {
                     background: #f9fafb;
                     padding: 20px;
                 }
+    
+            // Flexible item field access (match ReceiptModal.jsx)
+            const getItemFields = (item) => {
+                const name = item.name || item.productName || item.variantName || 'Unknown Item';
+                const quantity = item.quantity || item.qty || 0;
+                const price = item.price || item.unitPrice || 0;
+                const total = item.totalPrice || (price * quantity);
+                return { name, quantity, price, total };
+            };
                 .invoice-container { 
                     max-width: 800px; 
                     margin: 0 auto; 
@@ -114,6 +123,7 @@ export const generateInvoiceHtml = (data) => {
 
                 /* Billing Section */
                 .billing-section {
+                                        const { name, quantity, price, total } = getItemFields(item);
                     display: flex;
                     justify-content: space-between;
                     padding: 30px 40px;
@@ -179,6 +189,28 @@ export const generateInvoiceHtml = (data) => {
                 .items-table td.text-right { text-align: right; }
                 .items-table tbody tr:hover {
                     background: #f9fafb;
+                }
+                
+                /* Sale Badge Styles */
+                .sale-badge {
+                    display: inline-block;
+                    padding: 2px 8px;
+                    background: #fee2e2;
+                    color: #991b1b;
+                    border-radius: 4px;
+                    font-size: 8pt;
+                    font-weight: 600;
+                    margin-left: 8px;
+                }
+                .price-original {
+                    text-decoration: line-through;
+                    color: #9ca3af;
+                    font-size: 9pt;
+                    margin-right: 6px;
+                }
+                .price-sale {
+                    color: #dc2626;
+                    font-weight: 600;
                 }
 
                 /* Totals Section */
@@ -382,15 +414,43 @@ export const generateInvoiceHtml = (data) => {
                             </tr>
                         </thead>
                         <tbody>
-                            ${data.items.map((item, index) => `
+                            ${data.items.map((item, index) => {
+                                const isOnSale = item.onSale || false;
+                                const originalPrice = item.originalPrice || null;
+                                const discountPercentage = item.discountPercentage || 0;
+                                
+                                // Combine product name and variant name for clear display
+                                let itemName;
+                                if (item.name) {
+                                    itemName = item.name; // Already formatted
+                                } else if (item.productName && item.variantName) {
+                                    itemName = `${item.productName} - ${item.variantName}`;
+                                } else {
+                                    itemName = item.productName || item.variantName || 'Unknown Item';
+                                }
+                                
+                                const quantity = item.qty || item.quantity || 0;
+                                const unitPrice = item.unitPrice || item.price || 0;
+                                const total = unitPrice * quantity;
+                                
+                                return `
                                 <tr>
                                     <td>${index + 1}</td>
-                                    <td>${item.name || 'Unknown Item'}</td>
-                                    <td class="text-center">${item.quantity || 0}</td>
-                                    <td class="text-right">₱${formatCurrency(Number(item.price))}</td>
-                                    <td class="text-right">₱${formatCurrency(Number(item.price) * Number(item.quantity))}</td>
+                                    <td>
+                                        ${itemName}
+                                        ${isOnSale && discountPercentage > 0 ? 
+                                            `<span class="sale-badge">🏷️ ${discountPercentage}% OFF</span>` : ''}
+                                    </td>
+                                    <td class="text-center">${quantity}</td>
+                                    <td class="text-right">
+                                        ${isOnSale && originalPrice ? 
+                                            `<span class="price-original">₱${formatCurrency(originalPrice)}</span>
+                                             <span class="price-sale">₱${formatCurrency(unitPrice)}</span>` : 
+                                            `₱${formatCurrency(unitPrice)}`}
+                                    </td>
+                                    <td class="text-right">₱${formatCurrency(total)}</td>
                                 </tr>
-                            `).join('')}
+                            `}).join('')}
                         </tbody>
                     </table>
                 </div>
@@ -398,6 +458,20 @@ export const generateInvoiceHtml = (data) => {
                 <!-- Totals -->
                 <div class="totals-section">
                     <div class="totals-box">
+                        ${data.items.some(item => item.onSale) ? `
+                            <div class="totals-row" style="color: #059669; background: #d1fae5; padding: 10px; border-radius: 6px; margin-bottom: 10px;">
+                                <span>🏷️ Total Savings:</span>
+                                <span style="font-weight: 600;">₱${formatCurrency(
+                                    data.items.reduce((total, item) => {
+                                        if (item.onSale && item.originalPrice) {
+                                            const savings = (item.originalPrice - item.unitPrice) * item.qty;
+                                            return total + savings;
+                                        }
+                                        return total;
+                                    }, 0)
+                                )}</span>
+                            </div>
+                        ` : ''}
                         <div class="totals-row subtotal">
                             <span>Subtotal:</span>
                             <span>₱${formatCurrency(Number(data.subTotal))}</span>

@@ -40,9 +40,19 @@ const AdminSidebar = ({ collapsed, setCollapsed }) => {
           label: 'Admin Dashboard',
         },
         {
+          path: '/admin/stock-management',
+          icon: <FiPackage size={20} />,
+          label: 'Stock Management',
+        },
+        {
           path: '/admin/purchase-orders',
           icon: <FiShoppingBag size={20} />,
           label: 'Purchase Orders',
+        },
+        {
+          path: '/admin/suppliers',
+          icon: <FiUsers size={20} />,
+          label: 'Supplier Management',
         },
         {
           path: '/admin/storage-map',

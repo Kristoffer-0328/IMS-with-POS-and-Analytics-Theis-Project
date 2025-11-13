@@ -7,7 +7,21 @@ const ProductCard = ({
   disabled 
 }) => {
   const firstVariant = product.variants[0];
-  const lowestPrice = Math.min(...product.variants.map(v => v.unitPrice || v.price || 0));
+  
+  // Check if any variant is on sale
+  const hasVariantOnSale = product.variants.some(v => v.onSale);
+  const highestDiscount = hasVariantOnSale 
+    ? Math.max(...product.variants.filter(v => v.onSale).map(v => v.discountPercentage || 0))
+    : 0;
+  
+  // Get lowest price (considering sale prices)
+  const lowestPrice = Math.min(...product.variants.map(v => 
+    v.onSale && v.salePrice ? v.salePrice : (v.unitPrice || v.price || 0)
+  ));
+  
+  // Get original lowest price for comparison
+  const lowestOriginalPrice = Math.min(...product.variants.map(v => v.unitPrice || v.price || 0));
+  
   const totalStock = product.variants.reduce((sum, v) => sum + (v.totalQuantity || v.quantity || 0), 0);
   const hasMultipleVariants = product.variants.length > 1;
 
@@ -32,6 +46,15 @@ const ProductCard = ({
             <FiPackage size={40} />
           </div>
         )}
+        
+        {/* Sale Badge - Top Left */}
+        {hasVariantOnSale && (
+          <div className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-lg animate-pulse">
+            🏷️ {highestDiscount}% OFF
+          </div>
+        )}
+        
+        {/* Variant Count Badge - Top Right */}
         {hasMultipleVariants && (
           <div className="absolute top-2 right-2 bg-orange-500 text-white text-xs px-2 py-1 rounded-full">
             {product.variants.length} variants
@@ -46,12 +69,31 @@ const ProductCard = ({
         <div className="flex items-center justify-between">
           <div>
             <div className="text-orange-600">
-              <span className="font-medium text-base">
-                {hasMultipleVariants 
-                  ? `From ${formatPrice(lowestPrice)}` 
-                  : formatPrice(firstVariant.unitPrice || firstVariant.price || 0)
-                }
-              </span>
+              {hasVariantOnSale ? (
+                <div className="space-y-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-bold text-base text-red-600">
+                      {hasMultipleVariants 
+                        ? `From ${formatPrice(lowestPrice)}` 
+                        : formatPrice(lowestPrice)
+                      }
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-400 line-through">
+                    {hasMultipleVariants 
+                      ? `Was ${formatPrice(lowestOriginalPrice)}` 
+                      : `Was ${formatPrice(firstVariant.originalPrice || firstVariant.unitPrice)}`
+                    }
+                  </div>
+                </div>
+              ) : (
+                <span className="font-medium text-base">
+                  {hasMultipleVariants 
+                    ? `From ${formatPrice(lowestPrice)}` 
+                    : formatPrice(firstVariant.unitPrice || firstVariant.price || 0)
+                  }
+                </span>
+              )}
             </div>
             <p className="text-xs text-gray-500 mt-1">
               Stock: {totalStock}

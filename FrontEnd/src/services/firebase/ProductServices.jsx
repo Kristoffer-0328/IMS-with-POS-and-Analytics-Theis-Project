@@ -1,24 +1,75 @@
-// ProductServices.jsx
+// ProductServices.jsx - Refactored for Product/Variant Architecture
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import { getFirestore, collection, onSnapshot, query, getDocs, orderBy, doc, setDoc, deleteDoc, updateDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, query, getDocs, orderBy, doc, setDoc, deleteDoc, updateDoc, getDoc, where, writeBatch } from 'firebase/firestore';
 import app from './config';
 import { ProductFactory } from '../../features/inventory/components/Factory/productFactory';
 
 const db = getFirestore(app);
 const ServicesContext = createContext(null);
 
+// Collection names - NEW Architecture (PascalCase)
+// EXPORTED for use in other components that directly access Firebase
+export const PRODUCTS_COLLECTION = 'Products';
+export const VARIANTS_COLLECTION = 'Variants';
+export const SUPPLIERS_COLLECTION = 'Suppliers';
+
+// Legacy collection names (for backward compatibility)
+export const LEGACY_PRODUCTS_PATH = 'Products'; // Nested structure: Products/{unit}/products/{productId}
+export const LEGACY_SUPPLIER_PRODUCTS = 'supplier_products'; // Old: supplier_products/{supplierId}/products/{productId}
+
 export const ServicesProvider = ({ children }) => {
   const [products, setProducts] = useState([]);
 
+  /**
+   * Listen to products from the NEW flat structure: Products/{productId}
+   * This replaces the old nested structure: Products/{unit}/products/{productId}
+   * 
+   * Products now contain ONLY general information:
+   * - name, brand, category, image, description, specifications
+   * - measurementType, baseUnit, requireDimensions
+   * - Aggregate stats: totalVariants, totalStock, lowestPrice, highestPrice
+   * 
+   * For stock/price/location data, query the Variants collection
+   */
   const listenToProducts = useCallback((onUpdate) => {
+    const productsRef = collection(db, VARIANTS_COLLECTION);
+    
+    const unsubscribe = onSnapshot(
+      productsRef,
+      (snapshot) => {
+        const productsList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        setProducts(productsList);
+        if (onUpdate) onUpdate(productsList);
+      },
+      (error) => {
+        console.error('Error listening to products:', error);
+        setProducts([]);
+        if (onUpdate) onUpdate([]);
+      }
+    );
+    
+    return unsubscribe;
+  }, []);
+
+  /**
+   * LEGACY: Listen to products from old nested structure
+   * Kept for backward compatibility during migration period
+   * @deprecated Use listenToProducts() for new flat structure
+   */
+  const listenToLegacyProducts = useCallback((onUpdate) => {
     const allProducts = [];
     let isFirstLoad = true;
+    const unsubscribers = [];
 
     // Fetch products from nested structure: Products/{storageUnit}/products/{productId}
     const fetchAllProducts = async () => {
       try {
         const allProducts = [];
-        const productsRef = collection(db, "Products");
+        const productsRef = collection(db, LEGACY_PRODUCTS_PATH);
         const storageUnitsSnapshot = await getDocs(productsRef);
         
         // Iterate through each storage unit (Unit 01, Unit 02, etc.)
@@ -31,7 +82,7 @@ export const ServicesProvider = ({ children }) => {
           }
           
           // Fetch products subcollection for this storage unit
-          const productsSubcollectionRef = collection(db, "Products", unitId, "products");
+          const productsSubcollectionRef = collection(db, LEGACY_PRODUCTS_PATH, unitId, "products");
           const productsSnapshot = await getDocs(productsSubcollectionRef);
           
           productsSnapshot.docs.forEach(doc => {
@@ -66,8 +117,18 @@ export const ServicesProvider = ({ children }) => {
               isVariant: data.isVariant || false,
               parentProductId: data.parentProductId || null,
               variantName: data.variantName || data.size || 'Standard',
+              
+              // Bundle/Package information
+              isBundle: data.isBundle || false,
+              piecesPerBundle: data.piecesPerBundle || null,
+              bundlePackagingType: data.bundlePackagingType || null,
+              totalBundles: data.totalBundles || null,
+              loosePieces: data.loosePieces || null,
+              
               totalvalue: (typeof data.unitPrice === 'number' ? data.unitPrice : parseFloat(data.unitPrice) || 0) * 
-                         (typeof data.quantity === 'number' ? data.quantity : parseInt(data.quantity) || 0)
+                         (typeof data.quantity === 'number' ? data.quantity : parseInt(data.quantity) || 0),
+              
+              _isLegacy: true // Flag to identify legacy products
             });
           });
         }
@@ -77,34 +138,59 @@ export const ServicesProvider = ({ children }) => {
         if (onUpdate) onUpdate(allProducts);
         
       } catch (error) {
-        console.error('Error fetching products:', error);
+        console.error('Error fetching legacy products:', error);
         setProducts([]);
         if (onUpdate) onUpdate([]);
       }
     };
 
+    // Setup listeners for each storage unit's products subcollection
+    const setupListeners = async () => {
+      try {
+        const productsRef = collection(db, LEGACY_PRODUCTS_PATH);
+        const storageUnitsSnapshot = await getDocs(productsRef);
+        
+        // Set up a listener for each storage unit's products subcollection
+        for (const storageUnitDoc of storageUnitsSnapshot.docs) {
+          const unitId = storageUnitDoc.id;
+          
+          if (!unitId.startsWith('Unit ')) {
+            continue;
+          }
+          
+          const productsSubcollectionRef = collection(db, LEGACY_PRODUCTS_PATH, unitId, "products");
+          const unsubscribe = onSnapshot(
+            productsSubcollectionRef,
+            (snapshot) => {
+              if (!isFirstLoad) {
+                fetchAllProducts();
+              }
+            },
+            (error) => {
+              console.error(`Error listening to Products/${unitId}/products:`, error);
+            }
+          );
+          
+          unsubscribers.push(unsubscribe);
+        }
+        
+        isFirstLoad = false;
+      } catch (error) {
+        console.error('Error setting up legacy listeners:', error);
+      }
+    };
+
     // Initial fetch
     fetchAllProducts();
-
-    // Set up a listener on the Products collection to detect changes
-    const unsubscribe = onSnapshot(
-      collection(db, "Products"),
-      (snapshot) => {
-        if (!isFirstLoad) {
-          fetchAllProducts();
-        }
-        isFirstLoad = false;
-      },
-      (error) => {
-        console.error('Error listening to Products collection:', error);
-      }
-    );
+    
+    // Setup listeners after initial fetch
+    setupListeners();
 
     // Return cleanup function
     return () => {
-      unsubscribe();
+      unsubscribers.forEach(unsub => unsub());
     };
-  }, []); // Empty dependency array since it doesn't depend on any external values
+  }, []);
 
   const fetchRestockRequests = useCallback(async () => {
     try {
@@ -124,11 +210,51 @@ export const ServicesProvider = ({ children }) => {
     }
   }, []);
 
+  const listenToSupplierProducts = useCallback((supplierId, onUpdate) => {
+    if (!supplierId) return () => {};
+    
+    // Try new structure first: Suppliers/{supplierId}/products
+    const supplierProductsRef = collection(db, SUPPLIERS_COLLECTION, supplierId, 'products');
+    const unsubscribe = onSnapshot(
+      supplierProductsRef,
+      (snapshot) => {
+        const products = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        if (onUpdate) onUpdate(products);
+      },
+      (error) => {
+        console.error('Error listening to supplier products:', error);
+        // Fallback to old structure if needed
+        const oldSupplierProductsRef = collection(db, LEGACY_SUPPLIER_PRODUCTS, supplierId, 'products');
+        const fallbackUnsubscribe = onSnapshot(
+          oldSupplierProductsRef,
+          (snapshot) => {
+            const products = snapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            }));
+            if (onUpdate) onUpdate(products);
+          },
+          (fallbackError) => {
+            console.error('Error listening to supplier products (fallback):', fallbackError);
+          }
+        );
+        return fallbackUnsubscribe;
+      }
+    );
+    
+    return unsubscribe;
+  }, []);
+
   const value = useMemo(() => ({
     products,
     listenToProducts,
-    fetchRestockRequests
-  }), [products, listenToProducts, fetchRestockRequests]);
+    listenToLegacyProducts,
+    fetchRestockRequests,
+    listenToSupplierProducts
+  }), [products, listenToProducts, listenToLegacyProducts, fetchRestockRequests, listenToSupplierProducts]);
 
   return (
     <ServicesContext.Provider value={value}>
@@ -137,39 +263,408 @@ export const ServicesProvider = ({ children }) => {
   );
 };
 
-// Functions for managing supplier-product relationships
-export const linkProductToSupplier = async (productId, supplierId, supplierData) => {
-  try {
-    // First, create the supplier-product relationship record
-    const supplierProductRef = doc(db, 'supplier_products', supplierId, 'products', productId);
-    const now = new Date().toISOString();
-    await setDoc(supplierProductRef, {
-      productId,
-      supplierPrice: supplierData.supplierPrice || 0,
-      supplierSKU: supplierData.supplierSKU || '',
-      createdAt: now,
-      updatedAt: now,
-    });
+// ============================================================================
+// NEW Product Services for Flat Structure (Products/{productId})
+// ============================================================================
 
-    // Then, update the product's variant array with supplier information
-    await updateProductVariantsWithSupplier(productId, supplierId, supplierData);
-    
-    return { success: true };
+/**
+ * Create a new product (general info only, no variants)
+ * Use ProductFactory.createProduct() to generate the product object
+ * @param {Object} productData - Product data from ProductFactory.createProduct()
+ * @returns {Promise<Object>} Created product
+ */
+export const createProduct = async (productData) => {
+  try {
+    if (!productData.id) {
+      throw new Error('Product ID is required');
+    }
+
+    const productRef = doc(db, PRODUCTS_COLLECTION, productData.id);
+    await setDoc(productRef, productData);
+
+    console.log('✅ Product created:', productData.id);
+    return { success: true, product: productData };
   } catch (error) {
-    console.error('Error linking product to supplier:', error);
+    console.error('❌ Error creating product:', error);
     return { success: false, error };
   }
 };
 
-// Helper function to update product variants with supplier information
+/**
+ * Get a single product by ID (flat structure)
+ * @param {string} productId - The product document ID
+ * @returns {Promise<Object|null>} Product data or null if not found
+ */
+export const getProductById = async (productId) => {
+  try {
+    const productRef = doc(db, PRODUCTS_COLLECTION, productId);
+    const productSnap = await getDoc(productRef);
+
+    if (productSnap.exists()) {
+      return { success: true, product: { id: productSnap.id, ...productSnap.data() } };
+    } else {
+      console.warn('⚠️ Product not found:', productId);
+      return { success: false, error: 'Product not found' };
+    }
+  } catch (error) {
+    console.error('❌ Error fetching product:', error);
+    return { success: false, error };
+  }
+};
+
+/**
+ * Get product with all its variants
+ * @param {string} productId - The product document ID
+ * @returns {Promise<Object>} Object with product and variants array
+ */
+export const getProductWithVariants = async (productId) => {
+  try {
+    // Get product
+    const productResult = await getProductById(productId);
+    if (!productResult.success) {
+      return productResult;
+    }
+
+    // Get all variants for this product
+    const variantsRef = collection(db, VARIANTS_COLLECTION);
+    const q = query(variantsRef, where('parentProductId', '==', productId));
+    const variantsSnapshot = await getDocs(q);
+    
+    const variants = variantsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    return {
+      success: true,
+      product: productResult.product,
+      variants: variants
+    };
+  } catch (error) {
+    console.error('❌ Error fetching product with variants:', error);
+    return { success: false, error };
+  }
+};
+
+/**
+ * Update product information (general info only, not variant data)
+ * @param {string} productId - The product document ID
+ * @param {Object} updates - Fields to update
+ * @returns {Promise<Object>} Success status
+ */
+export const updateProduct = async (productId, updates) => {
+  try {
+    const productRef = doc(db, PRODUCTS_COLLECTION, productId);
+    
+    const updateData = {
+      ...updates,
+      lastUpdated: new Date().toISOString()
+    };
+
+    await updateDoc(productRef, updateData);
+    console.log('✅ Product updated:', productId);
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Error updating product:', error);
+    return { success: false, error };
+  }
+};
+
+/**
+ * Delete a product and all its variants (cascade delete)
+ * @param {string} productId - The product document ID
+ * @returns {Promise<Object>} Success status with count of deleted variants
+ */
+export const deleteProduct = async (productId) => {
+  try {
+    // First, delete all variants
+    const variantsRef = collection(db, VARIANTS_COLLECTION);
+    const q = query(variantsRef, where('parentProductId', '==', productId));
+    const variantsSnapshot = await getDocs(q);
+    
+    const batch = writeBatch(db);
+    let variantCount = 0;
+    
+    variantsSnapshot.docs.forEach(variantDoc => {
+      batch.delete(doc(db, VARIANTS_COLLECTION, variantDoc.id));
+      variantCount++;
+    });
+    
+    // Delete the product
+    const productRef = doc(db, PRODUCTS_COLLECTION, productId);
+    batch.delete(productRef);
+    
+    await batch.commit();
+    
+    console.log(`✅ Product deleted: ${productId} (${variantCount} variants also deleted)`);
+    return { success: true, variantsDeleted: variantCount };
+  } catch (error) {
+    console.error('❌ Error deleting product:', error);
+    return { success: false, error };
+  }
+};
+
+/**
+ * List all products with optional filtering
+ * @param {Object} options - Filter and pagination options
+ * @returns {Promise<Array>} Array of product objects
+ */
+export const listProducts = async (options = {}) => {
+  try {
+    const {
+      category = null,
+      measurementType = null,
+      orderByField = 'createdAt',
+      orderDirection = 'desc'
+    } = options;
+
+    let q = collection(db, PRODUCTS_COLLECTION);
+
+    if (category) {
+      q = query(q, where('category', '==', category));
+    }
+    if (measurementType) {
+      q = query(q, where('measurementType', '==', measurementType));
+    }
+
+    q = query(q, orderBy(orderByField, orderDirection));
+
+    const querySnapshot = await getDocs(q);
+    const products = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    return { success: true, products };
+  } catch (error) {
+    console.error('❌ Error listing products:', error);
+    return { success: false, error };
+  }
+};
+
+/**
+ * Search products by name, brand, or category
+ * @param {string} searchTerm - Search query string
+ * @param {Object} filters - Additional filters
+ * @returns {Promise<Array>} Array of matching products
+ */
+export const searchProducts = async (searchTerm, filters = {}) => {
+  try {
+    let q = collection(db, PRODUCTS_COLLECTION);
+    
+    if (filters.category) {
+      q = query(q, where('category', '==', filters.category));
+    }
+    if (filters.measurementType) {
+      q = query(q, where('measurementType', '==', filters.measurementType));
+    }
+
+    const querySnapshot = await getDocs(q);
+    let products = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    // Client-side filtering for search term
+    if (searchTerm && searchTerm.trim() !== '') {
+      const lowerSearch = searchTerm.toLowerCase();
+      products = products.filter(product => {
+        const name = (product.name || '').toLowerCase();
+        const brand = (product.brand || '').toLowerCase();
+        const category = (product.category || '').toLowerCase();
+        
+        return name.includes(lowerSearch) ||
+               brand.includes(lowerSearch) ||
+               category.includes(lowerSearch) ||
+               product.id.toLowerCase().includes(lowerSearch);
+      });
+    }
+
+    return { success: true, products };
+  } catch (error) {
+    console.error('❌ Error searching products:', error);
+    return { success: false, error };
+  }
+};
+
+// ============================================================================
+// Legacy/Supplier Product Relationship Functions
+// ============================================================================
+
+// Helper function to ensure supplier document exists
+const ensureSupplierDocumentExists = async (supplierId, supplierData = {}) => {
+  try {
+    const now = new Date().toISOString();
+
+    // Try new structure first (Suppliers/{supplierId})
+    const supplierRef = doc(db, SUPPLIERS_COLLECTION, supplierId);
+    const supplierSnap = await getDoc(supplierRef);
+
+    if (!supplierSnap.exists()) {
+      // Create supplier document if it doesn't exist - match SupplierServices structure
+      await setDoc(supplierRef, {
+        name: supplierData.supplierName || 'Unknown Supplier',
+        primaryCode: supplierData.supplierCode || supplierId,
+        code: supplierData.supplierCode || supplierId, // For backward compatibility
+        address: supplierData.address || '',
+        contactPerson: supplierData.contactPerson || '',
+        phone: supplierData.phone || '',
+        email: supplierData.email || '',
+        supplierCodes: supplierData.supplierCodes || [],
+        leadTime: supplierData.leadTime || 7,
+        createdAt: now,
+        updatedAt: now,
+        status: 'active',
+        // Ensure supplier document is visible in Firestore
+        _hasProducts: false, // Will be set to true when first product is linked
+        totalProducts: 0,
+        // Add a dummy field to ensure document exists and is visible
+        _documentExists: true
+      });
+      console.log(`📄 Created supplier document: Suppliers/${supplierId}`);
+      return { success: true, structure: 'new' };
+    }
+
+    return { success: true, structure: 'new', exists: true };
+  } catch (error) {
+    console.error('Error ensuring supplier document exists:', error);
+    return { success: false, error };
+  }
+};
+
+// Functions for managing supplier-product relationships
+export const linkProductToSupplier = async (productId, supplierId, supplierData) => {
+  try {
+    const now = new Date().toISOString();
+
+    // Check if this is a variant (new architecture) or product (old architecture)
+    const isVariant = productId.startsWith('VAR_');
+
+    if (isVariant) {
+      // NEW ARCHITECTURE: Link variant to supplier
+      // Path: Suppliers/{supplierId}/products/{variantId}
+
+      // Ensure the supplier document exists with basic info
+      const supplierResult = await ensureSupplierDocumentExists(supplierId, supplierData);
+      if (!supplierResult.success) {
+        return supplierResult;
+      }
+
+      // Now create the product link in the subcollection - using NEW Suppliers collection
+      const supplierProductRef = doc(db, SUPPLIERS_COLLECTION, supplierId, 'products', productId);
+
+      // Get variant data to include in supplier link
+      const variantRef = doc(db, VARIANTS_COLLECTION, productId);
+      const variantSnap = await getDoc(variantRef);
+
+      if (!variantSnap.exists()) {
+        console.error(`Variant ${productId} not found`);
+        return { success: false, error: 'Variant not found' };
+      }
+
+      const variantData = variantSnap.data();
+
+      // Create comprehensive link document with all necessary fields
+      await setDoc(supplierProductRef, {
+        // Link identifiers
+        variantId: productId,
+        productId: variantData.parentProductId, // Reference to master product
+        supplierId: supplierId,
+
+        // Denormalized product info (for queries without joins)
+        productName: variantData.productName,
+        productBrand: variantData.productBrand,
+        productCategory: variantData.productCategory,
+        variantName: variantData.variantName,
+
+        // Pricing
+        supplierPrice: supplierData.supplierPrice || 0,
+        unitPrice: variantData.unitPrice || 0,
+
+        // Stock info (snapshot at time of linking)
+        currentStock: variantData.quantity || 0,
+
+        // SKU/Code
+        supplierSKU: supplierData.supplierSKU || productId,
+
+        // Metadata
+        linkedAt: now,
+        createdAt: now,
+        updatedAt: now,
+
+        // Storage location (for reference)
+        storageLocation: variantData.storageLocation || '',
+        fullLocation: variantData.fullLocation || '',
+
+        // Ensure document is visible
+        _linkExists: true, // Dummy field to ensure document exists
+      });
+
+      console.log(`✅ Linked variant ${productId} to supplier ${supplierId} (Suppliers/${supplierId}/products/${productId})`);
+
+    } else {
+      // OLD ARCHITECTURE: Link product to supplier (backward compatibility)
+      // Path: supplier_products/{supplierId}/products/{productId}
+
+      // For old architecture, ensure supplier document exists in supplier_products collection
+      const supplierRef = doc(db, LEGACY_SUPPLIER_PRODUCTS, supplierId);
+      const supplierSnap = await getDoc(supplierRef);
+
+      if (!supplierSnap.exists()) {
+        // Create supplier document if it doesn't exist
+        await setDoc(supplierRef, {
+          supplierId: supplierId,
+          name: supplierData.supplierName || 'Unknown Supplier',
+          code: supplierData.supplierCode || supplierId,
+          primaryCode: supplierData.supplierCode || supplierId,
+          createdAt: now,
+          updatedAt: now,
+          // Add a dummy field to ensure document exists
+          _documentExists: true
+        });
+        console.log(`📄 Created supplier document: ${LEGACY_SUPPLIER_PRODUCTS}/${supplierId}`);
+      }
+
+      // Now create the product link in the subcollection
+      const supplierProductRef = doc(db, LEGACY_SUPPLIER_PRODUCTS, supplierId, 'products', productId);
+
+      await setDoc(supplierProductRef, {
+        productId,
+        supplierId: supplierId,
+        supplierPrice: supplierData.supplierPrice || 0,
+        supplierSKU: supplierData.supplierSKU || '',
+        createdAt: now,
+        updatedAt: now,
+        _linkExists: true, // Dummy field to ensure document exists
+      });
+
+      // Update the product's variant array with supplier information
+      await updateProductVariantsWithSupplier(productId, supplierId, supplierData);
+
+      console.log(`🔙 Linked product ${productId} to supplier ${supplierId} (old structure)`);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Error linking product to supplier:', error);
+    return { success: false, error };
+  }
+};// Helper function to update product variants with supplier information
 const updateProductVariantsWithSupplier = async (productId, supplierId, supplierData) => {
   try {
     // Find the product in the nested structure: Products/{storageLocation}/products/{productId}
     const storageLocationsRef = collection(db, 'Products');
     const storageLocationsSnapshot = await getDocs(storageLocationsRef);
     
+    let productFound = false;
+    
     for (const storageLocationDoc of storageLocationsSnapshot.docs) {
       const storageLocation = storageLocationDoc.id;
+      
+      // Skip non-storage unit documents
+      if (!storageLocation.startsWith('Unit ')) {
+        continue;
+      }
       
       // Check if this storage location has a products subcollection
       const productsRef = collection(db, 'Products', storageLocation, 'products');
@@ -178,37 +673,107 @@ const updateProductVariantsWithSupplier = async (productId, supplierId, supplier
         const productsSnapshot = await getDocs(productsRef);
         
         for (const productDoc of productsSnapshot.docs) {
-          if (productDoc.id === productId) {
+          if (productDoc.id === productId || productDoc.id.startsWith(productId)) {
             const productData = productDoc.data();
+            const productRef = doc(db, 'Products', storageLocation, 'products', productDoc.id);
             
-            // Update variants with supplier information
+            // Prepare supplier information
+            const supplierInfo = {
+              name: supplierData.supplierName || 'Unknown',
+              code: supplierData.supplierCode || supplierData.supplierSKU || '',
+              primaryCode: supplierData.supplierCode || supplierData.supplierSKU || '',
+              id: supplierId,
+              price: supplierData.supplierPrice || 0,
+              sku: supplierData.supplierSKU || ''
+            };
+            
+            // Check if product has variants structure
             if (productData.variants && Array.isArray(productData.variants)) {
-              const updatedVariants = productData.variants.map(variant => ({
-                ...variant,
-                supplier: {
-                  name: supplierData.supplierName || 'Unknown',
-                  code: supplierData.supplierCode || supplierData.supplierSKU || '',
-                  id: supplierId,
-                  price: supplierData.supplierPrice || variant.unitPrice || 0,
-                  sku: supplierData.supplierSKU || ''
-                }
-              }));
+              // Get existing suppliers array or initialize empty array
+              const existingSuppliers = productData.suppliers || [];
               
-              // Update the product document with the new variants
-              const productRef = doc(db, 'Products', storageLocation, 'products', productId);
-              await updateDoc(productRef, {
+              // Check if supplier already exists
+              const supplierExists = existingSuppliers.some(s => s.id === supplierId);
+              
+              // Update variants with supplier information
+              const updatedVariants = productData.variants.map(variant => {
+                const variantSuppliers = variant.suppliers || [];
+                const variantSupplierExists = variantSuppliers.some(s => s.id === supplierId);
+                
+                if (variantSupplierExists) {
+                  // Update existing supplier in variant
+                  return {
+                    ...variant,
+                    suppliers: variantSuppliers.map(s => 
+                      s.id === supplierId 
+                        ? { ...supplierInfo, price: supplierData.supplierPrice || variant.unitPrice || 0 }
+                        : s
+                    )
+                  };
+                } else {
+                  // Add new supplier to variant
+                  return {
+                    ...variant,
+                    suppliers: [...variantSuppliers, {
+                      ...supplierInfo,
+                      price: supplierData.supplierPrice || variant.unitPrice || 0,
+                      sku: supplierData.supplierSKU || ''
+                    }]
+                  };
+                }
+              });
+              
+              // Prepare update object
+              const updateData = {
                 variants: updatedVariants,
                 updatedAt: new Date().toISOString()
-              });
-
-              return; // Found and updated, no need to continue searching
+              };
+              
+              // Add or update supplier in product-level suppliers array
+              if (supplierExists) {
+                updateData.suppliers = existingSuppliers.map(s => 
+                  s.id === supplierId ? supplierInfo : s
+                );
+              } else {
+                updateData.suppliers = [...existingSuppliers, supplierInfo];
+              }
+              
+              // Update the product document
+              await updateDoc(productRef, updateData);
+            } else {
+              // Product doesn't have variants - update product directly
+              const existingSuppliers = productData.suppliers || [];
+              const supplierExists = existingSuppliers.some(s => s.id === supplierId);
+              
+              const updateData = {
+                updatedAt: new Date().toISOString()
+              };
+              
+              if (supplierExists) {
+                // Update existing supplier
+                updateData.suppliers = existingSuppliers.map(s => 
+                  s.id === supplierId ? supplierInfo : s
+                );
+              } else {
+                // Add new supplier
+                updateData.suppliers = [...existingSuppliers, supplierInfo];
+              }
+              
+              await updateDoc(productRef, updateData);
             }
+            
+            productFound = true;
           }
         }
       } catch (err) {
         // Continue to next storage location if this one fails
+        console.error(`Error updating products in ${storageLocation}:`, err);
         continue;
       }
+    }
+    
+    if (!productFound) {
+      console.warn(`Product ${productId} not found in any storage location`);
     }
   } catch (error) {
     console.error('Error updating product variants with supplier:', error);
@@ -218,13 +783,50 @@ const updateProductVariantsWithSupplier = async (productId, supplierId, supplier
 
 export const unlinkProductFromSupplier = async (productId, supplierId) => {
   try {
-    // First, delete the supplier-product relationship record
-    const supplierProductRef = doc(db, 'supplier_products', supplierId, 'products', productId);
-    await deleteDoc(supplierProductRef);
-    
-    // Then, remove supplier information from the product's variant array
-    await removeSupplierFromProductVariants(productId, supplierId);
-    
+    const isVariant = productId.startsWith('VAR_');
+    let supplierProductRef;
+    let found = false;
+
+    // Try new structure first (Suppliers/{id}/products/{productId})
+    try {
+      supplierProductRef = doc(db, SUPPLIERS_COLLECTION, supplierId, 'products', productId);
+      const supplierProductDoc = await getDoc(supplierProductRef);
+
+      if (supplierProductDoc.exists()) {
+        await deleteDoc(supplierProductRef);
+        found = true;
+        console.log(`✅ Unlinked variant ${productId} from supplier ${supplierId} (new structure)`);
+      }
+    } catch (error) {
+      console.log('📦 Product link not in new "Suppliers" collection, trying old structure...');
+    }
+
+    // Try old structure if not found in new structure
+    if (!found) {
+      try {
+        supplierProductRef = doc(db, LEGACY_SUPPLIER_PRODUCTS, supplierId, 'products', productId);
+        const supplierProductDoc = await getDoc(supplierProductRef);
+
+        if (supplierProductDoc.exists()) {
+          await deleteDoc(supplierProductRef);
+          found = true;
+          console.log(`✅ Unlinked product ${productId} from supplier ${supplierId} (old structure)`);
+
+          // For old structure, also update the product's variant array
+          if (!isVariant) {
+            await removeSupplierFromProductVariants(productId, supplierId);
+          }
+        }
+      } catch (oldError) {
+        console.log('📦 Product link not in old "supplier_products" collection either');
+      }
+    }
+
+    if (!found) {
+      console.warn(`Product link not found for supplier ${supplierId} and product ${productId}`);
+      return { success: false, error: 'Product link not found' };
+    }
+
     return { success: true };
   } catch (error) {
     console.error('Error unlinking product from supplier:', error);
@@ -239,8 +841,15 @@ const removeSupplierFromProductVariants = async (productId, supplierId) => {
     const storageLocationsRef = collection(db, 'Products');
     const storageLocationsSnapshot = await getDocs(storageLocationsRef);
     
+    let productFound = false;
+    
     for (const storageLocationDoc of storageLocationsSnapshot.docs) {
       const storageLocation = storageLocationDoc.id;
+      
+      // Skip non-storage unit documents
+      if (!storageLocation.startsWith('Unit ')) {
+        continue;
+      }
       
       // Check if this storage location has a products subcollection
       const productsRef = collection(db, 'Products', storageLocation, 'products');
@@ -249,35 +858,57 @@ const removeSupplierFromProductVariants = async (productId, supplierId) => {
         const productsSnapshot = await getDocs(productsRef);
         
         for (const productDoc of productsSnapshot.docs) {
-          if (productDoc.id === productId) {
+          if (productDoc.id === productId || productDoc.id.startsWith(productId)) {
             const productData = productDoc.data();
+            const productRef = doc(db, 'Products', storageLocation, 'products', productDoc.id);
             
-            // Remove supplier information from variants
+            // Check if product has variants structure
             if (productData.variants && Array.isArray(productData.variants)) {
+              // Remove supplier from variants' suppliers arrays
               const updatedVariants = productData.variants.map(variant => {
-                // Remove supplier info if it matches the supplier being unlinked
-                if (variant.supplier && variant.supplier.id === supplierId) {
-                  const { supplier, ...variantWithoutSupplier } = variant;
-                  return variantWithoutSupplier;
+                if (variant.suppliers && Array.isArray(variant.suppliers)) {
+                  return {
+                    ...variant,
+                    suppliers: variant.suppliers.filter(s => s.id !== supplierId)
+                  };
                 }
                 return variant;
               });
               
-              // Update the product document with the updated variants
-              const productRef = doc(db, 'Products', storageLocation, 'products', productId);
-              await updateDoc(productRef, {
+              // Remove supplier from product-level suppliers array
+              const existingSuppliers = productData.suppliers || [];
+              const updatedSuppliers = existingSuppliers.filter(s => s.id !== supplierId);
+              
+              const updateData = {
                 variants: updatedVariants,
+                suppliers: updatedSuppliers,
+                updatedAt: new Date().toISOString()
+              };
+              
+              await updateDoc(productRef, updateData);
+            } else {
+              // Product doesn't have variants - remove supplier from product's suppliers array
+              const existingSuppliers = productData.suppliers || [];
+              const updatedSuppliers = existingSuppliers.filter(s => s.id !== supplierId);
+              
+              await updateDoc(productRef, {
+                suppliers: updatedSuppliers,
                 updatedAt: new Date().toISOString()
               });
-
-              return; // Found and updated, no need to continue searching
             }
+            
+            productFound = true;
           }
         }
       } catch (err) {
         // Continue to next storage location if this one fails
+        console.error(`Error removing supplier from products in ${storageLocation}:`, err);
         continue;
       }
+    }
+    
+    if (!productFound) {
+      console.warn(`Product ${productId} not found in any storage location`);
     }
   } catch (error) {
     console.error('Error removing supplier from product variants:', error);
@@ -287,11 +918,43 @@ const removeSupplierFromProductVariants = async (productId, supplierId) => {
 
 export const updateSupplierProductDetails = async (productId, supplierId, updates) => {
   try {
-    const supplierProductRef = doc(db, 'supplier_products', supplierId, 'products', productId);
+    let supplierProductRef;
+    let supplierProductDoc;
+
+    // Try new structure first (Suppliers/{id}/products/{productId})
+    try {
+      supplierProductRef = doc(db, SUPPLIERS_COLLECTION, supplierId, 'products', productId);
+      supplierProductDoc = await getDoc(supplierProductRef);
+
+      if (supplierProductDoc.exists()) {
+        console.log('📦 Updating product link in new "Suppliers" collection');
+      } else {
+        throw new Error('Document not found in new structure');
+      }
+    } catch (error) {
+      // Try old structure (supplier_products/{id}/products/{productId})
+      console.log('📦 Product link not in new "Suppliers" collection, trying old "supplier_products"...');
+      try {
+        supplierProductRef = doc(db, LEGACY_SUPPLIER_PRODUCTS, supplierId, 'products', productId);
+        supplierProductDoc = await getDoc(supplierProductRef);
+
+        if (!supplierProductDoc.exists()) {
+          console.error(`Product link not found for supplier ${supplierId} and product ${productId}`);
+          return { success: false, error: 'Product link not found' };
+        }
+        console.log('📦 Updating product link in old "supplier_products" collection');
+      } catch (oldError) {
+        console.error('Error accessing both supplier product structures:', oldError);
+        return { success: false, error: 'Unable to access supplier product data' };
+      }
+    }
+
+    // Update the document
     await updateDoc(supplierProductRef, {
       ...updates,
       updatedAt: new Date().toISOString()
     });
+
     return { success: true };
   } catch (error) {
     console.error('Error updating supplier product details:', error);
@@ -301,13 +964,45 @@ export const updateSupplierProductDetails = async (productId, supplierId, update
 
 export const getSupplierProducts = async (supplierId) => {
   try {
-    const supplierProductsRef = collection(db, 'supplier_products', supplierId, 'products');
-    const snapshot = await getDocs(supplierProductsRef);
-    const products = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    return { success: true, products };
+    let products = [];
+
+    // Try new structure first (Suppliers/{id}/products)
+    try {
+      const supplierProductsRef = collection(db, SUPPLIERS_COLLECTION, supplierId, 'products');
+      const snapshot = await getDocs(supplierProductsRef);
+
+      if (!snapshot.empty) {
+        products = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        console.log(`📦 Found ${products.length} products in new "Suppliers" collection`);
+        return { success: true, products };
+      }
+    } catch (error) {
+      console.log('📦 New "Suppliers" collection not accessible, trying old structure...');
+    }
+
+    // Try old structure (supplier_products/{id}/products)
+    try {
+      const supplierProductsRef = collection(db, LEGACY_SUPPLIER_PRODUCTS, supplierId, 'products');
+      const snapshot = await getDocs(supplierProductsRef);
+
+      if (!snapshot.empty) {
+        products = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        console.log(`📦 Found ${products.length} products in old "supplier_products" collection`);
+        return { success: true, products };
+      }
+    } catch (error) {
+      console.log('📦 Old "supplier_products" collection not accessible either');
+    }
+
+    // If we get here, no products found in either structure
+    console.log(`📦 No products found for supplier ${supplierId} in any collection`);
+    return { success: true, products: [] };
   } catch (error) {
     console.error('Error fetching supplier products:', error);
     return { success: false, error };
@@ -321,29 +1016,18 @@ export const useServices = () => {
   }
   return {
     ...context,
+    // NEW: Product services (flat structure)
+    createProduct,
+    getProductById,
+    getProductWithVariants,
+    updateProduct,
+    deleteProduct,
+    listProducts,
+    searchProducts,
+    // Legacy: Supplier-product relationship functions
     linkProductToSupplier,
     unlinkProductFromSupplier,
     updateSupplierProductDetails,
-    getSupplierProducts,
-    listenToSupplierProducts: useCallback((supplierId, onUpdate) => {
-      if (!supplierId) return () => {};
-      
-      const supplierProductsRef = collection(db, 'supplier_products', supplierId, 'products');
-      const unsubscribe = onSnapshot(
-        supplierProductsRef,
-        (snapshot) => {
-          const products = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          if (onUpdate) onUpdate(products);
-        },
-        (error) => {
-          console.error('Error listening to supplier products:', error);
-        }
-      );
-      
-      return unsubscribe;
-    }, [])
+    getSupplierProducts
   };
 };

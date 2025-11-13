@@ -8,6 +8,7 @@ import TestDataGenerator from '../../inventory/components/Reports/TestDataGenera
 import POAnalytics from '../../inventory/components/PurchaseOrder/POAnalytics';
 import Audit_trail from './Audit_trail';
 import System_log from './System_log';
+import ReceiptModal from '../../pos/components/Modals/ReceiptModal';
 import {
   BarChart,
   Bar,
@@ -21,6 +22,10 @@ import { getFirestore, collection, query, orderBy, getDocs, where } from 'fireba
 import app from '../../../FirebaseConfig';
 
 const db = getFirestore(app);
+
+// Collection names - Match naming convention with other services
+const TRANSACTIONS_COLLECTION = 'Transactions'; // POS transactions (PascalCase)
+const LEGACY_POS_TRANSACTIONS = 'posTransactions'; // Old collection name (camelCase) for backward compatibility
 
 // Helper function to format date and time
 const getFormattedDateTime = (timestamp) => {
@@ -144,20 +149,41 @@ const POSTransactionsTab = () => {
   const [error, setError] = useState(null);
   const [salesData, setSalesData] = useState([]);
   const [showChartInfo, setShowChartInfo] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
 
   // Fetch transactions
   useEffect(() => {
     const fetchTransactions = async () => {
       try {
         setLoading(true);
-        const transactionsRef = collection(db, 'posTransactions');
+        
+        // Try new collection first (Transactions - PascalCase)
+        let transactionsRef = collection(db, TRANSACTIONS_COLLECTION);
         let q = query(transactionsRef, orderBy('createdAt', 'desc'));
 
         if (currentFilter !== 'all') {
           q = query(q, where('paymentMethod', '==', currentFilter));
         }
 
-        const querySnapshot = await getDocs(q);
+        let querySnapshot = await getDocs(q);
+        
+        // If no documents found, try legacy collection
+        if (querySnapshot.empty) {
+          console.log('📦 No transactions in "Transactions" collection, checking legacy "posTransactions"...');
+          transactionsRef = collection(db, LEGACY_POS_TRANSACTIONS);
+          q = query(transactionsRef, orderBy('createdAt', 'desc'));
+
+          if (currentFilter !== 'all') {
+            q = query(q, where('paymentMethod', '==', currentFilter));
+          }
+
+          querySnapshot = await getDocs(q);
+          console.log(`📦 Found ${querySnapshot.size} transactions in legacy "posTransactions" collection`);
+        } else {
+          console.log(`📦 Found ${querySnapshot.size} transactions in new "Transactions" collection`);
+        }
+
         const fetchedTransactions = querySnapshot.docs.map(doc => {
           const data = doc.data();
           return {
@@ -174,6 +200,7 @@ const POSTransactionsTab = () => {
             saleDate: data.saleDate,
             saleTime: data.saleTime,
             cashier: data.cashier,
+      
             ...data
           };
         });
@@ -250,6 +277,27 @@ const POSTransactionsTab = () => {
   const filteredTransactions = transactions.filter(transaction =>
     (transaction.transactionId || transaction.id || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleViewReceipt = (transaction) => {
+    // Transform transaction data to match ReceiptModal's expected format
+    const formattedTransaction = {
+      transactionId: transaction.transactionId || transaction.id,
+      customerName: transaction.customerInfo?.name || transaction.customerName || 'Walk-in Customer',
+      customerDetails: transaction.customerInfo || {},
+      cashierName: transaction.cashier?.name || transaction.cashierName || 'Unknown',
+      items: transaction.items || [],
+      subTotal: transaction.totals?.subtotal || transaction.subTotal || 0,
+      tax: transaction.totals?.tax || transaction.tax || 0,
+      total: transaction.total || transaction.totals?.total || 0,
+      amountPaid: transaction.amountPaid || 0,
+      change: transaction.change || 0,
+      paymentMethod: transaction.paymentMethod || 'Cash',
+      createdAt: transaction.createdAt,
+      releaseStatus: transaction.releaseStatus || 'released'
+    };
+    setSelectedTransaction(formattedTransaction);
+    setShowReceiptModal(true);
+  };
 
   return (
     <div>
@@ -396,7 +444,11 @@ const POSTransactionsTab = () => {
                 {filteredTransactions.slice(0, 10).map((transaction) => {
                   const { dateString, timeString } = getFormattedDateTime(transaction.createdAt);
                   return (
-                    <tr key={transaction.transactionId || transaction.id} className="hover:bg-gray-50 transition-colors">
+                    <tr 
+                      key={transaction.transactionId || transaction.id} 
+                      className="hover:bg-gray-50 transition-colors cursor-pointer"
+                      onClick={() => handleViewReceipt(transaction)}
+                    >
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">
                         {transaction.transactionId || transaction.id}
                       </td>
@@ -414,13 +466,13 @@ const POSTransactionsTab = () => {
                       </td>
                       <td className="px-6 py-4">
                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        transaction.releaseStatus === 'released'
+                        transaction.status === 'completed'
                           ? 'bg-green-100 text-green-800'
-                          : transaction.releaseStatus === 'pending_release'
+                          : transaction.status === 'completed'
                           ? 'bg-orange-100 text-orange-800'
                           : 'bg-gray-100 text-gray-800'
                       }`}>
-                        {transaction.releaseStatus === 'released' ? 'Released' : 'Pending'}
+                        {transaction.status === 'completed' ? 'Complete' : transaction.status.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
                       </span>
                       </td>
                     </tr>
@@ -431,6 +483,17 @@ const POSTransactionsTab = () => {
           )}
         </div>
       </div>
+
+      {/* Receipt Modal */}
+      {showReceiptModal && selectedTransaction && (
+        <ReceiptModal
+          transaction={selectedTransaction}
+          onClose={() => {
+            setShowReceiptModal(false);
+            setSelectedTransaction(null);
+          }}
+        />
+      )}
     </div>
   );
 };

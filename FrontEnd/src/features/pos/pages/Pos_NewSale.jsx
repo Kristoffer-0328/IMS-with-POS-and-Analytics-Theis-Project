@@ -10,6 +10,8 @@ import {
   addDoc,
   collection,
   setDoc,
+  getDocs,
+  writeBatch,
 } from 'firebase/firestore';
 import app from  '../../../FirebaseConfig';
 import { useAuth } from '../../auth/services/FirebaseAuth';
@@ -27,9 +29,11 @@ import UnitConversionModal from '../components/UnitConversionModal';
 // Import Modals from new locations
 import VariantSelectionModal from '../components/Modals/VariantSelectionModal';
 import QuickQuantityModal from '../components/QuickQuantityModal';
-import LocationSelectionModal from '../components/Modals/LocationSelectionModal';
 import ReceiptModal from '../components/Modals/ReceiptModal';
 import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
+
+// Import Inventory Calculations Utility
+import { calculateInventoryMetrics } from '../utils/inventoryCalculations';
 
 const db = getFirestore(app);
 
@@ -39,6 +43,87 @@ const formatCurrency = (number) => {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(number);
+};
+
+// Helper function to format product dimensions for display based on measurement type
+const formatDimensions = (product) => {
+  if (!product) return null;
+  
+  // Format based on measurement type from CATEGORY_RULES
+  const measurementType = product.measurementType;
+  
+  switch (measurementType) {
+    case 'length':
+      // Products measured by length (Steel, Plywood, Roofing, etc.)
+      if (product.requireDimensions || product.length || product.thickness || product.width) {
+        const hasLength = product.length && parseFloat(product.length) > 0;
+        const hasWidth = product.width && parseFloat(product.width) > 0;
+        const hasThickness = product.thickness && parseFloat(product.thickness) > 0;
+        
+        if (!hasLength && !hasThickness) return null;
+        
+        if (hasLength && hasThickness && !hasWidth) {
+          // Bar/Tube/Rebar (cylindrical) - Length × Diameter
+          return `${product.length}m × ⌀${product.thickness}mm`;
+        } else if (hasLength && hasWidth && hasThickness) {
+          // Sheet/Panel - Length × Width × Thickness
+          return `${product.length}m × ${product.width}cm × ${product.thickness}mm`;
+        } else if (hasThickness) {
+          // Only thickness (for roofing sheets, etc.)
+          return `${product.thickness}mm thick`;
+        } else if (hasLength) {
+          // Only length
+          return `${product.length}m`;
+        }
+      }
+      return null;
+      
+    case 'weight':
+      // Products measured by weight (Cement & Aggregates)
+      if (product.unitWeightKg && parseFloat(product.unitWeightKg) > 0) {
+        return `${product.unitWeightKg}kg`;
+      }
+      return null;
+      
+    case 'volume':
+      // Products measured by volume (Paint & Coatings)
+      if (product.unitVolumeLiters && parseFloat(product.unitVolumeLiters) > 0) {
+        return `${product.unitVolumeLiters}L`;
+      }
+      return null;
+      
+    case 'count':
+      // Products measured by count (Electrical, Hardware, etc.)
+      // For count-based items, show bundle info if available
+      if (product.isBundle && product.piecesPerBundle) {
+        return `${product.piecesPerBundle} ${product.baseUnit || 'pcs'}/${product.bundlePackagingType || 'bundle'}`;
+      }
+      // Or show size/unit variant if available
+      if (product.size && product.size !== 'default') {
+        return `${product.size} ${product.unit || product.baseUnit || 'pcs'}`;
+      }
+      return null;
+      
+    default:
+      // Fallback: try to detect dimension type
+      const hasLength = product.length && parseFloat(product.length) > 0;
+      const hasWidth = product.width && parseFloat(product.width) > 0;
+      const hasThickness = product.thickness && parseFloat(product.thickness) > 0;
+      
+      if (hasLength && hasThickness && !hasWidth) {
+        return `${product.length}m × ⌀${product.thickness}mm`;
+      } else if (hasLength && hasWidth && hasThickness) {
+        return `${product.length}m × ${product.width}cm × ${product.thickness}mm`;
+      } else if (hasThickness) {
+        return `${product.thickness}mm`;
+      } else if (product.unitWeightKg) {
+        return `${product.unitWeightKg}kg`;
+      } else if (product.unitVolumeLiters) {
+        return `${product.unitVolumeLiters}L`;
+      }
+      
+      return null;
+  }
 };
 
 // Helper function to clean Firebase data (remove undefined values)
@@ -78,72 +163,1044 @@ const getFormattedDateTime = () => {
 };
 
 // Helper function to check if product needs restocking
-const checkRestockingThreshold = (productData, variantIndex) => {
+// Now uses the centralized inventory calculations utility
+const checkRestockingThreshold = async (productData, variantIndex) => {
+  console.log('🔍 checkRestockingThreshold CALLED:', {
+    productName: productData.name,
+    variantIndex,
+    hasVariants: !!productData.variants,
+    variantsCount: productData.variants?.length
+  });
+
   const variant = productData.variants?.[variantIndex];
-  if (!variant) return false;
-  
+  if (!variant) {
+    console.log('❌ No variant found at index:', variantIndex);
+    return { needsRestock: false, currentQuantity: 0 };
+  }
+
   const currentQty = variant.quantity || 0;
-  const restockLevel = variant.restockLevel || productData.restockLevel || 10; // Minimum stock level
-  const maximumStockLevel = variant.maximumStockLevel || productData.maximumStockLevel || 100; // Maximum stock level
+  console.log('📦 Variant data:', {
+    size: variant.size,
+    unit: variant.unit,
+    currentQty,
+    restockLevel: variant.restockLevel
+  });
   
-  return {
-    needsRestock: currentQty <= restockLevel,
-    isLowStock: currentQty <= (restockLevel * 1.5), // Alert when 50% above restock level
-    currentQuantity: currentQty,
-    restockLevel,
-    maximumStockLevel
+  // Gather product/variant data for calculations
+  const unitCost = Number(variant.supplierPrice) || Number(variant.unitPrice) || 
+                   Number(productData.supplierPrice) || Number(productData.unitPrice) || 0;
+  
+  // Get lead time from Suppliers collection ONLY
+  let leadTimeDays = 7; // default fallback if supplier not found or no lead time
+  let supplierData = null;
+  let primarySupplier = null;
+  
+  try {
+    // Get supplier from product's suppliers array
+    // Products can have multiple suppliers, use the first one as primary
+    if (productData.suppliers && Array.isArray(productData.suppliers) && productData.suppliers.length > 0) {
+      primarySupplier = productData.suppliers[0]; // Use first supplier as primary
+      const supplierId = primarySupplier.id || primarySupplier.code;
+      
+      console.log(`📦 Product has ${productData.suppliers.length} supplier(s). Using primary supplier: ${primarySupplier.name || supplierId}`);
+      
+      if (supplierId) {
+        // Fetch actual supplier document from Suppliers collection
+        const supplierRef = doc(db, 'Suppliers', supplierId);
+        const supplierSnap = await getDoc(supplierRef);
+        
+        if (supplierSnap.exists()) {
+          supplierData = supplierSnap.data();
+          if (supplierData.leadTime && Number(supplierData.leadTime) > 0) {
+            leadTimeDays = Number(supplierData.leadTime);
+            console.log(`✅ Using lead time from Suppliers collection: ${leadTimeDays} days for supplier ${supplierData.name || supplierId}`);
+          } else {
+            console.warn(`⚠️ Supplier ${supplierData.name || supplierId} found but has no lead time. Using default: ${leadTimeDays} days`);
+          }
+        } else {
+          console.warn(`⚠️ Supplier ${supplierId} not found in Suppliers collection. Using default lead time: ${leadTimeDays} days`);
+        }
+      }
+    } else {
+      console.warn(`⚠️ Product ${productData.name} has no suppliers array. Using default lead time: ${leadTimeDays} days`);
+    }
+  } catch (error) {
+    console.error('Error fetching supplier data:', error);
+    console.log(`ℹ️ Using default lead time: ${leadTimeDays} days`);
+  }
+  
+  const safetyStock = Number(productData.safetyStock) || Number(variant.safetyStock) || 0;
+  const maximumStockLevel = variant.maximumStockLevel || productData.maximumStockLevel || 100;
+  
+  // Check if pre-calculated values exist
+  const existingROP = variant.restockLevel || productData.restockLevel;
+  const existingEOQ = variant.eoq || productData.eoq;
+  
+  // Calculate holding period for time-based holding cost
+  const currentDate = new Date();
+  const createdDate = new Date(productData.createdAt || variant.createdAt || Date.now());
+  const holdingPeriodDays = Math.max(1, Math.ceil((currentDate - createdDate) / (1000 * 60 * 60 * 24)));
+  
+  // Use the centralized calculation utility with actual sales history
+  const metrics = calculateInventoryMetrics({
+    currentQty,
+    unitCost,
+    leadTimeDays,
+    safetyStock,
+    maximumStockLevel,
+    salesHistory: variant.salesHistory || productData.salesHistory || [],
+    existingROP,
+    existingEOQ,
+    holdingPeriodDays
+  });
+
+  // Log detailed ROP calculation for debugging
+  console.log(`📊 ROP Calculation for ${productData.name}:`, {
+    currentQty,
+    leadTimeDays,
+    safetyStock,
+    averageDailyDemand: metrics.averageDailyDemand,
+    calculatedROP: metrics.restockLevel,
+    formula: `ROP = (${metrics.averageDailyDemand.toFixed(2)} units/day × ${leadTimeDays} days) + ${safetyStock} safety stock = ${metrics.restockLevel}`,
+    salesDataPoints: (variant.salesHistory || productData.salesHistory || []).length,
+    needsRestock: metrics.needsRestock,
+    priority: metrics.priority
+  });
+
+  const result = {
+    needsRestock: metrics.needsRestock,
+    isLowStock: metrics.isLowStock,
+    isCritical: metrics.isCritical,
+    isOutOfStock: metrics.isOutOfStock,
+    currentQuantity: metrics.currentQuantity,
+    restockLevel: metrics.restockLevel, // ROP
+    maximumStockLevel: metrics.maximumStockLevel,
+    eoq: metrics.eoq,
+    suggestedOrderQuantity: metrics.suggestedOrderQuantity,
+    priority: metrics.priority,
+    statusMessage: metrics.statusMessage,
+    // Include full metrics for detailed logging/debugging
+    fullMetrics: metrics
   };
+
+  console.log('✅ checkRestockingThreshold RESULT:', {
+    needsRestock: result.needsRestock,
+    currentQuantity: result.currentQuantity,
+    restockLevel: result.restockLevel,
+    priority: result.priority
+  });
+
+  return result;
+};
+
+// Helper function to generate restocking notification
+const generateRestockingNotification = async (restockingRequest, currentUser) => {
+  try {
+    if (!restockingRequest) return null;
+
+    const notificationId = `NOT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Enhanced notification with detailed metrics
+    const notification = {
+      notificationId,
+      type: 'restocking_request',
+      priority: restockingRequest.priority,
+      title: `${restockingRequest.priority === 'critical' ? '⛔ CRITICAL' : restockingRequest.priority === 'urgent' ? '🚨 URGENT' : '⚠️'} Restocking Required`,
+      message: `${restockingRequest.productName} - ${restockingRequest.statusMessage || `${restockingRequest.currentQuantity} units remaining`}`,
+      details: {
+        productName: restockingRequest.productName,
+        currentQuantity: restockingRequest.currentQuantity,
+        restockLevel: restockingRequest.restockLevel,
+        maximumStockLevel: restockingRequest.maximumStockLevel,
+        suggestedOrderQuantity: restockingRequest.suggestedOrderQuantity,
+        eoq: restockingRequest.eoq,
+        location: restockingRequest.location.fullPath,
+        variantDetails: restockingRequest.variantDetails,
+        // Additional context from inventory metrics
+        averageDailyDemand: restockingRequest.averageDailyDemand,
+        leadTimeDays: restockingRequest.leadTimeDays,
+        isOutOfStock: restockingRequest.isOutOfStock,
+        isCritical: restockingRequest.isCritical
+      },
+      targetRoles: ['InventoryManager', 'Admin'], // Who should see this notification
+      triggeredBy: restockingRequest.triggeredByUser,
+      triggeredByName: restockingRequest.triggeredByUserName,
+      relatedRequestId: restockingRequest.requestId,
+      isRead: false,
+      status: 'active',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+
+    // Save to notifications collection
+    await addDoc(collection(db, 'Notifications'), notification);
+
+    console.log(`📬 Restocking notification created: ${notification.title} for ${restockingRequest.productName}`);
+
+    return notification;
+  } catch (error) {
+    console.error('Error generating restocking notification:', error);
+    return null;
+  }
+};
+
+// Function to generate sale notification for inventory managers
+const generateSaleNotification = async (transactionData, currentUser) => {
+  try {
+    if (!transactionData) return null;
+
+    const notificationId = `NOT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Calculate total items sold
+    const totalItemsSold = transactionData.items.reduce((sum, item) => sum + item.quantity, 0);
+
+    const notification = {
+      notificationId,
+      type: 'sale_completed',
+      priority: 'normal',
+      title: '💰 Sale Completed',
+      message: `Sale ${transactionData.transactionId} completed - ${totalItemsSold} items sold for ₱${transactionData.total.toLocaleString()}`,
+      details: {
+        transactionId: transactionData.transactionId,
+        customerName: transactionData.customerName,
+        totalAmount: transactionData.total,
+        totalItems: totalItemsSold,
+        paymentMethod: transactionData.paymentMethod,
+        items: transactionData.items.map(item => ({
+          productName: item.productName,
+          variantName: item.variantName,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalPrice,
+          category: item.category
+        })),
+        saleDate: transactionData.saleDate,
+        saleTime: transactionData.saleTime
+      },
+      targetRoles: ['InventoryManager', 'Admin'], // Who should see this notification
+      triggeredBy: transactionData.createdBy,
+      triggeredByName: transactionData.cashierName,
+      relatedTransactionId: transactionData.transactionId,
+      isRead: false,
+      status: 'active',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+
+    // Save to notifications collection
+    await addDoc(collection(db, 'Notifications'), notification);
+
+    return notification;
+  } catch (error) {
+    console.error('Error generating sale notification:', error);
+    return null;
+  }
 };
 
 // Helper function to generate restocking request
+// restockCheck parameter should be passed from the caller to avoid redundant calculations
+const generateRestockingRequest = async (productData, variantIndex, locationInfo, currentUser, restockCheck) => {
+  try {
+    console.log('📝 generateRestockingRequest CALLED:', {
+      productName: productData.name,
+      variantIndex,
+      locationInfo,
+      hasRestockCheck: !!restockCheck,
+      needsRestock: restockCheck?.needsRestock
+    });
 
-// Helper function to generate sale notification
-  const generateSaleNotification = async (transactionData, currentUser) => {
-    try {
-      if (!transactionData) return null;
-      
-      const notificationId = `SALE-NOT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      
-      const notification = {
-        notificationId,
-        type: 'sale_completed',
-        priority: 'normal',
-        title: '�Sale Completed',
-        message: `Sale ${transactionData.transactionId} completed for ₱${transactionData.total.toLocaleString()}`,
-        details: {
-          transactionId: transactionData.transactionId,
-          totalAmount: transactionData.total,
-          itemCount: transactionData.items.length,
-          paymentMethod: transactionData.paymentMethod,
-          customerInfo: transactionData.customerInfo,
-          items: transactionData.items.map(item => ({
-            productName: item.productName,
-            variantName: item.variantName,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            totalPrice: item.totalPrice,
-            category: item.category
-          }))
-        },
-        targetRoles: ['InventoryManager', 'Admin'], // Who should see this notification
-        triggeredBy: currentUser?.uid || 'system',
-        triggeredByName: currentUser?.displayName || currentUser?.email || 'POS System',
-        relatedTransactionId: transactionData.transactionId,
-        isRead: false,
-        status: 'active',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      };
-      
-      // Save to notifications collection
-      await addDoc(collection(db, 'Notifications'), notification);
+    let variant = null;
+    let isVariantRequest = true;
 
-      return notification;
-    } catch (error) {
-      console.error('Error generating sale notification:', error);
+    // Check if this is a variant request or non-variant request
+    if (variantIndex >= 0 && productData.variants?.[variantIndex]) {
+      variant = productData.variants[variantIndex];
+      isVariantRequest = true;
+      console.log('✅ Variant found:', { size: variant.size, unit: variant.unit });
+    } else {
+      // Non-variant product
+      isVariantRequest = false;
+      console.log('ℹ️ Non-variant product');
+    }
+
+    // restockCheck should be passed in to avoid redundant calculation
+    if (!restockCheck || !restockCheck.needsRestock) {
+      console.log(`✅ No restocking needed for ${productData.name} - Stock: ${restockCheck?.currentQuantity}, ROP: ${restockCheck?.restockLevel}`);
       return null;
     }
-  };
+
+    console.log('⚠️ RESTOCKING NEEDED - Creating request...');
+
+    const requestId = `RSR-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Use the calculated EOQ and suggested order quantity from the utility
+    const suggestedOrderQuantity = restockCheck.suggestedOrderQuantity;
+    const eoq = restockCheck.eoq;
+    const currentQty = restockCheck.currentQuantity;
+    const rop = restockCheck.restockLevel;
+    
+    // Calculate target stock level and order reasoning
+    const targetStockLevel = Math.min(restockCheck.maximumStockLevel, rop + eoq);
+    const deficit = targetStockLevel - currentQty;
+    
+    // Determine why this quantity was suggested
+    let orderReasoning = '';
+    if (currentQty === 0) {
+      orderReasoning = `Out of stock. Ordering ${suggestedOrderQuantity} units to reach target level of ${targetStockLevel} (ROP: ${rop} + EOQ: ${eoq})`;
+    } else if (suggestedOrderQuantity > eoq) {
+      orderReasoning = `Stock critically low (${currentQty}/${rop}). Ordering ${suggestedOrderQuantity} units (more than EOQ of ${eoq}) to reach target level of ${targetStockLevel}`;
+    } else {
+      orderReasoning = `Ordering optimal EOQ of ${eoq} units. Will bring stock from ${currentQty} to ~${currentQty + eoq} units`;
+    }
+
+    // Get primary supplier from product's suppliers array
+    let primarySupplier = null;
+    if (productData.suppliers && Array.isArray(productData.suppliers) && productData.suppliers.length > 0) {
+      primarySupplier = productData.suppliers[0]; // Use first supplier as primary
+      console.log(`📦 Using primary supplier: ${primarySupplier.name || primarySupplier.id}`, {
+        totalSuppliers: productData.suppliers.length,
+        allSuppliers: productData.suppliers.map(s => s.name).join(', ')
+      });
+    } else {
+      console.warn(`⚠️ Product ${productData.name} has no suppliers array!`);
+    }
+
+    const restockingRequest = {
+      requestId,
+      productId: productData.id || 'unknown',
+      productName: productData.name || 'Unknown Product',
+      category: productData.category || 'Uncategorized',
+      supplierId: primarySupplier?.id || primarySupplier?.code || '',
+      supplierName: primarySupplier?.name || 'Unknown Supplier',
+      // Store all suppliers for reference
+      allSuppliers: productData.suppliers || [],
+      variantIndex: isVariantRequest ? variantIndex : -1,
+      variantDetails: isVariantRequest ? {
+        size: variant.size || '',
+        unit: variant.unit || 'pcs',
+        unitPrice: variant.unitPrice || 0,
+        supplierPrice: variant.supplierPrice || variant.unitPrice || 0
+      } : {
+        size: 'N/A',
+        unit: productData.unit || 'pcs',
+        unitPrice: productData.unitPrice || 0,
+        supplierPrice: productData.supplierPrice || productData.unitPrice || 0
+      },
+      
+      // Stock levels
+      currentQuantity: restockCheck.currentQuantity,
+      restockLevel: restockCheck.restockLevel, // ROP
+      maximumStockLevel: restockCheck.maximumStockLevel,
+      targetStockLevel: targetStockLevel, // Target after reorder
+      stockDeficit: deficit, // How much we're short
+      
+      // EOQ and Order Quantity Details
+      eoq: eoq, // Economic Order Quantity (optimal order size)
+      suggestedOrderQuantity: suggestedOrderQuantity, // Actual suggested order
+      orderReasoning: orderReasoning, // Why this quantity
+      
+      // Cost Estimates
+      estimatedOrderCost: (isVariantRequest ? variant.supplierPrice || variant.unitPrice : productData.supplierPrice || productData.unitPrice) * suggestedOrderQuantity,
+      unitCost: isVariantRequest ? (variant.supplierPrice || variant.unitPrice || 0) : (productData.supplierPrice || productData.unitPrice || 0),
+      
+      // Priority and status indicators
+      priority: restockCheck.priority, // 'critical', 'urgent', 'high', 'medium', 'normal'
+      isOutOfStock: restockCheck.isOutOfStock,
+      isCritical: restockCheck.isCritical,
+      statusMessage: restockCheck.statusMessage,
+      
+      // Additional metrics from the calculation utility
+      averageDailyDemand: restockCheck.fullMetrics?.averageDailyDemand,
+      leadTimeDays: restockCheck.fullMetrics?.leadTimeDays,
+      demandIsEstimated: restockCheck.fullMetrics?.demandIsEstimated,
+      safetyStock: restockCheck.fullMetrics?.safetyStock,
+      annualDemand: restockCheck.fullMetrics?.annualDemand,
+      orderingCost: restockCheck.fullMetrics?.orderingCost,
+      holdingCostRate: restockCheck.fullMetrics?.holdingCostRate,
+      
+      // Location information
+      location: {
+        storageLocation: locationInfo.storageLocation,
+        shelfName: locationInfo.shelfName,
+        rowName: locationInfo.rowName,
+        columnIndex: locationInfo.columnIndex,
+        fullPath: `${locationInfo.storageLocation}/${locationInfo.shelfName}/${locationInfo.rowName}/${locationInfo.columnIndex}`
+      },
+      
+      // Trigger information
+      triggeredBy: 'pos_sale',
+      triggeredByUser: currentUser?.uid || 'unknown',
+      triggeredByUserName: currentUser?.displayName || currentUser?.email || 'Unknown User',
+      
+      // Request status
+      status: 'pending',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+
+    // Save to restocking requests collection
+    await addDoc(collection(db, 'RestockingRequests'), restockingRequest);
+
+    console.log(`✅ Restocking request SAVED to Firestore: ${requestId} for ${productData.name}`);
+    console.log(`   Priority: ${restockCheck.priority}`);
+    console.log(`   Current Stock: ${currentQty} units`);
+    console.log(`   Reorder Point (ROP): ${rop} units`);
+    console.log(`   Economic Order Quantity (EOQ): ${eoq} units`);
+    console.log(`   Suggested Order: ${suggestedOrderQuantity} units`);
+    console.log(`   Target Stock Level: ${targetStockLevel} units`);
+    console.log(`   Reasoning: ${orderReasoning}`);
+    console.log(`   Estimated Cost: ₱${restockingRequest.estimatedOrderCost.toLocaleString()}`);
+
+    // Generate notification for restocking request
+    console.log('🔔 Generating notification for restocking request...');
+    const notification = await generateRestockingNotification(restockingRequest, currentUser);
+    console.log('🔔 Notification result:', notification ? 'Created' : 'Failed');
+
+    return restockingRequest;
+  } catch (error) {
+    console.error('❌ Error generating restocking request:', error);
+    return null;
+  }
+};
+
+// Helper function to normalize variant IDs for comparison
+const normalizeVariantId = (id) => {
+  if (!id) return '';
+  return String(id).toLowerCase().trim()
+    .replace(/[-_]/g, '') // Remove separators
+    .replace(/\s+/g, ''); // Remove spaces
+};
+
+// Function to find all locations where a product exists with available quantities
+const findAllProductLocations = async (productId, variantId, variantName, fullLocation, storageLocation, size, unit, baseName) => {
+  try {
+    console.log('🔍 Searching for product locations:', {
+      productId,
+      variantId,
+      variantName,
+      size,
+      unit,
+      baseName
+    });
+
+    const allLocations = [];
+
+    // Parse the generic variantId to extract components
+    let baseProductId = productId;
+    let searchSize = size;
+    let searchUnit = unit;
+
+    // If variantId is a generic ID (contains underscores), parse it
+    // Format: {baseProductId}_{size}_{unit}
+    // Need to split from the right since baseProductId can contain underscores
+    if (variantId && variantId.includes('_')) {
+      const parts = variantId.split('_');
+      if (parts.length >= 3) {
+        // Take the last two parts as unit and size, everything before as baseProductId
+        searchUnit = parts[parts.length - 1] === 'pcs' ? 'pcs' : parts[parts.length - 1];
+        searchSize = parts[parts.length - 2] === 'default' ? '' : parts[parts.length - 2];
+        baseProductId = parts.slice(0, -2).join('_');
+      }
+    }
+
+    console.log('📊 Parsed search criteria:', {
+      baseProductId,
+      searchSize,
+      searchUnit
+    });
+
+    // Search all storage units for matching products
+    const productsRef = collection(db, 'Products');
+    const storageUnitsSnapshot = await getDocs(productsRef);
+
+    console.log(`🏭 Found ${storageUnitsSnapshot.docs.length} storage units`);
+
+    for (const storageUnitDoc of storageUnitsSnapshot.docs) {
+      const unitId = storageUnitDoc.id;
+
+      // Skip non-storage unit documents
+      if (!unitId.startsWith('Unit ')) continue;
+
+      console.log(`🔎 Searching in unit: ${unitId}`);
+
+      try {
+        // Search products subcollection in this unit
+        const unitProductsRef = collection(db, 'Products', unitId, 'products');
+        const productsSnapshot = await getDocs(unitProductsRef);
+
+        console.log(`📦 Found ${productsSnapshot.docs.length} products in ${unitId}`);
+
+        for (const productDoc of productsSnapshot.docs) {
+          const productData = productDoc.data();
+
+          console.log(`🔍 Checking product:`, {
+            id: productData.id,
+            name: productData.name,
+            size: productData.size,
+            unit: productData.unit,
+            quantity: productData.quantity,
+            shelfName: productData.shelfName,
+            rowName: productData.rowName,
+            columnIndex: productData.columnIndex
+          });
+
+          // Check if this matches our base product - try multiple matching strategies
+          const matchesBaseProduct =
+            productData.id === baseProductId ||
+            productData.productId === baseProductId ||
+            productData.parentProductId === baseProductId ||
+            (productData.name && baseName && productData.name.toLowerCase() === baseName.toLowerCase());
+
+          console.log(`✅ Base product match: ${matchesBaseProduct}`, {
+            productDataId: productData.id,
+            productDataProductId: productData.productId,
+            productDataParentId: productData.parentProductId,
+            productDataName: productData.name,
+            baseProductId,
+            baseName
+          });
+
+          if (!matchesBaseProduct) continue;
+
+          // Check if this product has variants
+          const variantsArray = productData.variants || productData.Variants || productData.productVariants || [];
+          const hasVariants = Array.isArray(variantsArray) && variantsArray.length > 0;
+          const isVariantDocument = productData.isVariant === true;
+
+          console.log(`📋 Product structure:`, {
+            hasVariants,
+            isVariantDocument,
+            variantsCount: variantsArray.length
+          });
+
+          if (isVariantDocument) {
+            // This is a separate variant document - check if it matches our criteria
+            const variantSize = productData.size || productData.variantName || '';
+            const variantUnit = productData.unit || 'pcs';
+
+            const sizeMatches = !searchSize || variantSize === searchSize;
+            const unitMatches = !searchUnit || variantUnit === searchUnit;
+
+            console.log(`🎯 Variant document match:`, {
+              variantSize,
+              variantUnit,
+              sizeMatches,
+              unitMatches,
+              searchSize,
+              searchUnit
+            });
+
+            if (sizeMatches && unitMatches) {
+              const availableQty = Number(productData.quantity) || 0;
+
+              console.log(`✅ Adding variant document location: ${unitId}/${productData.shelfName}/${productData.rowName}/${productData.columnIndex} - ${availableQty} units`);
+
+              allLocations.push({
+                productRef: productDoc.ref,
+                currentQty: availableQty,
+                variantIndex: -1,
+                variant: productData,
+                location: {
+                  storageLocation: unitId,
+                  shelfName: productData.shelfName,
+                  rowName: productData.rowName,
+                  columnIndex: productData.columnIndex
+                },
+                productData,
+                outOfStock: availableQty === 0,
+                isVariant: true
+              });
+            }
+          } else if (hasVariants) {
+            // Base product with nested variants - find matching variant
+            console.log('🔍 Searching for matching variant in nested variants array');
+
+            const matchingVariantIndex = variantsArray.findIndex(v => {
+              const variantSize = v.size || v.variantName || '';
+              const variantUnit = v.unit || 'pcs';
+
+              const sizeMatches = !searchSize || variantSize === searchSize;
+              const unitMatches = !searchUnit || variantUnit === searchUnit;
+
+              console.log(`   Checking variant ${variantsArray.indexOf(v)}:`, {
+                variantSize,
+                variantUnit,
+                sizeMatches,
+                unitMatches
+              });
+
+              return sizeMatches && unitMatches;
+            });
+
+            console.log(`📍 Matching variant index: ${matchingVariantIndex}`);
+
+            if (matchingVariantIndex !== -1) {
+              const variant = variantsArray[matchingVariantIndex];
+              const availableQty = Number(variant.quantity) || 0;
+
+              console.log(`✅ Adding nested variant location: ${unitId}/${productData.shelfName}/${productData.rowName}/${productData.columnIndex} - ${availableQty} units`);
+
+              if (availableQty > 0) {
+                allLocations.push({
+                  productRef: productDoc.ref,
+                  currentQty: availableQty,
+                  variantIndex: matchingVariantIndex,
+                  variant,
+                  location: {
+                    storageLocation: unitId,
+                    shelfName: productData.shelfName,
+                    rowName: productData.rowName,
+                    columnIndex: productData.columnIndex
+                  },
+                  productData
+                });
+              }
+            }
+          } else {
+            // Non-variant product
+            const productSize = productData.size || productData.variantName || '';
+            const productUnit = productData.unit || 'pcs';
+
+            const sizeMatches = !searchSize || productSize === searchSize;
+            const unitMatches = !searchUnit || productUnit === searchUnit;
+
+            console.log(`🎯 Non-variant product match:`, {
+              productSize,
+              productUnit,
+              sizeMatches,
+              unitMatches
+            });
+
+            if (sizeMatches && unitMatches) {
+              const availableQty = Number(productData.quantity) || 0;
+
+              console.log(`✅ Adding non-variant location: ${unitId}/${productData.shelfName}/${productData.rowName}/${productData.columnIndex} - ${availableQty} units`);
+
+              allLocations.push({
+                productRef: productDoc.ref,
+                currentQty: availableQty,
+                variantIndex: -1,
+                variant: null,
+                location: {
+                  storageLocation: unitId,
+                  shelfName: productData.shelfName,
+                  rowName: productData.rowName,
+                  columnIndex: productData.columnIndex
+                },
+                productData,
+                outOfStock: availableQty === 0
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`Error searching in unit ${unitId}:`, error);
+        continue;
+      }
+    }
+
+    console.log(`🎉 Found ${allLocations.length} total locations:`, allLocations.map(loc => ({
+      location: `${loc.location.storageLocation}/${loc.location.shelfName}/${loc.location.rowName}/${loc.location.columnIndex}`,
+      quantity: loc.currentQty
+    })));
+
+    return allLocations;
+  } catch (error) {
+    console.error(`Error finding all locations for product ${variantName}:`, error);
+    throw error;
+  }
+};
+
+// Function to update inventory by deducting released items using Firestore transaction
+const updateInventoryQuantities = async (releasedProducts, currentUser, saleId) => {
+  try {
+    console.log('📦 ========== UPDATING INVENTORY ==========');
+    console.log('📦 Products to process:', releasedProducts.length);
+    
+    for (const [idx, product] of releasedProducts.entries()) {
+      console.log(`\n📦 Processing product ${idx + 1}/${releasedProducts.length}:`, {
+        name: product.name,
+        baseName: product.baseName,
+        status: product.status,
+        releasedQty: product.releasedQty,
+        storageLocation: product.storageLocation,
+        size: product.size,
+        unit: product.unit
+      });
+
+      if (product.status !== 'released') {
+        console.log('⏭️ Skipping - status is not "released"');
+        continue;
+      }
+
+      const releasedQty = Number(product.releasedQty);
+      if (isNaN(releasedQty) || releasedQty <= 0) {
+        console.log('⏭️ Skipping - invalid quantity:', releasedQty);
+        continue;
+      }
+
+      // Find all locations where this product exists
+      const allLocations = await findAllProductLocations(
+        product.productId,
+        product.variantId,
+        product.name,
+        product.fullLocation,
+        product.storageLocation,
+        product.size,
+        product.unit,
+        product.baseName
+      );
+
+      if (allLocations.length === 0) {
+        console.error(`❌ Product ${product.name} not found in any inventory location`);
+        throw new Error(
+          `Product Not Found: ${product.name}\n\n` +
+          `This product could not be located in any inventory location.\n` +
+          `Please check if the product exists in the inventory system.`
+        );
+      }
+
+
+      // Check if product is out of stock at all locations
+      const allOutOfStock = allLocations.every(loc => loc.currentQty === 0);
+
+      if (allOutOfStock) {
+        const locationDetails = allLocations.map(loc =>
+          `${loc.location.storageLocation}/${loc.location.shelfName}/${loc.location.rowName}/${loc.location.columnIndex}`
+        ).join('\n   ');
+
+        // Check if this is a quotation product
+        const isQuotationProduct = product.productId && product.productId.startsWith('quotation-');
+
+        if (isQuotationProduct) {
+          console.warn(`⚠️ WARNING: Quotation product ${product.name} is out of stock. Proceeding with note.`);
+        } else {
+          throw new Error(
+            `❌ OUT OF STOCK: ${product.name}\n\n` +
+            `This product is currently unavailable at all locations:\n   ${locationDetails}\n\n` +
+            `Current Quantity: 0 units\n` +
+            `Requested: ${releasedQty} units\n\n` +
+            `Action Required:\n` +
+            `1. Restock this product in inventory\n` +
+            `2. Or reduce the release quantity\n` +
+            `3. Or remove this item from the release`
+          );
+        }
+      }
+
+      // Sort locations by available quantity (descending) to prioritize locations with more stock
+      allLocations.sort((a, b) => b.currentQty - a.currentQty);
+
+      // Calculate total available quantity across all locations
+      const totalAvailable = allLocations.reduce((sum, loc) => sum + loc.currentQty, 0);
+
+      if (totalAvailable < releasedQty) {
+        // For quotation products, allow negative inventory with warning
+        const isQuotationProduct = product.productId && product.productId.startsWith('quotation-');
+        if (isQuotationProduct) {
+          console.warn(`⚠️ WARNING: Allowing release with insufficient stock for quotation product ${product.name}. Available: ${totalAvailable}, Requested: ${releasedQty}. Inventory will go negative.`);
+        } else {
+          const locationDetails = allLocations
+            .filter(loc => loc.currentQty > 0)
+            .map(loc => `   • ${loc.location.storageLocation}: ${loc.currentQty} units`)
+            .join('\n');
+
+          throw new Error(
+            `❌ INSUFFICIENT STOCK: ${product.name}\n\n` +
+            `Available: ${totalAvailable} units\n` +
+            `Requested: ${releasedQty} units\n` +
+            `Shortage: ${releasedQty - totalAvailable} units\n\n` +
+            `Available at:\n${locationDetails}\n\n` +
+            `Please:\n` +
+            `1. Add more stock to inventory (${releasedQty - totalAvailable} more units needed)\n` +
+            `2. Or reduce release quantity to ${totalAvailable} units`
+          );
+        }
+      }
+
+      // Deduct from multiple locations using a single Firestore transaction
+      let remainingQty = releasedQty;
+      const deductionDetails = [];
+      const restockCheckData = []; // Store data for ROP checks after transaction
+
+      // Use Firestore transaction for atomic updates
+      await runTransaction(db, async (transaction) => {
+        // First, read all product documents to get current quantities
+        const locationReads = [];
+        for (const location of allLocations) {
+          if (remainingQty <= 0) break;
+          locationReads.push({
+            location,
+            deductQty: Math.min(remainingQty, location.currentQty),
+            docSnap: await transaction.get(location.productRef)
+          });
+          remainingQty -= Math.min(remainingQty, location.currentQty);
+        }
+
+        // Reset remainingQty for the write phase
+        remainingQty = releasedQty;
+
+        // Now process each location with writes
+        for (const readData of locationReads) {
+          const { location, deductQty, docSnap } = readData;
+
+          if (!docSnap.exists()) {
+            throw new Error(`Product document not found at ${location.location.storageLocation}`);
+          }
+
+          const productData = docSnap.data();
+          const isVariantDocument = productData.isVariant === true;
+
+          let newQty;
+          let productName = product.name;
+          let productId = product.productId;
+
+          if (isVariantDocument) {
+            // For separate variant documents, update the quantity directly
+            const currentQty = productData.quantity || 0;
+
+            if (currentQty < deductQty) {
+              throw new Error(`Insufficient stock at ${location.location.storageLocation}. Available: ${currentQty}, Requested: ${deductQty}`);
+            }
+
+            newQty = currentQty - deductQty;
+
+            // Update sales history for demand tracking
+            const existingSalesHistory = productData.salesHistory || [];
+            const updatedSalesHistory = [
+              ...existingSalesHistory,
+              {
+                quantity: deductQty,
+                timestamp: new Date().toISOString(),
+                saleId: saleId,
+                performedBy: currentUser?.uid || 'unknown'
+              }
+            ];
+
+            // Keep only last 90 days of sales history to avoid document size issues
+            const ninetyDaysAgo = new Date();
+            ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+            const filteredSalesHistory = updatedSalesHistory.filter(sale => 
+              new Date(sale.timestamp) >= ninetyDaysAgo
+            );
+
+            transaction.update(location.productRef, {
+              quantity: newQty,
+              salesHistory: filteredSalesHistory,
+              lastUpdated: serverTimestamp(),
+              lastSale: {
+                date: serverTimestamp(),
+                quantity: deductQty,
+                saleId: saleId,
+                performedBy: currentUser?.uid || 'unknown'
+              }
+            });
+
+            productName = productData.name || product.name;
+            productId = productData.id || product.productId;
+
+            // Store data for ROP check after transaction
+            restockCheckData.push({
+              productData: { ...productData, quantity: newQty, salesHistory: filteredSalesHistory },
+              variantIndex: -1,
+              location: location.location
+            });
+          } else {
+            // For base products - check if it has nested variants or is a simple product
+            const variantsArray = productData.variants || productData.Variants || [];
+            const hasVariants = Array.isArray(variantsArray) && variantsArray.length > 0;
+
+            if (hasVariants) {
+              // Product has nested variants - find and update the specific variant
+              const variantIndex = variantsArray.findIndex(v =>
+                (v.size === product.size || (!v.size && !product.size)) &&
+                (v.unit === product.unit || v.unit === product.unit)
+              );
+
+              if (variantIndex === -1) {
+                throw new Error(`Variant not found in product document at ${location.location.storageLocation}. Looking for size: ${product.size}, unit: ${product.unit}`);
+              }
+
+              const variant = variantsArray[variantIndex];
+              const currentQty = variant.quantity || 0;
+
+              if (currentQty < deductQty) {
+                throw new Error(`Insufficient stock at ${location.location.storageLocation}. Available: ${currentQty}, Requested: ${deductQty}`);
+              }
+
+              newQty = currentQty - deductQty;
+
+              // Update sales history for the specific variant
+              const existingSalesHistory = variant.salesHistory || [];
+              const updatedSalesHistory = [
+                ...existingSalesHistory,
+                {
+                  quantity: deductQty,
+                  timestamp: new Date().toISOString(),
+                  saleId: saleId,
+                  performedBy: currentUser?.uid || 'unknown'
+                }
+              ];
+
+              // Keep only last 90 days of sales history
+              const ninetyDaysAgo = new Date();
+              ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+              const filteredSalesHistory = updatedSalesHistory.filter(sale => 
+                new Date(sale.timestamp) >= ninetyDaysAgo
+              );
+
+              // Update the specific variant in the array
+              const updatedVariants = [...variantsArray];
+              updatedVariants[variantIndex] = {
+                ...variant,
+                quantity: newQty,
+                salesHistory: filteredSalesHistory,
+                lastUpdated: serverTimestamp(),
+                lastSale: {
+                  date: serverTimestamp(),
+                  quantity: deductQty,
+                  saleId: saleId,
+                  performedBy: currentUser?.uid || 'unknown'
+                }
+              };
+
+              transaction.update(location.productRef, {
+                variants: updatedVariants,
+                lastUpdated: serverTimestamp()
+              });
+
+              productName = productData.name || product.name;
+              productId = productData.id || product.productId;
+
+              // Store data for ROP check after transaction
+              restockCheckData.push({
+                productData: { ...productData, variants: updatedVariants },
+                variantIndex: variantIndex,
+                location: location.location
+              });
+            } else {
+              // Simple product without variants - update base quantity
+              const currentQty = productData.quantity || 0;
+
+              if (currentQty < deductQty) {
+                throw new Error(`Insufficient stock at ${location.location.storageLocation}. Available: ${currentQty}, Requested: ${deductQty}`);
+              }
+
+              newQty = currentQty - deductQty;
+
+              // Update sales history for demand tracking
+              const existingSalesHistory = productData.salesHistory || [];
+              const updatedSalesHistory = [
+                ...existingSalesHistory,
+                {
+                  quantity: deductQty,
+                  timestamp: new Date().toISOString(),
+                  saleId: saleId,
+                  performedBy: currentUser?.uid || 'unknown'
+                }
+              ];
+
+              // Keep only last 90 days of sales history
+              const ninetyDaysAgo = new Date();
+              ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+              const filteredSalesHistory = updatedSalesHistory.filter(sale => 
+                new Date(sale.timestamp) >= ninetyDaysAgo
+              );
+
+              transaction.update(location.productRef, {
+                quantity: newQty,
+                salesHistory: filteredSalesHistory,
+                lastUpdated: serverTimestamp(),
+                lastSale: {
+                  date: serverTimestamp(),
+                  quantity: deductQty,
+                  saleId: saleId,
+                  performedBy: currentUser?.uid || 'unknown'
+                }
+              });
+
+              productName = productData.name || product.name;
+              productId = productData.id || product.productId;
+
+              // Store data for ROP check after transaction
+              restockCheckData.push({
+                productData: { ...productData, quantity: newQty, salesHistory: filteredSalesHistory },
+                variantIndex: -1,
+                location: location.location
+              });
+            }
+          }
+
+          // Create stock movement log within the same transaction
+          const stockMovementRef = doc(collection(db, 'stock_movements'));
+          transaction.set(stockMovementRef, {
+            movementType: 'OUT',
+            referenceType: 'sale',
+            referenceId: saleId,
+            productId: productId,
+            productName: productName,
+            variantDetails: {
+              size: product.size || '',
+              unit: product.unit || 'pcs'
+            },
+            quantity: deductQty,
+            location: {
+              storageLocation: location.location.storageLocation,
+              shelfName: location.location.shelfName,
+              rowName: location.location.rowName,
+              columnIndex: location.location.columnIndex,
+              fullPath: `${location.location.storageLocation}/${location.location.shelfName}/${location.location.rowName}/${location.location.columnIndex}`
+            },
+            performedBy: currentUser?.uid || 'unknown',
+            performedByName: currentUser?.displayName || currentUser?.email || 'Unknown User',
+            timestamp: serverTimestamp(),
+            createdAt: serverTimestamp()
+          });
+
+          // Create release log within the same transaction
+          const releaseLogRef = doc(collection(db, 'release_logs'));
+          transaction.set(releaseLogRef, {
+            productId: productId,
+            productName: productName,
+            variantDetails: {
+              size: product.size || '',
+              unit: product.unit || 'pcs'
+            },
+            quantityReleased: deductQty,
+            saleId: saleId,
+            location: {
+              storageLocation: location.location.storageLocation,
+              shelfName: location.location.shelfName,
+              rowName: location.location.rowName,
+              columnIndex: location.location.columnIndex,
+              fullPath: `${location.location.storageLocation}/${location.location.shelfName}/${location.location.rowName}/${location.location.columnIndex}`
+            },
+            releasedBy: currentUser?.uid || 'unknown',
+            releasedByName: currentUser?.displayName || currentUser?.email || 'Unknown User',
+            timestamp: serverTimestamp(),
+            createdAt: serverTimestamp()
+          });
+
+          deductionDetails.push({
+            location: location.location,
+            deductedQty: deductQty,
+            remainingAtLocation: newQty
+          });
+
+          remainingQty -= deductQty;
+        }
+      });
+
+      console.log(`✅ Successfully updated inventory for ${product.name}:`, deductionDetails);
+
+      // Note: ROP check is now performed in handlePrintAndSave after all inventory updates
+    }
+  } catch (error) {
+    console.error('❌ Error in inventory deduction:', error);
+    throw new Error(`Failed to update inventory: ${error.message}`);
+  }
+};
+
 
 export default function Pos_NewSale() {
   // --- User Authentication ---
@@ -182,6 +1239,8 @@ export default function Pos_NewSale() {
   const [amountPaid, setAmountPaid] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [paymentReference, setPaymentReference] = useState('');
+  const [discount, setDiscount] = useState('');
+  const [discountType, setDiscountType] = useState('percentage'); // 'percentage' or 'fixed'
   const [isProcessing, setIsProcessing] = useState(false);
   const [restockingAlerts, setRestockingAlerts] = useState([]); // Track restocking alerts
 
@@ -195,11 +1254,6 @@ export default function Pos_NewSale() {
   const [selectedProductForModal, setSelectedProductForModal] = useState(null);
   const [activeVariantIndex, setActiveVariantIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
-
-  // Location Modal State
-  const [locationModalOpen, setLocationModalOpen] = useState(false);
-  const [selectedVariantForLocation, setSelectedVariantForLocation] = useState(null);
-  const [pendingQuantity, setPendingQuantity] = useState(1);
 
   // Customer State
   const [customerDetails, setCustomerDetails] = useState({ 
@@ -298,6 +1352,7 @@ export default function Pos_NewSale() {
               variantDetails: item.variantDetails || {},
               fromQuotation: quotationNumber.trim(),
               originalProductId: productMatch.id, // Store original product ID for inventory tracking
+              actualProductId: item.variantId || productMatch.id, // Store actual Firestore document ID
               // Include location information from quotation
               storageLocation: item.storageLocation || '',
               shelfName: item.shelfName || '',
@@ -503,7 +1558,21 @@ export default function Pos_NewSale() {
         rowName: product.rowName,
         columnIndex: product.columnIndex,
         fullLocation: product.fullLocation,
-        isVariant: product.isVariant || false
+        isVariant: product.isVariant || false,
+        // NEW: Include dimension and measurement data from inventory system
+        measurementType: product.measurementType,
+        baseUnit: product.baseUnit || product.unit || 'pcs',
+        requireDimensions: product.requireDimensions,
+        length: product.length,
+        width: product.width,
+        thickness: product.thickness,
+        unitVolumeCm3: product.unitVolumeCm3,
+        unitWeightKg: product.unitWeightKg,
+        unitVolumeLiters: product.unitVolumeLiters,
+        // Bundle/Package information
+        isBundle: product.isBundle,
+        piecesPerBundle: product.piecesPerBundle,
+        bundlePackagingType: product.bundlePackagingType
       });
       
       // Add to total quantity
@@ -666,7 +1735,7 @@ export default function Pos_NewSale() {
         setActiveVariantIndex(0);
         setVariantModalOpen(true);
     } 
-    // If only one variant, proceed directly to location selection or quick add
+    // If only one variant, proceed directly to quick add
     else if (productGroup.variants.length === 1) {
         const variant = productGroup.variants[0];
         
@@ -675,38 +1744,26 @@ export default function Pos_NewSale() {
           loc.size === variant.size && loc.unit === variant.unit
         ) || [];
         
-        if (variantLocations.length > 1) {
-          // Multiple locations - show location picker after quantity selection
-          setPendingQuantity(1);
-          setSelectedProductForModal(productGroup); // For location modal later
-          setSelectedVariantForLocation(variant); // For location modal later
-          setSelectedProductForQuantity({ // For quick quantity modal NOW
-            ...productGroup,
-            maxAvailableQty: variant.totalQuantity
-          });
-          setQuickQuantityModalOpen(true); // First ask quantity
-        } else {
-          // Single location - show quick quantity modal
-          const cartQty = getCartItemQuantity(productGroup.id, variant.variantId);
-          const availableQty = (variant.totalQuantity || variant.quantity) - cartQty;
+        // Always show quick quantity modal - inventory deduction will handle multiple locations automatically
+        const cartQty = getCartItemQuantity(productGroup.id, variant.variantId);
+        const availableQty = (variant.totalQuantity || variant.quantity) - cartQty;
 
-          if (availableQty <= 0) {
-              alert(`Maximum quantity already in cart for ${productGroup.name}`);
-              return;
-          }
-
-          setSelectedProductForQuantity({
-              ...productGroup,
-              maxAvailableQty: availableQty
-          });
-          setQuickQuantityModalOpen(true);
+        if (availableQty <= 0) {
+            alert(`Maximum quantity already in cart for ${productGroup.name}`);
+            return;
         }
+
+        setSelectedProductForQuantity({
+            ...productGroup,
+            maxAvailableQty: availableQty
+        });
+        setQuickQuantityModalOpen(true);
     } else {
         console.error('Unexpected state - no variants found');
     }
   }, [isProcessing, getCartItemQuantity]);
 
-  const handleAddVariant = useCallback(() => {
+  const handleAddVariant = useCallback((actualPiecesQuantity) => {
     if (!selectedProductForModal?.variants?.[activeVariantIndex]) {
         console.error("Invalid variant selection");
         setVariantModalOpen(false);
@@ -714,6 +1771,9 @@ export default function Pos_NewSale() {
     }
 
     const variant = selectedProductForModal.variants[activeVariantIndex];
+    
+    // Use the actualPiecesQuantity parameter passed from the modal
+    const quantityToAdd = actualPiecesQuantity || quantity;
     
     // Check if this variant exists in multiple locations
     const variantLocations = selectedProductForModal.allLocations.filter(loc => 
@@ -723,113 +1783,91 @@ export default function Pos_NewSale() {
     // Close variant modal first
     setVariantModalOpen(false);
     
-    if (variantLocations.length > 1) {
-      // Multiple locations - show location picker
-      setPendingQuantity(quantity);
-      setSelectedVariantForLocation(variant);
-      setLocationModalOpen(true);
-    } else {
-      // Single location - add directly
-      const locationVariant = variantLocations[0];
-      const cartQty = getCartItemQuantity(selectedProductForModal.id, locationVariant.variantId);
-      const availableQty = locationVariant.quantity - cartQty;
+    // Always add directly - inventory deduction will handle multiple locations automatically
+    // Use the first location for cart display, but create a generic variantId for multi-location deduction
+    const locationVariant = variantLocations[0];
+    const cartQty = getCartItemQuantity(selectedProductForModal.id, `${selectedProductForModal.id}_${variant.size || 'default'}_${variant.unit || 'pcs'}`);
+    const totalAvailableInAllLocations = variantLocations.reduce((sum, loc) => sum + loc.quantity, 0);
 
-      if (availableQty < quantity) {
-          alert(`Cannot add ${quantity} items. Only ${availableQty} available.`);
-          setVariantModalOpen(true); // Reopen modal
-          return;
-      }
-
-      const displayName = locationVariant.size || locationVariant.unit 
-          ? `${selectedProductForModal.name} (${locationVariant.size || ''} ${locationVariant.unit || ''})`.trim()
-          : selectedProductForModal.name;
-
-      addProduct({
-          id: locationVariant.variantId,
-          name: displayName,
-          baseName: selectedProductForModal.name,
-          price: locationVariant.price,
-          qty: quantity,
-          variantId: locationVariant.variantId,
-          category: selectedProductForModal.category,
-          baseProductId: locationVariant.baseProductId,
-          storageLocation: locationVariant.storageLocation,
-          shelfName: locationVariant.shelfName,
-          rowName: locationVariant.rowName,
-          columnIndex: locationVariant.columnIndex,
-          fullLocation: locationVariant.fullLocation
-      });
-
-      setSelectedProductForModal(null);
-      setActiveVariantIndex(0);
-      setQuantity(1);
-    }
-  }, [selectedProductForModal, activeVariantIndex, quantity, addProduct, getCartItemQuantity]);
-
-  // Handle location selection from LocationSelectionModal
-  const handleSelectLocation = useCallback((locationData) => {
-    if (!selectedProductForModal) {
-      console.error("Invalid location selection - no product selected");
-      return;
+    if (cartQty + quantityToAdd > totalAvailableInAllLocations) {
+        alert(`Cannot add ${quantityToAdd} items. Only ${totalAvailableInAllLocations - cartQty} available across all locations.`);
+        setVariantModalOpen(true); // Reopen modal
+        return;
     }
 
-    // Check if locationData is an array (multi-location) or single object
-    if (Array.isArray(locationData)) {
-      // Multi-location allocation
-      
-      locationData.forEach(locationVariant => {
-        const displayName = locationVariant.size || locationVariant.unit 
-          ? `${selectedProductForModal.name} (${locationVariant.size || ''} ${locationVariant.unit || ''})`.trim()
-          : selectedProductForModal.name;
+    // Create display name with dimensions to differentiate variants
+    let displayName = selectedProductForModal.name;
+    const dimensionInfo = formatDimensions(locationVariant);
+    
+    if (dimensionInfo) {
+        // Has dimensions - show base name with dimensions
+        displayName = `${selectedProductForModal.name} (${dimensionInfo})`;
+    } else if (locationVariant.size || locationVariant.unit) {
+        // No dimensions but has size/unit variant info
+        displayName = `${selectedProductForModal.name} (${locationVariant.size || ''} ${locationVariant.unit || ''})`.trim();
+    }
+    // else: Keep base product name as-is (no variant identifier)
 
-        addProduct({
-          id: locationVariant.variantId,
-          name: displayName,
-          baseName: selectedProductForModal.name,
-          price: locationVariant.price,
-          qty: locationVariant.allocatedQuantity, // Use the allocated quantity for this location
-          variantId: locationVariant.variantId,
-          category: selectedProductForModal.category,
-          baseProductId: locationVariant.baseProductId,
-          storageLocation: locationVariant.storageLocation,
-          shelfName: locationVariant.shelfName,
-          rowName: locationVariant.rowName,
-          columnIndex: locationVariant.columnIndex,
-          fullLocation: locationVariant.fullLocation,
-          isMultiLocationAllocation: true // Flag to indicate this is part of multi-location order
-        });
-      });
-    } else {
-      // Single location selection
-      const locationVariant = locationData;
-      const displayName = locationVariant.size || locationVariant.unit 
-        ? `${selectedProductForModal.name} (${locationVariant.size || ''} ${locationVariant.unit || ''})`.trim()
-        : selectedProductForModal.name;
+    // Create a generic variant identifier that can match across multiple locations
+    const genericVariantId = `${selectedProductForModal.id}_${variant.size || 'default'}_${variant.unit || 'pcs'}`;
 
-      addProduct({
-        id: locationVariant.variantId,
+    // Calculate the correct price per piece
+    // For bundles: unitPrice is the price per bundle, so price per piece = unitPrice / piecesPerBundle
+    // For regular products: use unitPrice/price as-is
+    const bundlePrice = locationVariant.unitPrice || locationVariant.price || 0;
+    const pricePerPiece = (locationVariant.isBundle && locationVariant.piecesPerBundle)
+      ? bundlePrice / locationVariant.piecesPerBundle
+      : bundlePrice;
+
+    const itemToAdd = {
+        id: genericVariantId,
         name: displayName,
         baseName: selectedProductForModal.name,
-        price: locationVariant.price,
-        qty: pendingQuantity,
-        variantId: locationVariant.variantId,
+        price: pricePerPiece, // Use price per piece
+        bundlePrice: (locationVariant.isBundle && locationVariant.piecesPerBundle) ? bundlePrice : undefined, // Store original bundle price
+        qty: quantityToAdd, // Use the actual pieces quantity passed from modal
+        variantId: genericVariantId, // Use generic ID for cart matching
+        actualProductId: locationVariant.variantId, // Store actual Firestore document ID
         category: selectedProductForModal.category,
-        baseProductId: locationVariant.baseProductId,
-        storageLocation: locationVariant.storageLocation,
+        baseProductId: selectedProductForModal.id, // Use the grouped product ID
+        storageLocation: locationVariant.storageLocation, // Keep one location for reference
         shelfName: locationVariant.shelfName,
         rowName: locationVariant.rowName,
         columnIndex: locationVariant.columnIndex,
-        fullLocation: locationVariant.fullLocation
-      });
-    }
+        fullLocation: locationVariant.fullLocation,
+        // Add variant details for matching across locations
+        size: variant.size,
+        unit: variant.unit,
+        // NEW: Preserve dimension and measurement data
+        measurementType: locationVariant.measurementType,
+        baseUnit: locationVariant.baseUnit || locationVariant.unit,
+        length: locationVariant.length,
+        width: locationVariant.width,
+        thickness: locationVariant.thickness,
+        unitVolumeCm3: locationVariant.unitVolumeCm3,
+        isBundle: locationVariant.isBundle,
+        piecesPerBundle: locationVariant.piecesPerBundle,
+        bundlePackagingType: locationVariant.bundlePackagingType,
+        // Add formatted dimensions for cart display
+        formattedDimensions: dimensionInfo
+    };
 
-    // Reset all modals
-    setLocationModalOpen(false);
+    console.log('🛒 Adding product to cart:', {
+        name: itemToAdd.name,
+        baseName: itemToAdd.baseName,
+        actualProductId: itemToAdd.actualProductId,
+        variantId: itemToAdd.variantId,
+        size: itemToAdd.size,
+        unit: itemToAdd.unit,
+        storageLocation: itemToAdd.storageLocation
+    });
+
+    addProduct(itemToAdd);
+
     setSelectedProductForModal(null);
-    setSelectedVariantForLocation(null);
-    setPendingQuantity(1);
+    setActiveVariantIndex(0);
     setQuantity(1);
-  }, [selectedProductForModal, pendingQuantity, addProduct]);
+  }, [selectedProductForModal, activeVariantIndex, quantity, addProduct, getCartItemQuantity]);
 
   // --- Sale Reset Logic ---
   const resetSaleState = useCallback(() => {
@@ -837,6 +1875,8 @@ export default function Pos_NewSale() {
        setAmountPaid('');
        setPaymentMethod('Cash');
        setPaymentReference('');
+       setDiscount('');
+       setDiscountType('percentage');
        setCustomerDetails({ name: '', phone: '', address: '', email: '' });
        setCustomerDisplayName('Walk-in Customer');
        setSearchQuery('');
@@ -849,17 +1889,43 @@ export default function Pos_NewSale() {
 
   // --- Calculations ---
   // Calculate totals using useMemo based on added products
-  const { subTotal, tax, total } = useMemo(() => {
+  const { subTotal, tax, total, discountAmount, finalTotal } = useMemo(() => {
     const totalCalc = addedProducts.reduce((sum, item) => sum + (item.price * item.qty), 0);
     const subTotalCalc = totalCalc / 1.12; // Net of VAT
     const taxCalc = totalCalc - subTotalCalc; // VAT amount
     
+    // Calculate discount
+    let discountAmt = 0;
+    const discountValue = parseFloat(discount) || 0;
+    
+    if (discountValue > 0) {
+      if (discountType === 'percentage') {
+        // Percentage discount (e.g., 10% off)
+        discountAmt = (totalCalc * discountValue) / 100;
+        // Cap percentage at 100%
+        if (discountValue > 100) {
+          discountAmt = totalCalc;
+        }
+      } else {
+        // Fixed amount discount (e.g., ₱100 off)
+        discountAmt = discountValue;
+        // Cap discount at total amount
+        if (discountAmt > totalCalc) {
+          discountAmt = totalCalc;
+        }
+      }
+    }
+    
+    const finalTotalCalc = Math.max(0, totalCalc - discountAmt);
+    
     return { 
       subTotal: subTotalCalc, 
       tax: taxCalc, 
-      total: totalCalc 
+      total: totalCalc,
+      discountAmount: discountAmt,
+      finalTotal: finalTotalCalc
     };
-  }, [addedProducts]); // Updated dependency
+  }, [addedProducts, discount, discountType]); // Updated dependency
 
   // Enhanced analytics data collection
   const collectAnalyticsData = useCallback((transactionData) => {
@@ -898,39 +1964,43 @@ export default function Pos_NewSale() {
   // --- Transaction Logic ---
   const validateStockBeforeTransaction = async () => {
     const invalidItems = [];
-    
+
     for (const item of addedProducts) {
         try {
-            // Check if item has the necessary fields
-            if (!item.storageLocation) {
-                console.warn('Item missing storage location:', item);
-                invalidItems.push(`${item.name} - Missing storage location information`);
+            // Find all locations where this product exists with available quantities
+            const allLocations = await findAllProductLocations(
+              item.baseProductId || item.id,
+              item.variantId || item.id,
+              item.name,
+              item.fullLocation,
+              item.storageLocation,
+              item.size,
+              item.unit,
+              item.baseName
+            );
+
+            if (allLocations.length === 0) {
+                invalidItems.push(`${item.name} - Product not found in any inventory location`);
                 continue;
             }
 
-            // Use the new nested structure path: Products/{storageLocation}/products/{productId}
-            // For variants, variantId IS the product ID (variants are separate product documents)
-            const productId = item.variantId || item.id;
-            const productRef = doc(db, 'Products', item.storageLocation, 'products', productId);
-            const productDoc = await getDoc(productRef);
-            
-            if (!productDoc.exists()) {
-                invalidItems.push(`${item.name} - Product not found in inventory`);
-                console.warn(`Product not found at: Products/${item.storageLocation}/products/${productId}`);
-                continue;
-            }
+            // Calculate total available quantity across all locations
+            const totalAvailable = allLocations.reduce((sum, loc) => sum + loc.currentQty, 0);
 
-            const productData = productDoc.data();
-            
-            // In flat structure, each product (including variants) has its own quantity field
-            const currentQuantity = Number(productData.quantity) || 0;
-            
-            if (currentQuantity < item.qty) {
-                invalidItems.push(`${item.name} - Insufficient stock (Available: ${currentQuantity}, Needed: ${item.qty})`);
+            if (totalAvailable < item.qty) {
+                const locationDetails = allLocations.map(loc =>
+                  `${loc.location.storageLocation}/${loc.location.shelfName}/${loc.location.rowName}/${loc.location.columnIndex}: ${loc.currentQty} available`
+                ).join('\n   ');
+
+                invalidItems.push(
+                  `${item.name} - Insufficient stock across all locations\n` +
+                  `   Total Available: ${totalAvailable}, Needed: ${item.qty}\n` +
+                  `   Location breakdown:\n   ${locationDetails}`
+                );
             }
         } catch (error) {
             console.error('Error validating stock for', item.name, error);
-            invalidItems.push(`${item.name} - Error checking stock`);
+            invalidItems.push(`${item.name} - Error checking stock availability`);
         }
     }
 
@@ -975,7 +2045,19 @@ export default function Pos_NewSale() {
             shelfName: item.shelfName,
             rowName: item.rowName,
             columnIndex: item.columnIndex,
-            fullLocation: item.fullLocation
+            fullLocation: item.fullLocation,
+            // NEW: Include dimension and measurement data in transaction
+            measurementType: item.measurementType,
+            baseUnit: item.baseUnit,
+            length: item.length,
+            width: item.width,
+            thickness: item.thickness,
+            unitVolumeCm3: item.unitVolumeCm3,
+            isBundle: item.isBundle,
+            piecesPerBundle: item.piecesPerBundle,
+            bundlePackagingType: item.bundlePackagingType,
+            // Add formatted dimensions for display
+            dimensions: formatDimensions(item)
           })),
           subTotal: subTotal,
           tax: tax,
@@ -985,7 +2067,6 @@ export default function Pos_NewSale() {
           paymentMethod,
           paymentReference: paymentReference || null,
           status: 'completed',
-          releaseStatus: 'pending_release', // Add release status for inventory tracking
           createdAt: serverTimestamp(),
           createdBy: currentUser?.uid || 'unknown',
           saleDate: formattedDate,
@@ -993,10 +2074,257 @@ export default function Pos_NewSale() {
           cashierName: currentUser?.name  || currentUser?.email || "Cashier",
         };
 
+        // Prepare products for inventory deduction
+        const productsForDeduction = addedProducts.map(item => ({
+          id: item.variantId || item.id,
+          name: item.name,
+          baseName: item.baseName || item.name,
+          productId: item.baseProductId || item.id,
+          variantId: item.variantId || item.id,
+          actualProductId: item.actualProductId, // Firestore document ID
+          productDocId: item.actualProductId, // Store this for ROP check
+          variantName: item.name,
+          storageLocation: item.storageLocation,
+          fullLocation: item.fullLocation,
+          shelfName: item.shelfName,
+          rowName: item.rowName,
+          columnIndex: item.columnIndex,
+          releasedQty: item.qty,
+          status: 'released', // Mark as released for immediate deduction
+          // Add variant matching data for multi-location deduction
+          size: item.size,
+          unit: item.unit
+        }));
+
+        console.log('📦 Products prepared for deduction:', productsForDeduction.map(p => ({
+          name: p.name,
+          baseName: p.baseName,
+          productDocId: p.productDocId,
+          actualProductId: p.actualProductId,
+          size: p.size,
+          unit: p.unit,
+          storageLocation: p.storageLocation
+        })));
+
+        // Deduct inventory immediately using transaction (includes stock movement and release log creation)
+        try {
+          console.log('📦 ========== STARTING INVENTORY DEDUCTION ==========');
+          await updateInventoryQuantities(productsForDeduction, currentUser, receiptNumber);
+          console.log('✅ ========== INVENTORY DEDUCTION COMPLETED ==========');
+        } catch (inventoryError) {
+          console.error('Inventory deduction failed:', inventoryError);
+          alert(`Transaction failed: ${inventoryError.message}`);
+          setIsProcessing(false);
+          return;
+        }
+
+        // ⏳ CRITICAL: Wait a moment for Firestore to sync
+        console.log('⏳ Waiting for Firestore to sync updated quantities...');
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+
+        // ✅ CHECK FOR RESTOCKING NEEDS AFTER INVENTORY DEDUCTION
+        console.log('🔍 ========== STARTING RESTOCKING CHECK ==========');
+        console.log('🔍 Total items to check:', addedProducts.length);
+        console.log('🔍 Current time:', new Date().toISOString());
+        
+        for (const [index, item] of addedProducts.entries()) {
+          try {
+            console.log(`\n🔍 ========== CHECKING ITEM ${index + 1}/${addedProducts.length} ==========`);
+            console.log('📋 Cart item details:', {
+              name: item.name,
+              baseName: item.baseName,
+              qty: item.qty,
+              storageLocation: item.storageLocation,
+              productDocId: item.productDocId,
+              actualProductId: item.actualProductId,
+              id: item.id,
+              size: item.size,
+              unit: item.unit
+            });
+
+            // Find the product document to check current stock
+            const productDocId = item.productDocId || item.actualProductId || item.id;
+            const productPath = `Products/${item.storageLocation}/products/${productDocId}`;
+            const productRef = doc(db, 'Products', item.storageLocation, 'products', productDocId);
+            
+            console.log('📂 Fetching product from:', productPath);
+            console.log('📂 Full Firebase path:', productRef.path);
+            
+            const productSnap = await getDoc(productRef);
+            
+            if (!productSnap.exists()) {
+              console.log('❌ ========== PRODUCT NOT FOUND ==========');
+              console.log('❌ Document does not exist at path:', productPath);
+              console.log('❌ Tried variations:');
+              console.log('   - productDocId:', productDocId);
+              console.log('   - actualProductId:', item.actualProductId);
+              console.log('   - id:', item.id);
+              console.log('❌ This cart item will NOT generate a restock request');
+              console.log('❌ ========================================');
+              continue;
+            }
+
+            const productData = productSnap.data();
+            console.log('✅ ========== PRODUCT FOUND ==========');
+            console.log('✅ Product data:', {
+              name: productData.name,
+              hasVariants: !!productData.variants,
+              variantsCount: productData.variants?.length,
+              isVariant: productData.isVariant,
+              quantity: productData.quantity
+            });
+            
+            // Find the variant index OR handle non-variant products
+            let variantIndex = -1;
+            let isNonVariantProduct = false;
+            
+            if (productData.variants && Array.isArray(productData.variants) && productData.variants.length > 0) {
+              // CASE 1: Product has variants array (e.g., different sizes/units)
+              console.log('🔍 Searching for variant in product...');
+              console.log('🔍 Looking for:', { size: item.size, unit: item.unit });
+              
+              variantIndex = productData.variants.findIndex((v, idx) => {
+                const sizeMatch = v.size === item.size || (!v.size && !item.size);
+                const unitMatch = v.unit === item.unit;
+                console.log(`  [${idx}] Variant:`, {
+                  variantSize: v.size,
+                  itemSize: item.size,
+                  variantUnit: v.unit,
+                  itemUnit: item.unit,
+                  sizeMatch,
+                  unitMatch,
+                  MATCH: sizeMatch && unitMatch ? '✅ YES' : '❌ NO'
+                });
+                return sizeMatch && unitMatch;
+              });
+              
+              console.log('🔍 ========== VARIANT SEARCH RESULT ==========');
+              console.log('🔍 Variant index found:', variantIndex);
+              if (variantIndex !== -1) {
+                console.log('✅ Variant found at index:', variantIndex);
+                console.log('📦 Variant data:', {
+                  size: productData.variants[variantIndex].size,
+                  unit: productData.variants[variantIndex].unit,
+                  quantity: productData.variants[variantIndex].quantity,
+                  restockLevel: productData.variants[variantIndex].restockLevel
+                });
+              } else {
+                console.log('❌ NO MATCHING VARIANT FOUND');
+                console.log('❌ Available variants:', productData.variants.map((v, i) => ({
+                  index: i,
+                  size: v.size,
+                  unit: v.unit,
+                  quantity: v.quantity
+                })));
+              }
+              console.log('🔍 ========================================');
+            } else {
+              // CASE 2: Non-variant product (stored as individual documents)
+              console.log('✅ ========== NON-VARIANT PRODUCT ==========');
+              console.log('✅ Product has no variants array - treating as standalone product');
+              console.log('✅ Product data:', {
+                name: productData.name,
+                quantity: productData.quantity,
+                size: productData.size,
+                unit: productData.unit
+              });
+              console.log('✅ ========================================');
+              isNonVariantProduct = true;
+              
+              // For non-variant products, we'll create a temporary variants array with a single "variant"
+              // that represents the product itself for ROP calculation
+              productData.variants = [{
+                size: productData.size || 'default',
+                unit: productData.unit || 'pcs',
+                quantity: productData.quantity || 0,
+                restockLevel: productData.restockLevel || 10,
+                unitPrice: productData.unitPrice || 0,
+                supplierPrice: productData.supplierPrice || productData.unitPrice || 0,
+                safetyStock: productData.safetyStock || 0,
+                maximumStockLevel: productData.maximumStockLevel || 100,
+                eoq: productData.eoq,
+                salesHistory: productData.salesHistory || [],
+                createdAt: productData.createdAt
+              }];
+              variantIndex = 0; // Use the first (and only) variant
+              console.log('✅ Created temporary variant for ROP check:', productData.variants[0]);
+            }
+            
+            if (variantIndex === -1 && !isNonVariantProduct) {
+              console.log('❌ ========== VARIANT NOT FOUND ==========');
+              console.log('❌ Cannot perform ROP check without variant index');
+              console.log('❌ This item will NOT generate a restock request');
+              console.log('❌ ====================================');
+              continue;
+            }
+
+            // Check restocking threshold
+            console.log('🔍 ========== CALLING checkRestockingThreshold ==========');
+            const restockCheck = await checkRestockingThreshold(productData, variantIndex);
+            
+            console.log('📊 ========== RESTOCK CHECK RESULT ==========');
+            console.log('📊 needsRestock:', restockCheck.needsRestock);
+            console.log('📊 currentQuantity:', restockCheck.currentQuantity);
+            console.log('📊 restockLevel (ROP):', restockCheck.restockLevel);
+            console.log('📊 priority:', restockCheck.priority);
+            console.log('📊 isOutOfStock:', restockCheck.isOutOfStock);
+            console.log('📊 isCritical:', restockCheck.isCritical);
+            console.log('📊 statusMessage:', restockCheck.statusMessage);
+            console.log('📊 =========================================');
+            
+            if (restockCheck.needsRestock) {
+              console.log('⚠️ ========== RESTOCKING NEEDED ==========');
+              console.log('⚠️ Generating restocking request...');
+              
+              // Generate restocking request - pass restockCheck to avoid redundant calculation
+              const request = await generateRestockingRequest(
+                productData,
+                variantIndex,
+                {
+                  storageLocation: item.storageLocation,
+                  shelfName: item.shelfName,
+                  rowName: item.rowName,
+                  columnIndex: item.columnIndex
+                },
+                currentUser,
+                restockCheck // Pass the already-calculated metrics
+              );
+              
+              console.log('📝 ========== REQUEST GENERATION RESULT ==========');
+              if (request) {
+                console.log('✅ Restocking request CREATED');
+                console.log('📝 Request ID:', request.requestId);
+                console.log('📝 Priority:', request.priority);
+                console.log('📝 Suggested order qty:', request.suggestedOrderQuantity);
+              } else {
+                console.log('❌ Restocking request FAILED');
+              }
+              console.log('📝 =============================================');
+            } else {
+              console.log(`✅ ========== STOCK OK ==========`);
+              console.log(`✅ Product: ${item.name}`);
+              console.log(`✅ Current: ${restockCheck.currentQuantity}, ROP: ${restockCheck.restockLevel}`);
+              console.log(`✅ No restock request needed`);
+              console.log(`✅ ============================`);
+            }
+          } catch (ropError) {
+            console.error(`❌ ========== ERROR CHECKING ROP ==========`);
+            console.error(`❌ Product: ${item.name}`);
+            console.error(`❌ Error:`, ropError);
+            console.error('❌ Error stack:', ropError.stack);
+            console.error('❌ ====================================');
+            // Don't fail the transaction if ROP check fails
+          }
+        }
+        
+        console.log('🔍 ========== RESTOCKING CHECK COMPLETED ==========\n');
+
         // Save transaction to Firestore
-        // NOTE: Inventory deduction will happen in Release Management when items are actually released
         const transactionRef = doc(db, 'posTransactions', receiptNumber);
         await setDoc(transactionRef, transactionData);
+
+        // Stock movement records and release logs are now created inside the transaction
+        // (No separate calls needed - they're handled atomically in updateInventoryQuantities)
 
         // Generate sale notification for inventory manager
         try {
@@ -1009,10 +2337,12 @@ export default function Pos_NewSale() {
         // Collect analytics
         collectAnalyticsData({
           transactionId: receiptNumber,
-          totalAmount: total,
+          totalAmount: finalTotal,
           itemCount: addedProducts.length,
           items: addedProducts,
-          paymentMethod
+          paymentMethod,
+          discount: discountAmount,
+          discountType: discountType
         });
 
         // Create/update daily analytics records
@@ -1035,7 +2365,7 @@ export default function Pos_NewSale() {
 
         // Clear cart and reset states
         resetSaleState();
-        alert('Transaction completed successfully!');
+        alert('Transaction completed successfully! Inventory updated.');
 
     } catch (error) {
         console.error("Transaction failed:", error);
@@ -1043,7 +2373,7 @@ export default function Pos_NewSale() {
     } finally {
         setIsProcessing(false);
     }
-  }, [addedProducts, products, total, subTotal, tax, amountPaid, paymentMethod, customerDetails, customerDisplayName, resetSaleState, currentUser, collectAnalyticsData]);
+  }, [addedProducts, products, finalTotal, subTotal, tax, total, discountAmount, discount, discountType, amountPaid, paymentMethod, customerDetails, customerDisplayName, resetSaleState, currentUser, collectAnalyticsData]);
 
   // --- UI ---
   const shouldDisableInteractions = isProcessing;
@@ -1173,7 +2503,9 @@ export default function Pos_NewSale() {
                     ...item,
                     originalIndex: index,
                     formattedPrice: formatCurrency(item.price),
-                    formattedTotal: formatCurrency(item.price * item.qty)
+                    formattedTotal: formatCurrency(item.price * item.qty),
+                    // Add formatted dimensions for cart display
+                    formattedDimensions: formatDimensions(item)
                 }))}
                 onRemoveItem={handleRemoveProduct}
                 onUpdateQuantity={handleUpdateCartQuantity}
@@ -1189,6 +2521,9 @@ export default function Pos_NewSale() {
             subTotal={subTotal}
             tax={tax}
             total={total}
+            discount={discountAmount}
+            discountType={discountType}
+            finalTotal={finalTotal}
             itemCount={addedProducts.length}
           />
         </div>
@@ -1202,9 +2537,13 @@ export default function Pos_NewSale() {
             setAmountPaid={setAmountPaid}
             paymentReference={paymentReference}
             setPaymentReference={setPaymentReference}
-            total={total}
-            formattedTotal={formatCurrency(total)}
-            formattedChange={formatCurrency(Number(amountPaid) - total)}
+            discount={discount}
+            setDiscount={setDiscount}
+            discountType={discountType}
+            setDiscountType={setDiscountType}
+            total={finalTotal}
+            formattedTotal={formatCurrency(finalTotal)}
+            formattedChange={formatCurrency(Number(amountPaid) - finalTotal)}
             onPrintAndSave={handlePrintAndSave}
             onClearCart={resetSaleState}
             isProcessing={isProcessing}
@@ -1251,6 +2590,7 @@ export default function Pos_NewSale() {
                 qty: productWithUnit.qty,
                 unit: productWithUnit.unit,
                 variantId: productWithUnit.variantId,
+                actualProductId: productWithUnit.variantId, // Store actual Firestore document ID
                 baseProductId: productWithUnit.baseProductId,
                 category: productWithUnit.category,
                 // Add location fields from variant
@@ -1258,7 +2598,17 @@ export default function Pos_NewSale() {
                 shelfName: productWithUnit.shelfName,
                 rowName: productWithUnit.rowName,
                 columnIndex: productWithUnit.columnIndex,
-                fullLocation: productWithUnit.fullLocation
+                fullLocation: productWithUnit.fullLocation,
+                // NEW: Preserve dimension and measurement data
+                measurementType: productWithUnit.measurementType,
+                baseUnit: productWithUnit.baseUnit,
+                length: productWithUnit.length,
+                width: productWithUnit.width,
+                thickness: productWithUnit.thickness,
+                unitVolumeCm3: productWithUnit.unitVolumeCm3,
+                isBundle: productWithUnit.isBundle,
+                piecesPerBundle: productWithUnit.piecesPerBundle,
+                bundlePackagingType: productWithUnit.bundlePackagingType
               });
               setUnitConversionModalOpen(false);
               setSelectedProductForUnitModal(null);
@@ -1273,73 +2623,81 @@ export default function Pos_NewSale() {
             onClose={() => {
               setQuickQuantityModalOpen(false);
               setSelectedProductForQuantity(null);
-              setSelectedVariantForLocation(null);
-              setPendingQuantity(1);
             }}
             onAdd={(quantity) => {
               const variant = selectedProductForQuantity.variants[0];
               
-              // Check if this variant has multiple locations
+              // Always add directly - inventory deduction will handle multiple locations automatically
               const variantLocations = selectedProductForQuantity.allLocations?.filter(loc => 
                 loc.size === variant.size && loc.unit === variant.unit
               ) || [];
               
-              if (variantLocations.length > 1) {
-                // Close quick quantity modal and open location modal
-                setQuickQuantityModalOpen(false);
-                setPendingQuantity(quantity);
-                setSelectedProductForModal(selectedProductForQuantity);
-                setSelectedVariantForLocation(variant);
-                setLocationModalOpen(true);
-              } else {
-                // Single location - add directly
-                const locationVariant = variantLocations[0] || variant;
-                const cartQty = getCartItemQuantity(selectedProductForQuantity.id, locationVariant.variantId);
-                
-                if (cartQty + quantity > locationVariant.quantity) {
-                  alert(`Cannot add ${quantity} items. Only ${locationVariant.quantity - cartQty} available.`);
-                  return;
-                }
-
-                const displayName = locationVariant.size || locationVariant.unit 
-                  ? `${selectedProductForQuantity.name} (${locationVariant.size || ''} ${locationVariant.unit || ''})`.trim()
-                  : selectedProductForQuantity.name;
-
-                addProduct({
-                  id: locationVariant.variantId,
-                  name: displayName,
-                  baseName: selectedProductForQuantity.name,
-                  price: locationVariant.price,
-                  qty: quantity,
-                  variantId: locationVariant.variantId,
-                  unit: locationVariant.unit,
-                  category: selectedProductForQuantity.category,
-                  baseProductId: locationVariant.baseProductId,
-                  storageLocation: locationVariant.storageLocation,
-                  shelfName: locationVariant.shelfName,
-                  rowName: locationVariant.rowName,
-                  columnIndex: locationVariant.columnIndex,
-                  fullLocation: locationVariant.fullLocation
-                });
-                
-                setQuickQuantityModalOpen(false);
-                setSelectedProductForQuantity(null);
+              const locationVariant = variantLocations[0] || variant; // Use first location for cart display
+              const cartQty = getCartItemQuantity(selectedProductForQuantity.id, `${selectedProductForQuantity.id}_${variant.size || 'default'}_${variant.unit || 'pcs'}`);
+              const totalAvailableInAllLocations = variantLocations.reduce((sum, loc) => sum + loc.quantity, 0);
+              
+              if (cartQty + quantity > totalAvailableInAllLocations) {
+                alert(`Cannot add ${quantity} items. Only ${totalAvailableInAllLocations - cartQty} available across all locations.`);
+                return;
               }
-            }}
-          />
-        )}
 
-        {locationModalOpen && selectedProductForModal && selectedVariantForLocation && (
-          <LocationSelectionModal
-            product={selectedProductForModal}
-            selectedVariant={selectedVariantForLocation}
-            qty={pendingQuantity}
-            onSelectLocation={handleSelectLocation}
-            onClose={() => {
-              setLocationModalOpen(false);
-              setSelectedProductForModal(null);
-              setSelectedVariantForLocation(null);
-              setPendingQuantity(1);
+              // Create display name with dimensions to differentiate variants
+              let displayName = selectedProductForQuantity.name;
+              const dimensionInfo = formatDimensions(locationVariant);
+              
+              if (dimensionInfo) {
+                  // Has dimensions - show base name with dimensions
+                  displayName = `${selectedProductForQuantity.name} (${dimensionInfo})`;
+              } else if (locationVariant.size || locationVariant.unit) {
+                  // No dimensions but has size/unit variant info
+                  displayName = `${selectedProductForQuantity.name} (${locationVariant.size || ''} ${locationVariant.unit || ''})`.trim();
+              }
+              // else: Keep base product name as-is (no variant identifier)
+
+              // Create a generic variant identifier that can match across multiple locations
+              const genericVariantId = `${selectedProductForQuantity.id}_${variant.size || 'default'}_${variant.unit || 'pcs'}`;
+
+              // Calculate the correct price per piece
+              // For bundles: unitPrice is the price per bundle, so price per piece = unitPrice / piecesPerBundle
+              // For regular products: use unitPrice/price as-is
+              const bundlePrice = locationVariant.unitPrice || locationVariant.price || 0;
+              const pricePerPiece = (locationVariant.isBundle && locationVariant.piecesPerBundle)
+                ? bundlePrice / locationVariant.piecesPerBundle
+                : bundlePrice;
+
+              addProduct({
+                id: genericVariantId,
+                name: displayName,
+                baseName: selectedProductForQuantity.name,
+                price: pricePerPiece, // Use price per piece
+                bundlePrice: (locationVariant.isBundle && locationVariant.piecesPerBundle) ? bundlePrice : undefined, // Store original bundle price
+                qty: quantity,
+                variantId: genericVariantId, // Use generic ID for cart matching
+                actualProductId: locationVariant.variantId, // Store actual Firestore document ID
+                unit: locationVariant.unit,
+                category: selectedProductForQuantity.category,
+                baseProductId: selectedProductForQuantity.id, // Use the grouped product ID
+                storageLocation: locationVariant.storageLocation,
+                shelfName: locationVariant.shelfName,
+                rowName: locationVariant.rowName,
+                columnIndex: locationVariant.columnIndex,
+                fullLocation: locationVariant.fullLocation,
+                // Add variant details for matching across locations
+                size: variant.size,
+                // NEW: Preserve dimension and measurement data
+                measurementType: locationVariant.measurementType,
+                baseUnit: locationVariant.baseUnit || locationVariant.unit,
+                length: locationVariant.length,
+                width: locationVariant.width,
+                thickness: locationVariant.thickness,
+                unitVolumeCm3: locationVariant.unitVolumeCm3,
+                isBundle: locationVariant.isBundle,
+                piecesPerBundle: locationVariant.piecesPerBundle,
+                bundlePackagingType: locationVariant.bundlePackagingType
+              });
+              
+              setQuickQuantityModalOpen(false);
+              setSelectedProductForQuantity(null);
             }}
           />
         )}

@@ -1,8 +1,9 @@
 
 
 import React, { useState, useEffect } from 'react';
-import { getFirestore, collection, getDocs } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore';
 import app from '../../../../FirebaseConfig';
+import { getRowDimensionConstraints } from '../../config/StorageUnitsConfig';
 
 const ShelfViewModal = ({ 
   isOpen, 
@@ -55,13 +56,13 @@ const ShelfViewModal = ({
       // Remove allocation
       onLocationSelect(shelfName, rowName, columnIndex, -1);
     } else {
-      // Add allocation
+      // Add allocation - only if there's remaining quantity
       const remainingQty = getRemainingQuantity();
       if (remainingQty > 0) {
         const allocateQty = Math.min(remainingQty, cellCapacity);
         onLocationSelect(shelfName, rowName, columnIndex, allocateQty);
-      } else {
       }
+      // Don't allow adding locations if all quantity is already allocated
     }
   };
  
@@ -85,69 +86,76 @@ const ShelfViewModal = ({
     setLoading(true);
     try {
       const unitName = selectedUnit.title.split(' - ')[0]; // Extract "Unit 01" from "Unit 01 - Steel & Heavy Materials"
+      console.log('🔍 Fetching products for unit:', unitName);
 
       const products = [];
       
-      // NESTED STRUCTURE: Products/{Unit}/products/{productId}
-      // Each product document has storageLocation, shelfName, rowName, columnIndex fields
-      const productsRef = collection(db, 'Products', unitName, 'products');
-      const productsSnapshot = await getDocs(productsRef);
+      // NEW FLAT STRUCTURE: Query Variants collection
+      // Variants can have multiple locations stored in a "locations" array
+      const variantsRef = collection(db, 'Variants');
+      const variantsSnapshot = await getDocs(variantsRef);
 
+      console.log(`📦 Found ${variantsSnapshot.docs.length} total variants in database`);
 
-      // Fetch base products AND their variants
-      for (const productDoc of productsSnapshot.docs) {
-        const productData = productDoc.data();
+      // Process variants and extract locations that match this unit
+      variantsSnapshot.docs.forEach(variantDoc => {
+        const variantData = variantDoc.data();
         
-        // Add base product if it has storage location
-        if (productData.shelfName && productData.rowName) {
-          const productInfo = {
-            ...productData,
-            id: productDoc.id,
-            shelfName: productData.shelfName || '',
-            rowName: productData.rowName || '',
-            columnIndex: productData.columnIndex || '', // Keep as is (string or number)
-            columnIndexNumber: parseInt(productData.columnIndex) || 0, // Also store as number
-            locationKey: `${productData.shelfName}-${productData.rowName}-${productData.columnIndex}`,
-            isVariant: false
+        // Check if variant has locations array (multi-location support)
+        if (variantData.locations && Array.isArray(variantData.locations)) {
+          // Process each location in the array
+          variantData.locations.forEach(location => {
+            const locationUnit = location.unit || location.storageLocation || '';
+            
+            // Only include locations that match this unit
+            if (locationUnit === unitName) {
+              const variantInfo = {
+                ...variantData,
+                id: variantDoc.id,
+                shelfName: location.shelfName || location.shelf || '',
+                rowName: location.rowName || location.row || '',
+                columnIndex: location.columnIndex ?? '', // Keep as is (string or number)
+                columnIndexNumber: parseInt(location.columnIndex) || 0, // Also store as number
+                locationKey: `${location.shelfName || location.shelf}-${location.rowName || location.row}-${location.columnIndex}`,
+                quantity: location.quantity || 0, // Quantity at this specific location
+                // Display name: Use productName + variantName for clarity
+                name: variantData.variantName 
+                  ? `${variantData.productName || variantData.name} (${variantData.variantName})`
+                  : variantData.productName || variantData.name
+              };
+
+              console.log(`✅ Adding variant: ${variantInfo.name} at ${variantInfo.shelfName}-${variantInfo.rowName}-${variantInfo.columnIndex} (Qty: ${variantInfo.quantity})`);
+              products.push(variantInfo);
+            }
+          });
+        } 
+        // Fallback: Check legacy single location fields
+        else if (variantData.storageLocation === unitName && 
+                 variantData.shelfName && 
+                 variantData.rowName && 
+                 variantData.columnIndex !== undefined) {
+          const variantInfo = {
+            ...variantData,
+            id: variantDoc.id,
+            shelfName: variantData.shelfName || '',
+            rowName: variantData.rowName || '',
+            columnIndex: variantData.columnIndex || '',
+            columnIndexNumber: parseInt(variantData.columnIndex) || 0,
+            locationKey: `${variantData.shelfName}-${variantData.rowName}-${variantData.columnIndex}`,
+            name: variantData.variantName 
+              ? `${variantData.productName || variantData.name} (${variantData.variantName})`
+              : variantData.productName || variantData.name
           };
 
-       
-          products.push(productInfo);
+          console.log(`✅ Adding variant (legacy): ${variantInfo.name} at ${variantInfo.shelfName}-${variantInfo.rowName}-${variantInfo.columnIndex}`);
+          products.push(variantInfo);
         }
-        
-        // Fetch variants for this base product
-        // Structure: Products/{Unit}/products/{baseProductId}/variants/{variantId}
-        const variantsRef = collection(db, 'Products', unitName, 'products', productDoc.id, 'variants');
-        const variantsSnapshot = await getDocs(variantsRef);
-        
-        if (variantsSnapshot.docs.length > 0) {
-        }
-        
-        variantsSnapshot.docs.forEach(variantDoc => {
-          const variantData = variantDoc.data();
-          
-          // Only add variant if it has storage location
-          if (variantData.shelfName && variantData.rowName) {
-            const variantInfo = {
-              ...variantData,
-              id: variantDoc.id,
-              parentProductId: productDoc.id,
-              shelfName: variantData.shelfName || '',
-              rowName: variantData.rowName || '',
-              columnIndex: variantData.columnIndex || '',
-              columnIndexNumber: parseInt(variantData.columnIndex) || 0,
-              locationKey: `${variantData.shelfName}-${variantData.rowName}-${variantData.columnIndex}`,
-              isVariant: true
-            };
+      });
 
-            products.push(variantInfo);
-          }
-        });
-      }
-
+      console.log(`✅ Total products loaded for ${unitName}: ${products.length}`);
       setProducts(products);
     } catch (error) {
-      console.error('Error fetching unit products:', error);
+      console.error('❌ Error fetching unit products:', error);
       alert(`Failed to load products: ${error.message}`);
     } finally {
       setLoading(false);
@@ -350,6 +358,15 @@ const ShelfViewModal = ({
         {/* Layout: Display all shelves in grid */}
         <div className="mb-5">
           {(() => {
+            // Safety check: Ensure selectedUnit and shelves exist
+            if (!selectedUnit || !selectedUnit.shelves || !Array.isArray(selectedUnit.shelves)) {
+              return (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">No storage configuration available for this location.</p>
+                </div>
+              );
+            }
+
             const normalShelves = selectedUnit.shelves.filter(shelf => shelf.type !== 'large-area');
             const zones = selectedUnit.shelves.filter(shelf => shelf.type === 'large-area');
             const hasZones = zones.length > 0;
@@ -373,16 +390,30 @@ const ShelfViewModal = ({
                           // Calculate per-cell capacity (row capacity divided by number of columns)
                           const perCellCapacity = Math.floor(rowCapacity / columns);
                           
+                          // Get dimension constraints for this row
+                          const unitName = selectedUnit?.title?.split(' - ')[0] || selectedUnit?.name || 'Unknown';
+                          const dimensionConstraints = getRowDimensionConstraints(unitName, shelf.name, rowName);
+                          
                           return (
                             <div key={rowIndex} className="mb-4 last:mb-0">
-                              <h4 className="text-xs font-semibold text-gray-600 mb-2 px-2 flex items-center gap-2">
-                                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{rowName}</span>
-                                {perCellCapacity !== cellCapacity && (
-                                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                                    Max: {perCellCapacity} pcs/cell
-                                  </span>
-                                )}
-                              </h4>
+                              <div className="mb-2 px-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-semibold">{rowName}</span>
+                                  {perCellCapacity !== cellCapacity && (
+                                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                                      Max: {perCellCapacity} pcs/cell
+                                    </span>
+                                  )}
+                                  {dimensionConstraints && (
+                                    <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                      </svg>
+                                      {dimensionConstraints.description}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                               <div className={`grid gap-2 ${
                                 columns === 1 ? 'grid-cols-1' :
                                 columns === 2 ? 'grid-cols-2' :
@@ -594,16 +625,30 @@ const ShelfViewModal = ({
                       // Calculate per-cell capacity (row capacity divided by number of columns)
                       const perCellCapacity = Math.floor(rowCapacity / columns);
                       
+                      // Get dimension constraints for this row
+                      const unitName = selectedUnit?.title?.split(' - ')[0] || selectedUnit?.name || 'Unknown';
+                      const dimensionConstraints = getRowDimensionConstraints(unitName, shelf.name, rowName);
+                      
                       return (
                         <div key={rowIndex} className="mb-4 last:mb-0">
-                          <h4 className="text-xs font-semibold text-gray-600 mb-2 px-2 flex items-center gap-2">
-                            <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{rowName}</span>
-                            {perCellCapacity !== cellCapacity && (
-                              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-                                Max: {perCellCapacity} pcs/cell
-                              </span>
-                            )}
-                          </h4>
+                          <div className="mb-2 px-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-semibold">{rowName}</span>
+                              {perCellCapacity !== cellCapacity && (
+                                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                                  Max: {perCellCapacity} pcs/cell
+                                </span>
+                              )}
+                              {dimensionConstraints && (
+                                <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                  {dimensionConstraints.description}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                           <div className={`grid gap-2 ${
                             columns === 1 ? 'grid-cols-1' :
                             columns === 2 ? 'grid-cols-2' :

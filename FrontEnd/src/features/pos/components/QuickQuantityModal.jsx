@@ -1,6 +1,73 @@
 import React, { useState } from 'react';
 import { FiMinus, FiPlus, FiX } from 'react-icons/fi';
 
+// Helper function to format dimensions (same as in Pos_NewSale.jsx)
+const formatDimensions = (variant) => {
+  if (!variant) return null;
+  
+  const measurementType = variant.measurementType;
+  
+  switch (measurementType) {
+    case 'length':
+      if (variant.requireDimensions || variant.length || variant.thickness || variant.width) {
+        const hasLength = variant.length && parseFloat(variant.length) > 0;
+        const hasWidth = variant.width && parseFloat(variant.width) > 0;
+        const hasThickness = variant.thickness && parseFloat(variant.thickness) > 0;
+        
+        if (!hasLength && !hasThickness) return null;
+        
+        if (hasLength && hasThickness && !hasWidth) {
+          return `${variant.length}m × ⌀${variant.thickness}mm`;
+        } else if (hasLength && hasWidth && hasThickness) {
+          return `${variant.length}m × ${variant.width}cm × ${variant.thickness}mm`;
+        } else if (hasThickness) {
+          return `${variant.thickness}mm thick`;
+        } else if (hasLength) {
+          return `${variant.length}m`;
+        }
+      }
+      return null;
+      
+    case 'weight':
+      if (variant.unitWeightKg && parseFloat(variant.unitWeightKg) > 0) {
+        return `${variant.unitWeightKg}kg`;
+      }
+      return null;
+      
+    case 'volume':
+      if (variant.unitVolumeLiters && parseFloat(variant.unitVolumeLiters) > 0) {
+        return `${variant.unitVolumeLiters}L`;
+      }
+      return null;
+      
+    case 'count':
+      if (variant.isBundle && variant.piecesPerBundle) {
+        return `${variant.piecesPerBundle} ${variant.baseUnit || 'pcs'}/${variant.bundlePackagingType || 'bundle'}`;
+      }
+      if (variant.size && variant.size !== 'default') {
+        return `${variant.size} ${variant.unit || variant.baseUnit || 'pcs'}`;
+      }
+      return null;
+      
+    default:
+      const hasLength = variant.length && parseFloat(variant.length) > 0;
+      const hasWidth = variant.width && parseFloat(variant.width) > 0;
+      const hasThickness = variant.thickness && parseFloat(variant.thickness) > 0;
+      
+      if (hasLength && hasThickness && !hasWidth) {
+        return `${variant.length}m × ⌀${variant.thickness}mm`;
+      } else if (hasLength && hasWidth && hasThickness) {
+        return `${variant.length}m × ${variant.width}cm × ${variant.thickness}mm`;
+      } else if (hasThickness) {
+        return `${variant.thickness}mm thick`;
+      } else if (hasLength) {
+        return `${variant.length}m`;
+      }
+      
+      return null;
+  }
+};
+
 const QuickQuantityModal = ({
   product,
   onClose,
@@ -64,7 +131,14 @@ const QuickQuantityModal = ({
 
   const firstVariant = product.variants?.[0] || {};
   const variantUnit = firstVariant.unit || 'pcs';
-  const variantPrice = firstVariant.unitPrice || firstVariant.price || 0;
+  const bundlePrice = firstVariant.unitPrice || firstVariant.price || 0;
+  const isBundle = firstVariant.isBundle && firstVariant.piecesPerBundle;
+  
+  // For bundles: unitPrice is price per bundle, so price per piece = unitPrice / piecesPerBundle
+  // For regular products: use unitPrice as-is
+  const pricePerPiece = isBundle ? bundlePrice / firstVariant.piecesPerBundle : bundlePrice;
+  
+  const dimensionInfo = formatDimensions(firstVariant);
 
 
   return (
@@ -86,7 +160,36 @@ const QuickQuantityModal = ({
           <div className="mb-4">
             <p className="text-sm text-gray-600 mb-2">Product:</p>
             <p className="font-medium text-gray-900">{product.name}</p>
-            <p className="text-sm text-gray-500 mt-1">Available Stock: {maxQuantity}</p>
+            
+            {/* Show bundle or dimension info */}
+            {isBundle && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                  📦 Bundle
+                </span>
+                <span className="text-sm text-gray-600">
+                  {firstVariant.piecesPerBundle} {firstVariant.baseUnit || 'pcs'} per {firstVariant.bundlePackagingType || 'bundle'}
+                </span>
+              </div>
+            )}
+            
+            {dimensionInfo && !isBundle && (
+              <p className="text-sm text-gray-600 mt-2">
+                📏 {dimensionInfo}
+              </p>
+            )}
+            
+            <p className="text-sm text-gray-500 mt-2">
+              Available Stock: {maxQuantity} {isBundle ? (firstVariant.baseUnit || 'pcs') : variantUnit}
+              {isBundle && maxQuantity >= firstVariant.piecesPerBundle && (
+                <span className="ml-1 text-purple-600">
+                  ({Math.floor(maxQuantity / firstVariant.piecesPerBundle)} {firstVariant.bundlePackagingType || 'bundles'}
+                  {maxQuantity % firstVariant.piecesPerBundle > 0 && 
+                    ` + ${maxQuantity % firstVariant.piecesPerBundle} ${firstVariant.baseUnit || 'pcs'}`
+                  })
+                </span>
+              )}
+            </p>
           </div>
 
           {/* Quick Quantity Buttons */}
@@ -143,18 +246,34 @@ const QuickQuantityModal = ({
 
           {/* Total Calculation */}
           <div className="bg-gray-50 p-3 rounded-lg mb-4">
+            {isBundle && (
+              <div className="flex justify-between text-sm mb-2 pb-2 border-b">
+                <span className="text-gray-600">Bundle Price:</span>
+                <span className="font-medium">₱{bundlePrice.toLocaleString()} / {firstVariant.bundlePackagingType || 'bundle'}</span>
+              </div>
+            )}
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Price per {variantUnit}:</span>
-              <span className="font-medium">₱{variantPrice.toLocaleString()}</span>
+              <span className="text-gray-600">Price per {firstVariant.baseUnit || 'pc'}:</span>
+              <span className="font-medium">₱{pricePerPiece.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
             <div className="flex justify-between text-sm mt-1">
               <span className="text-gray-600">Quantity:</span>
-              <span className="font-medium">{getDisplayQuantity()} {variantUnit}</span>
+              <span className="font-medium">
+                {getDisplayQuantity()} {isBundle ? (firstVariant.baseUnit || 'pcs') : variantUnit}
+                {isBundle && getCurrentQuantity() > 0 && (
+                  <span className="ml-1 text-purple-600 text-xs">
+                    ({Math.floor(getCurrentQuantity() / firstVariant.piecesPerBundle)} {firstVariant.bundlePackagingType || 'bundles'}
+                    {getCurrentQuantity() % firstVariant.piecesPerBundle > 0 && 
+                      ` + ${getCurrentQuantity() % firstVariant.piecesPerBundle} ${firstVariant.baseUnit || 'pcs'}`
+                    })
+                  </span>
+                )}
+              </span>
             </div>
             <div className="flex justify-between text-base font-medium mt-2 pt-2 border-t">
               <span>Total:</span>
               <span className="text-orange-600">
-                ₱{(variantPrice * getCurrentQuantity()).toLocaleString()}
+                ₱{(pricePerPiece * getCurrentQuantity()).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
           </div>
