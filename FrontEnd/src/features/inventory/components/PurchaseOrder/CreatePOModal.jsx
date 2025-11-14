@@ -35,7 +35,7 @@ const CreatePOModal = ({ onClose, onSuccess , }) => {
     const loadData = async () => {
       try {
         const restockRequestsRef = collection(db, 'RestockingRequests');
-        const q = query(restockRequestsRef, where("status", "in", ["pending", "resolved_safety_stock"]));
+        const q = query(restockRequestsRef, where("status", "in", ["pending", "resolved_safety_stock", "acknowledged"]));
         const querySnapshot = await getDocs(q);
         const requests = querySnapshot.docs.map(doc => ({
           id: doc.id,
