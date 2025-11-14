@@ -9,9 +9,14 @@ import {
   ResponsiveContainer,
   Legend,
   LineChart,
-  Line
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  Area,
+  AreaChart
 } from 'recharts';
-import { FiBox, FiTrendingDown, FiTrendingUp, FiDollarSign, FiPackage, FiAlertTriangle, FiShoppingCart, FiInfo } from 'react-icons/fi';
+import { FiBox, FiTrendingDown, FiTrendingUp, FiDollarSign, FiPackage, FiAlertTriangle, FiShoppingCart, FiInfo, FiAward, FiLayers } from 'react-icons/fi';
 import { getFirestore, collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
 
@@ -25,6 +30,10 @@ const Dashboard = () => {
   const [restockRequests, setRestockRequests] = useState([]);
   const [salesData, setSalesData] = useState([]);
   const [showChartInfo, setShowChartInfo] = useState(false);
+  const [categoryData, setCategoryData] = useState([]);
+  const [topProducts, setTopProducts] = useState([]);
+  const [inventoryValue, setInventoryValue] = useState(0);
+  const [restockPriorityData, setRestockPriorityData] = useState([]);
   
   const [stats, setStats] = useState({
     lowStockCount: 0,
@@ -32,7 +41,9 @@ const Dashboard = () => {
     salesChange: 0,
     restockRequests: 0,
     restockChange: 0,
-    totalProducts: 0
+    totalProducts: 0,
+    totalValue: 0,
+    averageStockLevel: 0
   });
 
   // Fetch all dashboard data
@@ -60,30 +71,38 @@ const Dashboard = () => {
   const fetchProducts = async () => {
     try {
       const allProducts = [];
-      const storageRef = collection(db, 'Products');
-      const storageSnapshot = await getDocs(storageRef);
+      
+      // NEW: Fetch from Variants collection (flat structure)
+      const variantsRef = collection(db, 'Variants');
+      const variantsSnapshot = await getDocs(variantsRef);
 
-      // UPDATED for nested structure: Products/{unit}/products/{productId}
-      for (const storageDoc of storageSnapshot.docs) {
-        const storageLocation = storageDoc.id;
-        
-        // NEW: Fetch products directly from the products subcollection
-        const productsRef = collection(db, 'Products', storageLocation, 'products');
-        const productsSnapshot = await getDocs(productsRef);
-
-        productsSnapshot.docs.forEach(doc => {
-          const data = doc.data();
-          allProducts.push({
-            id: doc.id,
-            ...data,
-            storageLocation: data.storageLocation || storageLocation,
-            shelfName: data.shelfName || 'Unknown',
-            rowName: data.rowName || 'Unknown',
-            columnIndex: data.columnIndex || 0
-          });
+      variantsSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        allProducts.push({
+          id: doc.id,
+          variantId: doc.id,
+          name: data.variantName || data.productName || 'Unknown',
+          productName: data.productName || 'Unknown',
+          variantName: data.variantName || 'Standard',
+          category: data.productCategory || data.category || 'Uncategorized',
+          brand: data.productBrand || data.brand || 'Generic',
+          quantity: Number(data.quantity) || 0,
+          price: Number(data.unitPrice) || 0,
+          unitPrice: Number(data.unitPrice) || 0,
+          unit: data.baseUnit || 'pcs',
+          storageLocation: data.storageLocation || '',
+          shelfName: data.shelfName || '',
+          rowName: data.rowName || '',
+          image: data.productImageUrl || data.imageUrl || null,
+          safetyStock: Number(data.safetyStock) || 0,
+          isBundle: data.isBundle || false,
+          piecesPerBundle: Number(data.piecesPerBundle) || 0,
+          createdAt: data.createdAt,
+          lastUpdated: data.lastUpdated
         });
-      }
+      });
 
+      console.log('📦 Fetched variants:', allProducts.length);
       setProducts(allProducts);
 
     } catch (error) {
@@ -123,9 +142,18 @@ const Dashboard = () => {
   // Fetch recent POS transactions for sales data
   const fetchTransactions = async () => {
     try {
-      const transactionsRef = collection(db, 'posTransactions');
-      const q = query(transactionsRef, orderBy('createdAt', 'desc'), limit(100));
-      const snapshot = await getDocs(q);
+      // Try Transactions collection first (new architecture)
+      let transactionsRef = collection(db, 'Transactions');
+      let q = query(transactionsRef, orderBy('createdAt', 'desc'), limit(100));
+      let snapshot = await getDocs(q);
+
+      // Fallback to posTransactions if Transactions is empty
+      if (snapshot.empty) {
+        console.log('⚠️ Transactions collection empty, trying posTransactions...');
+        transactionsRef = collection(db, 'posTransactions');
+        q = query(transactionsRef, orderBy('createdAt', 'desc'), limit(100));
+        snapshot = await getDocs(q);
+      }
 
       const txns = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -143,12 +171,13 @@ const Dashboard = () => {
         
         return {
           id: doc.id,
-          total: data.amountPaid || data.totals?.total || data.total || 0, // Use amountPaid as primary field
+          total: data.total || data.amountPaid || data.totals?.total || 0,
           date: date,
           items: data.items || []
         };
       });
 
+      console.log('💳 Fetched transactions:', txns.length);
       setTransactions(txns);
       
       // Generate sales chart data (last 8 days)
@@ -246,12 +275,27 @@ const Dashboard = () => {
   useEffect(() => {
     if (products.length > 0 || transactions.length > 0 || restockRequests.length > 0) {
       calculateStats();
+      generateCategoryData();
+      generateTopProducts();
+      generateRestockPriorityData();
     }
   }, [products, transactions, restockRequests]);
 
   const calculateStats = () => {
     // Low stock items (quantity <= 60)
     const lowStockItems = products.filter(p => (p.quantity || 0) <= 60);
+    
+    // Calculate total inventory value
+    const totalValue = products.reduce((sum, p) => {
+      const price = parseFloat(p.unitPrice || p.price || 0);
+      const qty = parseInt(p.quantity || 0);
+      return sum + (price * qty);
+    }, 0);
+
+    // Calculate average stock level
+    const avgStock = products.length > 0
+      ? products.reduce((sum, p) => sum + (parseInt(p.quantity || 0)), 0) / products.length
+      : 0;
     
     // Today's sales
     const today = new Date();
@@ -286,8 +330,95 @@ const Dashboard = () => {
       salesChange: salesChange,
       restockRequests: restockRequests.length,
       restockChange: restockChange,
-      totalProducts: products.length
+      totalProducts: products.length,
+      totalValue: totalValue,
+      averageStockLevel: Math.round(avgStock)
     });
+
+    setInventoryValue(totalValue);
+  };
+
+  // Generate category breakdown data
+  const generateCategoryData = () => {
+    const categoryMap = {};
+    
+    products.forEach(product => {
+      const category = product.category || 'Uncategorized';
+      if (!categoryMap[category]) {
+        categoryMap[category] = { name: category, value: 0, products: 0 };
+      }
+      categoryMap[category].value += (product.price || 0) * (product.quantity || 0);
+      categoryMap[category].products += 1;
+    });
+
+    const data = Object.values(categoryMap)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6); // Top 6 categories
+
+    setCategoryData(data);
+  };
+
+  // Generate top selling products
+  const generateTopProducts = () => {
+    const productSales = {};
+
+    transactions.forEach(txn => {
+      txn.items.forEach(item => {
+        // Use variantId as the unique key
+        const variantKey = item.variantId || `${item.productId}_${item.variantName || 'default'}`;
+        
+        if (!productSales[variantKey]) {
+          productSales[variantKey] = {
+            variantId: item.variantId,
+            productName: item.productName || 'Unknown Product',
+            variantName: item.variantName || 'Standard',
+            quantity: 0,
+            revenue: 0
+          };
+        }
+        productSales[variantKey].quantity += item.qty || item.quantity || 0;
+        productSales[variantKey].revenue += (item.unitPrice || item.price || 0) * (item.qty || item.quantity || 0);
+      });
+    });
+
+    const topItems = Object.values(productSales)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+
+    setTopProducts(topItems);
+  };
+
+  // Generate restock priority data
+  const generateRestockPriorityData = () => {
+    const priorityMap = {
+      'Critical': 0,
+      'High': 0,
+      'Medium': 0,
+      'Low': 0
+    };
+
+    restockRequests.forEach(req => {
+      const priority = req.Priority || req.priority || 'Low';
+      if (priorityMap[priority] !== undefined) {
+        priorityMap[priority]++;
+      }
+    });
+
+    const data = Object.entries(priorityMap).map(([name, value]) => ({
+      name,
+      value
+    }));
+
+    setRestockPriorityData(data);
+  };
+
+  // Colors for charts
+  const COLORS = ['#ff7b54', '#ffb366', '#4ade80', '#60a5fa', '#a78bfa', '#f472b6'];
+  const PRIORITY_COLORS = {
+    'Critical': '#ef4444',
+    'High': '#f97316',
+    'Medium': '#eab308',
+    'Low': '#22c55e'
   };
 
   if (loading) {
@@ -305,6 +436,11 @@ const Dashboard = () => {
 
   return (
     <div className="">
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-gray-800 mb-2">Admin Dashboard</h1>
+        <p className="text-gray-600">Overview of your inventory, sales, and operations</p>
+      </div>
     
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
@@ -377,8 +513,163 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Sales Overview Chart */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
+      {/* Secondary Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        {/* Total Inventory Value */}
+        <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-6 shadow-sm border border-orange-200">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-orange-800 text-sm mb-1 font-medium">Total Inventory Value</p>
+              <h3 className="text-3xl font-bold text-orange-900 mb-2">₱{stats.totalValue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</h3>
+              <p className="text-orange-700 text-sm">{stats.totalProducts} products in stock</p>
+            </div>
+            <div className="bg-orange-200 p-3 rounded-lg">
+              <FiDollarSign className="text-orange-700 text-2xl" />
+            </div>
+          </div>
+        </div>
+
+        {/* Average Stock Level */}
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-6 shadow-sm border border-blue-200">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-blue-800 text-sm mb-1 font-medium">Average Stock Level</p>
+              <h3 className="text-3xl font-bold text-blue-900 mb-2">{stats.averageStockLevel} Units</h3>
+              <p className="text-blue-700 text-sm">Per product across inventory</p>
+            </div>
+            <div className="bg-blue-200 p-3 rounded-lg">
+              <FiLayers className="text-blue-700 text-2xl" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Charts Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Category Distribution */}
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-gray-800">Inventory by Category</h2>
+            <p className="text-sm text-gray-600 mt-1">Value distribution across product categories</p>
+          </div>
+          <div className="h-[300px]">
+            {categoryData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categoryData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={100}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {categoryData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`}
+                    contentStyle={{ 
+                      backgroundColor: 'white', 
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-400">
+                <p>No category data available</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Top Selling Products */}
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-gray-800">Top Selling Products</h2>
+            <p className="text-sm text-gray-600 mt-1">Best performers by revenue</p>
+          </div>
+          <div className="space-y-3">
+            {topProducts.length > 0 ? (
+              topProducts.map((product, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-center w-8 h-8 bg-orange-100 text-orange-600 rounded-full font-semibold text-sm">
+                      {index + 1}
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900 text-sm">{product.productName}</p>
+                      <p className="text-xs text-gray-500">{product.variantName}</p>
+                      <p className="text-xs text-gray-600">{product.quantity} units sold</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold text-gray-900">₱{product.revenue.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-12 text-gray-400">
+                <FiAward className="mx-auto mb-2" size={32} />
+                <p>No sales data available</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Restock Priority & Sales Chart */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        {/* Restock Priority */}
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-gray-800">Restock Priority</h2>
+            <p className="text-sm text-gray-600 mt-1">Requests by urgency level</p>
+          </div>
+          <div className="h-[300px]">
+            {restockPriorityData.some(d => d.value > 0) ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={restockPriorityData.filter(d => d.value > 0)}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, value }) => value > 0 ? `${name}: ${value}` : ''}
+                    outerRadius={90}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {restockPriorityData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={PRIORITY_COLORS[entry.name]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'white', 
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-400">
+                <p>No restock requests</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Sales Overview Chart */}
+        <div className="lg:col-span-2 bg-white rounded-xl p-6 shadow-sm border border-gray-100">
         <div className="flex justify-between items-center mb-4">
           <div>
             <h2 className="text-lg font-semibold text-gray-800">Sales Overview</h2>
@@ -471,6 +762,7 @@ const Dashboard = () => {
               <Bar dataKey="thisWeek" fill="#1f2937" radius={[4, 4, 0, 0]} name="This Week" />
             </BarChart>
           </ResponsiveContainer>
+        </div>
         </div>
       </div>
 
