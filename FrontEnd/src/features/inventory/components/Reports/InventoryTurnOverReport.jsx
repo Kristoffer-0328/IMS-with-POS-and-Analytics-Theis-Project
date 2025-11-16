@@ -115,17 +115,40 @@ function InventoryTurnoverReport({
     return `${Math.floor(days / 365)} years`;
   };
 
+  // Helper function to get performance level
+  const getPerformanceLevel = (turnoverRate) => {
+    if (turnoverRate >= 12) return 'EXCELLENT';
+    if (turnoverRate >= 8) return 'GOOD';
+    if (turnoverRate >= 4) return 'MODERATE';
+    return 'NEEDS IMPROVEMENT';
+  };
+
+  // Helper function to get product status
+  const getProductStatus = (turnoverRate, totalMovement) => {
+    let status, color, avgDays;
+    
+    if (turnoverRate >= 8) {
+      status = 'Fast Moving';
+      color = 'bg-green-100 text-green-800';
+      avgDays = turnoverRate > 0 ? Math.round(365 / turnoverRate) : 0;
+    } else if (turnoverRate >= 4) {
+      status = 'Moderate Moving';
+      color = 'bg-blue-100 text-blue-800';
+      avgDays = turnoverRate > 0 ? Math.round(365 / turnoverRate) : 0;
+    } else {
+      status = 'Slow Moving';
+      color = 'bg-red-100 text-red-800';
+      avgDays = turnoverRate > 0 ? Math.round(365 / turnoverRate) : 0;
+    }
+    
+    return { status, color, avgDays };
+  };
+
   // Function to generate analysis report
   const generateAnalysisReport = () => {
     if (!data) return;
 
     const period = `${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}`;
-
-    const analysis = getPerformanceAnalysis(
-      data.averageTurnoverRate,
-      data.totalMovement,
-      data.averageInventory
-    );
 
     const performanceLevel = getPerformanceLevel(data.averageTurnoverRate);
     const performanceColor = {
@@ -148,7 +171,6 @@ function InventoryTurnoverReport({
         totalMovement: data.totalMovement?.toLocaleString() || '0',
         averageInventory: data.averageInventory.toLocaleString()
       },
-      analysis,
       monthlyData: data.monthlyData,
       productData: data.productData || []
     };
@@ -272,7 +294,7 @@ function InventoryTurnoverReport({
       pdf.setFontSize(13);
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(brandColor.r, brandColor.g, brandColor.b);
-      pdf.text('Glory Star Hardware', infoX, infoY);
+     
       infoY += 6;
       pdf.setFontSize(8);
       pdf.setFont('helvetica', 'normal');
@@ -307,13 +329,7 @@ function InventoryTurnoverReport({
       // Set yPos for next section
       yPos = Math.max(infoY, metaY) + 10;
 
-  // Orange separator line (moved below title and metadata)
-  pdf.setDrawColor(brandColor.r, brandColor.g, brandColor.b);
-  pdf.setLineWidth(1);
-  pdf.line(margin, yPos, pageWidth - margin, yPos);
-  yPos += 10;
-
-      // Performance badge (right-aligned)
+      // Performance badge (right-aligned) - moved above the line
       const badgeWidth = 45;
       const badgeHeight = 8;
       const badgeX = pageWidth - margin - badgeWidth;
@@ -325,13 +341,18 @@ function InventoryTurnoverReport({
       else badgeColor = { r: 254, g: 226, b: 226, text: { r: 153, g: 27, b: 27 } };
 
       pdf.setFillColor(badgeColor.r, badgeColor.g, badgeColor.b);
-      pdf.roundedRect(badgeX, yPos, badgeWidth, badgeHeight, 2, 2, 'F');
+      pdf.roundedRect(badgeX, yPos - 15, badgeWidth, badgeHeight, 2, 2, 'F');
       
       pdf.setFontSize(8);
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(badgeColor.text.r, badgeColor.text.g, badgeColor.text.b);
-      pdf.text(performanceLevel, badgeX + badgeWidth / 2, yPos + 5.5, { align: 'center' });
-      yPos += 15;
+      pdf.text(performanceLevel, badgeX + badgeWidth / 2, yPos - 15 + 5.5, { align: 'center' });
+
+  // Orange separator line (moved below title and metadata)
+  pdf.setDrawColor(brandColor.r, brandColor.g, brandColor.b);
+  pdf.setLineWidth(1);
+  pdf.line(margin, yPos, pageWidth - margin, yPos);
+  yPos += 10;
 
 
   // Key Metrics Section - 4 separate boxes with movement data
@@ -391,7 +412,7 @@ function InventoryTurnoverReport({
   pdf.setFontSize(22);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(31, 41, 55);
-  pdf.text(`₱${(data.totalSales / 1000).toFixed(1)}K`, boxX + boxWidth / 2, yPos + 17, { align: 'center' });
+  pdf.text(`PHP${(data.totalSales / 1000).toFixed(1)}K`, boxX + boxWidth / 2, yPos + 17, { align: 'center' });
       
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
@@ -409,7 +430,7 @@ function InventoryTurnoverReport({
   pdf.setFontSize(22);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(31, 41, 55);
-  pdf.text(`₱${(data.averageInventory / 1000).toFixed(1)}K`, boxX + boxWidth / 2, yPos + 17, { align: 'center' });
+  pdf.text(`PHP${(data.averageInventory / 1000).toFixed(1)}K`, boxX + boxWidth / 2, yPos + 17, { align: 'center' });
       
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
@@ -443,70 +464,211 @@ function InventoryTurnoverReport({
   pdf.setFont('helvetica', 'bold');
   pdf.text(`${(data.totalOutbound || 0).toLocaleString()}`, col3X + 20, yPos);
       
-  const rightX = pageWidth - margin;
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(107, 114, 128);
-  pdf.text('Avg Days:', rightX - 30, yPos);
-  pdf.setTextColor(31, 41, 55);
-  pdf.setFont('helvetica', 'bold');
-  const avgDays = data.averageTurnoverRate > 0 ? Math.round(365 / data.averageTurnoverRate) : 0;
-  pdf.text(`${avgDays}d`, rightX, yPos, { align: 'right' });
+      const rightX = pageWidth - margin;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(107, 114, 128);
+      pdf.text('Avg Days:', rightX - 30, yPos);
+      pdf.setTextColor(31, 41, 55);
+      pdf.setFont('helvetica', 'bold');
+      const avgDays = data.averageTurnoverRate > 0 ? Math.round(365 / data.averageTurnoverRate) : 0;
+      pdf.text(`${avgDays}d`, rightX, yPos, { align: 'right' });
 
-      // Product Performance Table
+      yPos += 15;
+
+      // Classification Summary Cards - Single Row Layout
+      checkPageBreak(30);
+      
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(55, 65, 81);
+      pdf.text('PRODUCT CLASSIFICATION SUMMARY', margin, yPos);
+      yPos += 12;
+
+      const summaryCardWidth = (contentWidth - 4) / 3; // 3 cards with gaps
+      const summaryCardHeight = 20;
+      const summaryCardGap = 2;
+
+      // Class A Card
+      let summaryCardX = margin;
+      pdf.setFillColor(209, 250, 229); // Light green
+      pdf.setDrawColor(34, 197, 94); // Green border
+      pdf.setLineWidth(0.5);
+      pdf.roundedRect(summaryCardX, yPos, summaryCardWidth, summaryCardHeight, 2, 2, 'FD');
+      
+      // Circle badge
+      const badgeRadius = 6;
+      const summaryBadgeX = summaryCardX + 8;
+      const badgeY = yPos + summaryCardHeight / 2;
+      pdf.setFillColor(34, 197, 94);
+      pdf.circle(summaryBadgeX, badgeY, badgeRadius, 'F');
+      
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(255, 255, 255);
+      pdf.text('A', summaryBadgeX, badgeY + 2.5, { align: 'center' });
+      
+      pdf.setTextColor(6, 95, 70);
+      pdf.text('FAST MOVING', summaryCardX + 18, badgeY - 2, { align: 'left' });
+      pdf.setFontSize(12);
+      pdf.text(`${data.classACount || 0}`, summaryCardX + summaryCardWidth - 8, badgeY + 3, { align: 'right' });
+      pdf.setFontSize(7);
+      pdf.setTextColor(6, 95, 70);
+      pdf.text('≥ 8x turnover', summaryCardX + 18, badgeY + 3, { align: 'left' });
+
+      // Class B Card
+      summaryCardX += summaryCardWidth + summaryCardGap;
+      pdf.setFillColor(219, 234, 254); // Light blue
+      pdf.setDrawColor(59, 130, 246); // Blue border
+      pdf.roundedRect(summaryCardX, yPos, summaryCardWidth, summaryCardHeight, 2, 2, 'FD');
+      
+      pdf.setFillColor(59, 130, 246);
+      pdf.circle(summaryBadgeX + summaryCardWidth + summaryCardGap, badgeY, badgeRadius, 'F');
+      
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(255, 255, 255);
+      pdf.text('B', summaryBadgeX + summaryCardWidth + summaryCardGap, badgeY + 2.5, { align: 'center' });
+      
+      pdf.setTextColor(30, 64, 175);
+      pdf.text('MODERATE MOVING', summaryCardX + 18, badgeY - 2, { align: 'left' });
+      pdf.setFontSize(12);
+      pdf.text(`${data.classBCount || 0}`, summaryCardX + summaryCardWidth - 8, badgeY + 3, { align: 'right' });
+      pdf.setFontSize(7);
+      pdf.setTextColor(30, 64, 175);
+      pdf.text('4-8x turnover', summaryCardX + 18, badgeY + 3, { align: 'left' });
+
+      // Class C Card
+      summaryCardX += summaryCardWidth + summaryCardGap;
+      pdf.setFillColor(254, 226, 226); // Light red
+      pdf.setDrawColor(239, 68, 68); // Red border
+      pdf.roundedRect(summaryCardX, yPos, summaryCardWidth, summaryCardHeight, 2, 2, 'FD');
+      
+      pdf.setFillColor(239, 68, 68);
+      pdf.circle(summaryBadgeX + 2*(summaryCardWidth + summaryCardGap), badgeY, badgeRadius, 'F');
+      
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(255, 255, 255);
+      pdf.text('C', summaryBadgeX + 2*(summaryCardWidth + summaryCardGap), badgeY + 2.5, { align: 'center' });
+      
+      pdf.setTextColor(153, 27, 27);
+      pdf.text('SLOW MOVING', summaryCardX + 18, badgeY - 2, { align: 'left' });
+      pdf.setFontSize(12);
+      pdf.text(`${data.classCCount || 0}`, summaryCardX + summaryCardWidth - 8, badgeY + 3, { align: 'right' });
+      pdf.setFontSize(7);
+      pdf.setTextColor(153, 27, 27);
+      pdf.text('< 4x turnover', summaryCardX + 18, badgeY + 3, { align: 'left' });
+
+      yPos += summaryCardHeight + 15;
+
+      // Classification Distribution Chart - Bar Chart
+      checkPageBreak(60);
+
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(55, 65, 81);
+      pdf.text('PRODUCT CLASSIFICATION DISTRIBUTION', margin, yPos);
+      yPos += 10;
+
+      const chartWidth = contentWidth;
+      const chartHeight = 40;
+      const barHeight = 20;
+      const barGap = 5;
+
+      if (data.chartData && data.chartData.length > 0) {
+        data.chartData.forEach((item, index) => {
+          const barY = yPos + (index * (barHeight + barGap));
+
+          // Bar background
+          pdf.setFillColor(243, 244, 246);
+          pdf.setDrawColor(229, 231, 235);
+          pdf.roundedRect(margin, barY, chartWidth, barHeight, 2, 2, 'FD');
+
+          // Filled bar
+          const fillWidth = (item.value / data.totalVariants) * chartWidth;
+          if (fillWidth > 0) {
+            pdf.setFillColor(item.color === '#22c55e' ? 34 : item.color === '#3b82f6' ? 59 : 239,
+                           item.color === '#22c55e' ? 197 : item.color === '#3b82f6' ? 130 : 68,
+                           item.color === '#22c55e' ? 94 : item.color === '#3b82f6' ? 246 : 68);
+            pdf.roundedRect(margin, barY, fillWidth, barHeight, 2, 2, 'F');
+          }
+
+          // Label and percentage
+          pdf.setFontSize(9);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(31, 41, 55);
+          pdf.text(`${item.label} (${item.value})`, margin + 5, barY + 7);
+
+          const percentage = ((item.value / data.totalVariants) * 100).toFixed(0);
+          pdf.text(`${percentage}%`, margin + chartWidth - 20, barY + 7);
+
+          // Class indicator
+          pdf.setFontSize(8);
+          pdf.setTextColor(107, 114, 128);
+          pdf.text(`Class ${item.name.split(' ')[1]}`, margin + chartWidth - 20, barY + 13);
+        });
+      }
+
+      yPos += (data.chartData.length * (barHeight + barGap)) + 15;
+
+      // Variant Turnover Analysis Table
       checkPageBreak(40);
       
       pdf.setFontSize(11);
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(55, 65, 81);
+      pdf.text('VARIANT TURNOVER ANALYSIS', margin, yPos);
       yPos += 8;
 
-      // Table header
-      pdf.setFillColor(243, 244, 246);
-      pdf.setDrawColor(229, 231, 235);
-      pdf.rect(margin, yPos, contentWidth, 8, 'FD');
+      // Table header with dark background
+      pdf.setFillColor(31, 41, 55); // Dark gray background
+      pdf.setDrawColor(31, 41, 55);
+      pdf.rect(margin, yPos, contentWidth, 10, 'FD');
 
-      pdf.setFontSize(7);
+      pdf.setFontSize(8);
       pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(55, 65, 81);
+      pdf.setTextColor(255, 255, 255); // White text
       
-      const colWidths = {
-        product: 45,  // Product name
-        category: 22,  // Category
-        inQty: 12,     // IN quantity
-        outQty: 12,    // OUT quantity
-        movement: 15,  // Total movement
-        sales: 20,     // Sales value
-        rate: 12,      // Turnover rate
-        status: 20     // Status badge
+      const tableColWidths = {
+        product: 40,  // Product / Variant - increased
+        category: 20,  // Category - increased
+        begStock: 18,  // Beginning Stock - increased
+        endStock: 18,  // Ending Stock - increased
+        avgInv: 18,    // Avg Inventory - increased
+        unitsSold: 18, // Units Sold - increased
+        rate: 14,      // Turnover Rate - increased
+        class: 20,     // Classification - increased
+        age: 18        // Product Age - increased
       };
 
-      let colX = margin + 2;
-      pdf.text('PRODUCT', colX, yPos + 5.5);
-      colX += colWidths.product;
-      pdf.text('CATEGORY', colX, yPos + 5.5);
-      colX += colWidths.category;
-      pdf.text('IN', colX, yPos + 5.5, { align: 'center' });
-      colX += colWidths.inQty;
-      pdf.text('OUT', colX, yPos + 5.5, { align: 'center' });
-      colX += colWidths.outQty;
-      pdf.text('TOTAL', colX, yPos + 5.5, { align: 'center' });
-      colX += colWidths.movement;
-      pdf.text('SALES', colX, yPos + 5.5, { align: 'right' });
-      colX += colWidths.sales;
-      pdf.text('RATE', colX, yPos + 5.5, { align: 'center' });
-      colX += colWidths.rate;
-      pdf.text('STATUS', colX, yPos + 5.5, { align: 'center' });
+      let tableColX = margin + 3;
+      pdf.text('PRODUCT / VARIANT', tableColX, yPos + 6);
+      tableColX += tableColWidths.product;
+      pdf.text('CATEGORY', tableColX, yPos + 6);
+      tableColX += tableColWidths.category;
+      pdf.text('BEG STOCK', tableColX, yPos + 6, { align: 'center' });
+      tableColX += tableColWidths.begStock;
+      pdf.text('END STOCK', tableColX, yPos + 6, { align: 'center' });
+      tableColX += tableColWidths.endStock;
+      pdf.text('AVG INV', tableColX, yPos + 6, { align: 'center' });
+      tableColX += tableColWidths.avgInv;
+      pdf.text('UNITS SOLD', tableColX, yPos + 6, { align: 'center' });
+      tableColX += tableColWidths.unitsSold;
+      pdf.text('TURNOVER', tableColX, yPos + 6, { align: 'center' });
+      tableColX += tableColWidths.rate;
+      pdf.text('CLASS', tableColX, yPos + 6, { align: 'center' });
+      tableColX += tableColWidths.class;
+      pdf.text('AGE', tableColX, yPos + 6, { align: 'center' });
 
-      yPos += 8;
+      yPos += 10;
 
       // Table rows
       pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8);
+      pdf.setFontSize(7);
 
       inventoryData.forEach((product, index) => {
         checkPageBreak(10);
 
-        const { status, color } = getProductStatus(product.turnoverRate, product.totalMovement);
         const rowY = yPos;
 
         // Alternating row background
@@ -524,62 +686,69 @@ function InventoryTurnoverReport({
 
         pdf.setTextColor(31, 41, 55);
         
-        colX = margin + 2;
-        // Product name (truncate if too long)
-        const productName = product.productName.length > 25 ? product.productName.substring(0, 22) + '...' : product.productName;
+        tableColX = margin + 3;
+        // Product / Variant
+        const productText = `${product.productName}`;
+        const variantText = product.variantName && product.variantName !== 'Standard' ? ` / ${product.variantName}` : '';
+        const fullText = productText + variantText;
+        const truncatedText = fullText.length > 22 ? fullText.substring(0, 19) + '...' : fullText;
         pdf.setFont('helvetica', 'bold');
-        pdf.text(productName, colX, rowY + 5.5);
+        pdf.text(truncatedText, tableColX, rowY + 4.5);
         
-        colX += colWidths.product;
+        tableColX += tableColWidths.product;
         pdf.setFont('helvetica', 'normal');
-        const categoryName = product.category.length > 12 ? product.category.substring(0, 9) + '...' : product.category;
-        pdf.text(categoryName, colX, rowY + 5.5);
+        const categoryText = product.category.length > 12 ? product.category.substring(0, 9) + '...' : product.category;
+        pdf.text(categoryText, tableColX, rowY + 4.5);
         
-        colX += colWidths.category;
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(34, 197, 94); // Green for IN
-        pdf.text(`${product.inQuantity || 0}`, colX, rowY + 5.5, { align: 'center' });
+        tableColX += tableColWidths.category;
+        pdf.text(`${product.beginningStock}`, tableColX, rowY + 4.5, { align: 'center' });
         
-        colX += colWidths.inQty;
-        pdf.setTextColor(239, 68, 68); // Red for OUT
-        pdf.text(`${product.outQuantity || 0}`, colX, rowY + 5.5, { align: 'center' });
+        tableColX += tableColWidths.begStock;
+        pdf.text(`${product.endingStock}`, tableColX, rowY + 4.5, { align: 'center' });
         
-        colX += colWidths.outQty;
+        tableColX += tableColWidths.endStock;
+        pdf.setTextColor(59, 130, 246); // Blue for avg inventory
+        pdf.text(`${product.averageInventory.toFixed(1)}`, tableColX, rowY + 4.5, { align: 'center' });
+        
+        tableColX += tableColWidths.avgInv;
         pdf.setTextColor(31, 41, 55);
-        pdf.text(`${product.totalMovement || 0}`, colX, rowY + 5.5, { align: 'center' });
+        pdf.text(`${product.totalUnitsSold}`, tableColX, rowY + 4.5, { align: 'center' });
         
-        colX += colWidths.movement;
-        pdf.text(`₱${product.sales.toLocaleString()}`, colX, rowY + 5.5, { align: 'right' });
+        tableColX += tableColWidths.unitsSold;
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(`${product.turnoverRate.toFixed(2)}x`, tableColX, rowY + 4.5, { align: 'center' });
         
-        colX += colWidths.sales;
-        pdf.text(`${product.turnoverRate.toFixed(2)}x`, colX, rowY + 5.5, { align: 'center' });
+        tableColX += tableColWidths.rate;
+        pdf.setFont('helvetica', 'normal');
+        // Classification badge
+        const classWidth = 18;
+        const classHeight = 5;
+        const classX = tableColX - classWidth / 2 + 10;
         
-        colX += colWidths.rate;
-        // Status badge
-        const statusWidth = 20;
-        const statusHeight = 5;
-        const statusX = colX - statusWidth / 2 + 12;
-        
-        let statusColor;
-        if (status === 'Very High') statusColor = { bg: { r: 209, g: 250, b: 229 }, text: { r: 6, g: 95, b: 70 } };
-        else if (status === 'High') statusColor = { bg: { r: 191, g: 219, b: 254 }, text: { r: 30, g: 64, b: 175 } };
-        else if (status === 'Moderate') statusColor = { bg: { r: 254, g: 243, b: 199 }, text: { r: 146, g: 64, b: 14 } };
-        else statusColor = { bg: { r: 254, g: 226, b: 226 }, text: { r: 153, g: 27, b: 27 } };
+        let classColor;
+        if (product.classification === 'Class A') classColor = { bg: { r: 209, g: 250, b: 229 }, text: { r: 6, g: 95, b: 70 } };
+        else if (product.classification === 'Class B') classColor = { bg: { r: 219, g: 234, b: 254 }, text: { r: 30, g: 64, b: 175 } };
+        else classColor = { bg: { r: 254, g: 226, b: 226 }, text: { r: 153, g: 27, b: 27 } };
 
-        pdf.setFillColor(statusColor.bg.r, statusColor.bg.g, statusColor.bg.b);
-        pdf.roundedRect(statusX, rowY + 2, statusWidth, statusHeight, 1, 1, 'F');
+        pdf.setFillColor(classColor.bg.r, classColor.bg.g, classColor.bg.b);
+        pdf.roundedRect(classX, rowY + 1.5, classWidth, classHeight, 1, 1, 'F');
         
         pdf.setFontSize(6);
         pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(statusColor.text.r, statusColor.text.g, statusColor.text.b);
-        pdf.text(status, statusX + statusWidth / 2, rowY + 5.5, { align: 'center' });
+        pdf.setTextColor(classColor.text.r, classColor.text.g, classColor.text.b);
+        pdf.text(product.classification, classX + classWidth / 2, rowY + 4.5, { align: 'center' });
+        
+        tableColX += tableColWidths.class;
+        pdf.setFontSize(7);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(107, 114, 128);
+        const ageText = formatProductAge(product.productAge);
+        pdf.text(ageText, tableColX, rowY + 4.5, { align: 'center' });
 
         yPos += 8;
       });
 
-      yPos += 10;
-
-      // Footer note
+      yPos += 10;      // Footer note
       checkPageBreak(20);
       
       pdf.setFillColor(249, 250, 251);
@@ -820,13 +989,22 @@ function InventoryTurnoverReport({
             View and analyze your inventory turnover metrics
           </p>
         </div>
-        {onBack && (
+        <div className="flex items-center gap-3">
           <button
-            onClick={onBack}
-            className="px-4 py-2 bg-white border border-gray-200 rounded-md text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 transition-colors flex items-center gap-2">
-            Back to Reports
+            onClick={handleGenerateReport}
+            className="px-6 py-2 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-lg hover:from-orange-700 hover:to-orange-800 transition-all font-semibold text-sm shadow-lg flex items-center gap-2"
+          >
+            <AiOutlineFilePdf size={18} />
+            Generate Report
           </button>
-        )}
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="px-4 py-2 bg-white border border-gray-200 rounded-md text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-50 transition-colors flex items-center gap-2">
+              Back to Reports
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filter Section */}
@@ -1314,43 +1492,126 @@ function InventoryTurnoverReport({
                     </div>
                   </div>
 
+                  {/* Classification Summary Cards */}
+                  <div className="bg-white p-8 border-b border-gray-200">
+                    <h3 className="text-lg font-bold text-gray-800 mb-6 uppercase tracking-wide">Product Classification Summary</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {/* Class A */}
+                      <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-6 shadow-sm border border-green-200">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-green-800 text-sm uppercase font-bold tracking-wider">Class A - Fast Moving</h4>
+                          <div className="bg-green-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-xs font-bold">A</div>
+                        </div>
+                        <p className="text-3xl font-bold text-green-900">{data.classACount || 0}</p>
+                        <p className="text-sm text-green-700 mt-1">Turnover Rate ≥ 8x</p>
+                      </div>
+
+                      {/* Class B */}
+                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-6 shadow-sm border border-blue-200">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-blue-800 text-sm uppercase font-bold tracking-wider">Class B - Moderate Moving</h4>
+                          <div className="bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-xs font-bold">B</div>
+                        </div>
+                        <p className="text-3xl font-bold text-blue-900">{data.classBCount || 0}</p>
+                        <p className="text-sm text-blue-700 mt-1">Turnover Rate 4-8x</p>
+                      </div>
+
+                      {/* Class C */}
+                      <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-6 shadow-sm border border-red-200">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-red-800 text-sm uppercase font-bold tracking-wider">Class C - Slow Moving</h4>
+                          <div className="bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-xs font-bold">C</div>
+                        </div>
+                        <p className="text-3xl font-bold text-red-900">{data.classCCount || 0}</p>
+                        <p className="text-sm text-red-700 mt-1">Turnover Rate &lt; 4x</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Classification Distribution Chart */}
+                  <div className="bg-gray-50 p-8 border-b border-gray-200">
+                    <h3 className="text-lg font-bold text-gray-800 mb-6 uppercase tracking-wide">Product Classification Distribution</h3>
+                    <div className="grid grid-cols-3 gap-6">
+                      {data.chartData && data.chartData.map((item, index) => (
+                        <div key={index} className="text-center">
+                          <div className="relative inline-flex items-center justify-center w-32 h-32 mb-3">
+                            <svg className="w-32 h-32 transform -rotate-90">
+                              <circle
+                                cx="64"
+                                cy="64"
+                                r="56"
+                                stroke="#e5e7eb"
+                                strokeWidth="16"
+                                fill="none"
+                              />
+                              <circle
+                                cx="64"
+                                cy="64"
+                                r="56"
+                                stroke={item.color}
+                                strokeWidth="16"
+                                fill="none"
+                                strokeDasharray={`${(item.value / data.totalVariants) * 352} 352`}
+                                strokeLinecap="round"
+                              />
+                            </svg>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                              <span className="text-2xl font-bold" style={{ color: item.color }}>
+                                {item.value}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {((item.value / data.totalVariants) * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                          </div>
+                          <p className="font-medium text-gray-800">{item.label}</p>
+                          <p className="text-xs text-gray-500">Class {item.name.split(' ')[1]}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   {/* Product Table Section - Invoice-style */}
                   <div className="p-8">
-                    <h3 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-wide">Product Movement Analysis</h3>
+                    <h3 className="text-lg font-bold text-gray-800 mb-4 uppercase tracking-wide">Variant Turnover Analysis</h3>
                     <div className="overflow-hidden border border-gray-200 rounded-lg">
                       <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-800">
                           <tr>
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Product Name</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Product / Variant</th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-white uppercase tracking-wider">Category</th>
-                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">IN Qty</th>
-                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">OUT Qty</th>
-                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">Total Move</th>
-                            <th className="px-4 py-3 text-right text-xs font-semibold text-white uppercase tracking-wider">Sales</th>
+                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">Beg Stock</th>
+                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">End Stock</th>
+                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">Avg Inv</th>
+                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">Units Sold</th>
                             <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">Rate</th>
-                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">Status</th>
+                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">Class</th>
+                            <th className="px-4 py-3 text-center text-xs font-semibold text-white uppercase tracking-wider">Age</th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-100">
-                          {currentItems.map((item, index) => {
-                            const { status, color, avgDays } = getProductStatus(item.turnoverRate, item.totalMovement);
-                            return (
-                              <tr key={index} className={index % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50 hover:bg-gray-100'}>
-                                <td className="px-4 py-3 text-sm font-medium text-gray-900">{item.productName}</td>
-                                <td className="px-4 py-3 text-sm text-gray-700">{item.category}</td>
-                                <td className="px-4 py-3 text-sm text-center font-semibold text-green-600">{item.inQuantity || 0}</td>
-                                <td className="px-4 py-3 text-sm text-center font-semibold text-red-600">{item.outQuantity || 0}</td>
-                                <td className="px-4 py-3 text-sm text-center font-bold text-gray-900">{item.totalMovement || 0}</td>
-                                <td className="px-4 py-3 text-sm text-right text-gray-900">₱{item.sales.toLocaleString()}</td>
-                                <td className="px-4 py-3 text-sm text-center font-semibold text-gray-900">{item.turnoverRate.toFixed(2)}x <span className="text-xs text-gray-500">({avgDays}d)</span></td>
-                                <td className="px-4 py-3 text-center">
-                                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${color}`}>
-                                    {status}
-                                  </span>
-                                </td>
-                              </tr>
-                            );
-                          })}
+                          {currentItems.map((item, index) => (
+                            <tr key={index} className={index % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50 hover:bg-gray-100'}>
+                              <td className="px-4 py-3 text-sm">
+                                <div>
+                                  <p className="font-medium text-gray-900">{item.productName}</p>
+                                  <p className="text-xs text-gray-500">{item.variantName}</p>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-700">{item.category}</td>
+                              <td className="px-4 py-3 text-sm text-center font-semibold text-gray-900">{item.beginningStock}</td>
+                              <td className="px-4 py-3 text-sm text-center font-semibold text-gray-900">{item.endingStock}</td>
+                              <td className="px-4 py-3 text-sm text-center font-semibold text-blue-600">{item.averageInventory.toFixed(1)}</td>
+                              <td className="px-4 py-3 text-sm text-center font-semibold text-gray-900">{item.totalUnitsSold}</td>
+                              <td className="px-4 py-3 text-sm text-center font-bold text-gray-900">{item.turnoverRate.toFixed(2)}x</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${getClassificationColor(item.classification)}`}>
+                                  {item.classification}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-center text-gray-600">{formatProductAge(item.productAge)}</td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     </div>
@@ -1408,6 +1669,14 @@ function InventoryTurnoverReport({
                   className="px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium text-sm"
                 >
                   Close
+                </button>
+
+                <button
+                  onClick={() => printInventoryReportContent(data, { startDate, endDate })}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all font-semibold text-sm shadow-lg flex items-center gap-2"
+                >
+                  <FiPrinter size={18} />
+                  Print HTML
                 </button>
 
                 <button

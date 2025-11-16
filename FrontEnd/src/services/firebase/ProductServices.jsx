@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useCallback, useMemo } from
 import { getFirestore, collection, onSnapshot, query, getDocs, orderBy, doc, setDoc, deleteDoc, updateDoc, getDoc, where, writeBatch } from 'firebase/firestore';
 import app from './config';
 import { ProductFactory } from '../../features/inventory/components/Factory/productFactory';
+import { createMergedProduct, createMergedVariant } from '../../models/MergedProduct';
 
 const db = getFirestore(app);
 const ServicesContext = createContext(null);
@@ -1009,6 +1010,289 @@ export const getSupplierProducts = async (supplierId) => {
   }
 };
 
+// ============================================================================
+// Merged Product Services - Combines Master + Variants + Suppliers
+// ============================================================================
+
+/**
+ * Listen to and merge data from Master, Variants, and Suppliers collections
+ * Returns real-time merged product data with all related information
+ * 
+ * @param {Function} onUpdate - Callback function to receive merged products array
+ * @param {Object} filters - Optional filters (category, brand, searchQuery)
+ * @returns {Function} Cleanup function to unsubscribe from all listeners
+ */
+export const listenToMergedProducts = (onUpdate, filters = {}) => {
+  let masterData = [];
+  let variantsData = [];
+  let suppliersData = [];
+  let supplierProductsData = {}; // Map of supplierId -> products array
+  
+  const mergeAndNotify = () => {
+    try {
+      console.log('🔄 Merging product data...', {
+        masterCount: masterData.length,
+        variantsCount: variantsData.length,
+        suppliersCount: suppliersData.length
+      });
+
+      // Group variants by parentProductId
+      const variantsByProduct = {};
+      variantsData.forEach(variant => {
+        const productId = variant.parentProductId || variant.productId;
+        if (!variantsByProduct[productId]) {
+          variantsByProduct[productId] = [];
+        }
+        variantsByProduct[productId].push(variant);
+      });
+
+      // Create a map of variantId -> suppliers
+      const suppliersByVariant = {};
+      Object.entries(supplierProductsData).forEach(([supplierId, products]) => {
+        products.forEach(product => {
+          const variantId = product.variantId || product.id;
+          if (!suppliersByVariant[variantId]) {
+            suppliersByVariant[variantId] = [];
+          }
+          
+          // Find the supplier details
+          const supplierDetails = suppliersData.find(s => s.id === supplierId);
+          if (supplierDetails) {
+            suppliersByVariant[variantId].push({
+              id: supplierId,
+              name: supplierDetails.name,
+              primaryCode: supplierDetails.primaryCode,
+              address: supplierDetails.address,
+              contactPerson: supplierDetails.contactPerson,
+              phone: supplierDetails.phone,
+              email: supplierDetails.email,
+              leadTime: supplierDetails.leadTime,
+              status: supplierDetails.status,
+              // Include supplier-specific product data
+              supplierPrice: product.supplierPrice,
+              supplierSKU: product.supplierSKU
+            });
+          }
+        });
+      });
+
+      // Merge products with variants and suppliers
+      const mergedProducts = masterData.map(product => {
+        const productVariants = variantsByProduct[product.id] || [];
+        
+        // Create merged variants with supplier info
+        const mergedVariants = productVariants.map(variant => {
+          const suppliers = suppliersByVariant[variant.id] || [];
+          return createMergedVariant(variant, product, suppliers);
+        });
+
+        return createMergedProduct(product, mergedVariants);
+      }).filter(p => p.variants.length > 0); // Only show products with variants
+
+      console.log(`✅ Merged ${mergedProducts.length} products`);
+
+      // Notify with merged data
+      if (onUpdate) {
+        onUpdate(mergedProducts);
+      }
+    } catch (error) {
+      console.error('❌ Error merging product data:', error);
+      if (onUpdate) {
+        onUpdate([]);
+      }
+    }
+  };
+
+  // Listen to Master collection
+  const masterRef = collection(db, 'Master');
+  const unsubscribeMaster = onSnapshot(
+    masterRef,
+    (snapshot) => {
+      console.log(`📦 Master collection updated: ${snapshot.size} products`);
+      masterData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      mergeAndNotify();
+    },
+    (error) => {
+      console.error('❌ Error listening to Master collection:', error);
+      masterData = [];
+      mergeAndNotify();
+    }
+  );
+
+  // Listen to Variants collection
+  const variantsRef = collection(db, 'Variants');
+  const unsubscribeVariants = onSnapshot(
+    variantsRef,
+    (snapshot) => {
+      console.log(`📦 Variants collection updated: ${snapshot.size} variants`);
+      variantsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      mergeAndNotify();
+    },
+    (error) => {
+      console.error('❌ Error listening to Variants collection:', error);
+      variantsData = [];
+      mergeAndNotify();
+    }
+  );
+
+  // Listen to Suppliers collection
+  const suppliersRef = collection(db, SUPPLIERS_COLLECTION);
+  const unsubscribeSuppliers = onSnapshot(
+    suppliersRef,
+    (snapshot) => {
+      console.log(`📦 Suppliers collection updated: ${snapshot.size} suppliers`);
+      suppliersData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      // Set up listeners for each supplier's products subcollection
+      snapshot.docs.forEach(supplierDoc => {
+        const supplierId = supplierDoc.id;
+        const supplierProductsRef = collection(db, SUPPLIERS_COLLECTION, supplierId, 'products');
+        
+        onSnapshot(
+          supplierProductsRef,
+          (productsSnapshot) => {
+            supplierProductsData[supplierId] = productsSnapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            }));
+            mergeAndNotify();
+          },
+          (error) => {
+            console.error(`❌ Error listening to Supplier ${supplierId} products:`, error);
+          }
+        );
+      });
+      
+      mergeAndNotify();
+    },
+    (error) => {
+      console.error('❌ Error listening to Suppliers collection:', error);
+      suppliersData = [];
+      mergeAndNotify();
+    }
+  );
+
+  // Return cleanup function
+  return () => {
+    console.log('🧹 Cleaning up merged product listeners');
+    unsubscribeMaster();
+    unsubscribeVariants();
+    unsubscribeSuppliers();
+    // Note: Supplier product subcollection listeners will be cleaned up automatically
+  };
+};
+
+/**
+ * Get merged products with suppliers (one-time fetch, no real-time updates)
+ * Useful for one-off queries or reports
+ * 
+ * @returns {Promise<Array>} Array of merged products
+ */
+export const getMergedProducts = async () => {
+  try {
+    console.log('🔍 Fetching merged products (one-time)...');
+
+    // Fetch Master collection
+    const masterSnapshot = await getDocs(collection(db, 'Master'));
+    const masterData = masterSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    // Fetch Variants collection
+    const variantsSnapshot = await getDocs(collection(db, 'Variants'));
+    const variantsData = variantsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    // Fetch Suppliers collection
+    const suppliersSnapshot = await getDocs(collection(db, SUPPLIERS_COLLECTION));
+    const suppliersData = suppliersSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    // Fetch all supplier products
+    const supplierProductsData = {};
+    for (const supplierDoc of suppliersSnapshot.docs) {
+      const supplierId = supplierDoc.id;
+      const supplierProductsSnapshot = await getDocs(
+        collection(db, SUPPLIERS_COLLECTION, supplierId, 'products')
+      );
+      supplierProductsData[supplierId] = supplierProductsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    }
+
+    // Group variants by parentProductId
+    const variantsByProduct = {};
+    variantsData.forEach(variant => {
+      const productId = variant.parentProductId || variant.productId;
+      if (!variantsByProduct[productId]) {
+        variantsByProduct[productId] = [];
+      }
+      variantsByProduct[productId].push(variant);
+    });
+
+    // Create a map of variantId -> suppliers
+    const suppliersByVariant = {};
+    Object.entries(supplierProductsData).forEach(([supplierId, products]) => {
+      products.forEach(product => {
+        const variantId = product.variantId || product.id;
+        if (!suppliersByVariant[variantId]) {
+          suppliersByVariant[variantId] = [];
+        }
+        
+        const supplierDetails = suppliersData.find(s => s.id === supplierId);
+        if (supplierDetails) {
+          suppliersByVariant[variantId].push({
+            id: supplierId,
+            name: supplierDetails.name,
+            primaryCode: supplierDetails.primaryCode,
+            address: supplierDetails.address,
+            contactPerson: supplierDetails.contactPerson,
+            phone: supplierDetails.phone,
+            email: supplierDetails.email,
+            leadTime: supplierDetails.leadTime,
+            status: supplierDetails.status,
+            supplierPrice: product.supplierPrice,
+            supplierSKU: product.supplierSKU
+          });
+        }
+      });
+    });
+
+    // Merge products with variants and suppliers
+    const mergedProducts = masterData.map(product => {
+      const productVariants = variantsByProduct[product.id] || [];
+      
+      const mergedVariants = productVariants.map(variant => {
+        const suppliers = suppliersByVariant[variant.id] || [];
+        return createMergedVariant(variant, product, suppliers);
+      });
+
+      return createMergedProduct(product, mergedVariants);
+    }).filter(p => p.variants.length > 0);
+
+    console.log(`✅ Fetched and merged ${mergedProducts.length} products`);
+    return { success: true, products: mergedProducts };
+  } catch (error) {
+    console.error('❌ Error fetching merged products:', error);
+    return { success: false, error, products: [] };
+  }
+};
+
 export const useServices = () => {
   const context = useContext(ServicesContext);
   if (!context) {
@@ -1024,6 +1308,9 @@ export const useServices = () => {
     deleteProduct,
     listProducts,
     searchProducts,
+    // NEW: Merged product services (Master + Variants + Suppliers)
+    listenToMergedProducts,
+    getMergedProducts,
     // Legacy: Supplier-product relationship functions
     linkProductToSupplier,
     unlinkProductFromSupplier,

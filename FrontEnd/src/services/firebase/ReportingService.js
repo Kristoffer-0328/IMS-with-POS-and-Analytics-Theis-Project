@@ -39,17 +39,9 @@ export const ReportingService = {
       const startDateStr = startDate; // Already in YYYY-MM-DD format
       const endDateStr = endDate; // Already in YYYY-MM-DD format
 
-      console.log('📅 Date range:', { 
-        startDateObj: startDateObj.toISOString(), 
-        endDateObj: endDateObj.toISOString(),
-        startDateStr,
-        endDateStr
-      });
+    
 
-      // ============================================================================
-      // STEP 1: Fetch Stock Movements (uses Firestore Timestamps)
-      // ============================================================================
-      console.log('📦 Fetching stock movements...');
+
       const movementsRef = collection(db, 'stock_movements');
       const movementsQuery = query(
         movementsRef,
@@ -61,10 +53,7 @@ export const ReportingService = {
       const movementsSnapshot = await getDocs(movementsQuery);
       console.log(`✅ Found ${movementsSnapshot.size} stock movements`);
 
-      // ============================================================================
-      // STEP 2: Fetch Transactions for Total Units Sold (uses string YYYY-MM-DD)
-      // ============================================================================
-      console.log('💰 Fetching transactions...');
+     
       const transactionsRef = collection(db, 'Transactions');
       const transactionsQuery = query(
         transactionsRef,
@@ -86,10 +75,7 @@ export const ReportingService = {
         });
       }
 
-      // ============================================================================
-      // STEP 3: Group movements by variant and calculate beginning/ending stock
-      // ============================================================================
-      console.log('🔄 Processing movements by variant...');
+  
       const variantMovementsMap = new Map();
 
       movementsSnapshot.forEach(doc => {
@@ -105,7 +91,9 @@ export const ReportingService = {
             category: movement.category || 'Uncategorized',
             movements: [],
             oldestMovement: null,
-            newestMovement: null
+            newestMovement: null,
+            inQuantity: 0,
+            outQuantity: 0
           });
         }
 
@@ -131,14 +119,15 @@ export const ReportingService = {
             movementDate: movementDate
           };
         }
+
+        // Count inbound and outbound quantities
+        if (movement.movementType === 'inbound' || movement.movementType === 'IN') {
+          variantData.inQuantity += movement.quantity || 0;
+        } else if (movement.movementType === 'outbound' || movement.movementType === 'OUT') {
+          variantData.outQuantity += movement.quantity || 0;
+        }
       });
 
-      console.log(`📊 Grouped into ${variantMovementsMap.size} variants`);
-
-      // ============================================================================
-      // STEP 4: Calculate total units sold per variant from Transactions
-      // ============================================================================
-      console.log('💵 Calculating total units sold...');
       const variantSalesMap = new Map();
 
       transactionsSnapshot.forEach(doc => {
@@ -163,12 +152,7 @@ export const ReportingService = {
         });
       });
 
-      console.log(`💰 Calculated sales for ${variantSalesMap.size} variants`);
 
-      // ============================================================================
-      // STEP 5: Fetch valid variants from Variants collection to filter orphaned data
-      // ============================================================================
-      console.log('🔍 Fetching valid variants from Variants collection...');
       const variantsRef = collection(db, 'Variants');
       const variantsSnapshot = await getDocs(variantsRef);
       
@@ -204,10 +188,7 @@ export const ReportingService = {
       
       console.log(`✅ Found ${validVariantIds.size} valid variant keys in Variants collection`);
 
-      // ============================================================================
-      // STEP 6: Calculate turnover metrics per variant (only valid variants)
-      // ============================================================================
-      console.log('📈 Calculating turnover metrics...');
+
       const productData = [];
       let totalVariants = 0;
       let totalUnitsSold = 0;
@@ -301,7 +282,11 @@ export const ReportingService = {
           productAge,
           movementCount: movementData?.movements.length || 0,
           oldestMovementDate: movementData?.oldestMovement?.movementDate || null,
-          newestMovementDate: movementData?.newestMovement?.movementDate || null
+          newestMovementDate: movementData?.newestMovement?.movementDate || null,
+          inQuantity: movementData?.inQuantity || 0,
+          outQuantity: movementData?.outQuantity || 0,
+          totalMovement: (movementData?.inQuantity || 0) + (movementData?.outQuantity || 0),
+          sales: salesData.totalSalesValue
         });
 
         totalVariants++;
@@ -322,12 +307,32 @@ export const ReportingService = {
         ? totalUnitsSold / totalAvgInventory 
         : 0;
 
+      // Calculate total movement, inbound, outbound, sales from product data
+      let totalMovement = 0;
+      let totalInbound = 0;
+      let totalOutbound = 0;
+      let totalSales = 0;
+
+      productData.forEach(product => {
+        totalMovement += product.movementCount || 0;
+        totalInbound += product.inQuantity || 0;
+        totalOutbound += product.outQuantity || 0;
+        totalSales += product.totalSalesValue || 0;
+      });
+
       const result = {
         // Overall metrics
         averageTurnoverRate,
         totalUnitsSold,
         totalAvgInventory,
         totalVariants,
+        
+        // Movement metrics
+        totalMovement,
+        totalInbound,
+        totalOutbound,
+        totalSales,
+        averageInventory: totalAvgInventory, // Rename for consistency
         
         // Classification breakdown
         classACount,

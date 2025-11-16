@@ -352,7 +352,7 @@ const IMDashboard = () => {
 
   const chartData = groupedProducts.map((p) => {
     let color = '#4779FF';
-    if (p.quantity < p.restockLevel) color = '#FF4D4D';
+    if (p.quantity < 10) color = '#FF4D4D';
     else if (p.quantity <= 40) color = '#FFC554';
 
     return {

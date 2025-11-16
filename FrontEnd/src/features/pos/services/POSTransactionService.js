@@ -48,8 +48,7 @@ const NOTIFICATIONS_COLLECTION = 'Notifications';
  */
 export const processPOSSale = async (cartItems, transactionDetails, currentUser) => {
   try {
-    console.log('💰 Processing POS sale...');
-    console.log('📦 Cart items:', cartItems.length);
+
     
     // 1. Validation
     if (!cartItems || cartItems.length === 0) {
@@ -79,10 +78,7 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
       );
     }
     
-    console.log('✅ Validation passed');
-    
-    // 2. Pre-fetch all variants to check availability
-    console.log('🔍 Pre-fetching variants for availability check...');
+
     
     const variantChecks = await Promise.all(
       cartItems.map(async (item) => {
@@ -128,9 +124,7 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
         };
       })
     );
-    
-    console.log('✅ All variants available');
-    
+
     // 3. Generate transaction ID and receipt number
     const now = new Date();
     const year = now.getFullYear();
@@ -143,12 +137,7 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
     
     const transactionId = `TXN-${year}${month}${day}-${hours}${minutes}${seconds}-${random}`;
     const receiptNumber = `RCP-${year}${month}${day}-${random}`;
-    
-    console.log(`📝 Transaction ID: ${transactionId}`);
-    console.log(`🧾 Receipt Number: ${receiptNumber}`);
-    
-    // 4. Execute Firestore transaction (atomic operation)
-    console.log('🔄 Executing Firestore transaction...');
+
     
     const result = await runTransaction(db, async (transaction) => {
       // Track stock movements for logging
@@ -198,9 +187,7 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
           },
           updatedAt: serverTimestamp()
         });
-        
-        console.log(`✅ Updated ${variantData.variantName}: ${currentQty} → ${newQuantity}`);
-        
+
         // Track stock movement
         const itemUnitPrice = cartItem.unitPrice || variantData.unitPrice || 0;
         stockMovements.push({
@@ -297,13 +284,7 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
         updatedAt: serverTimestamp()
       };
       
-      // Log transaction data for debugging (excluding serverTimestamp which shows as undefined)
-      console.log('📄 Transaction data to be saved:', {
-        ...transactionData,
-        timestamp: '[serverTimestamp]',
-        createdAt: '[serverTimestamp]',
-        updatedAt: '[serverTimestamp]'
-      });
+  
       
       // Verify no undefined values in critical fields
       const hasUndefined = Object.entries(transactionData).some(([key, value]) => {
@@ -320,8 +301,7 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
       
       transaction.set(transactionRef, transactionData);
       
-      console.log('✅ Transaction document created');
-      
+
       // 6. Create stock movement logs (async, doesn't need to be in transaction)
       // These will be created after the transaction completes
       
@@ -337,9 +317,7 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
         }
       };
     });
-    
-    console.log('✅ Firestore transaction completed successfully');
-    
+
     // 7. Create stock movement logs (fire and forget)
     try {
       await createStockMovementLogs(result.stockMovements, transactionId, currentUser);
@@ -355,14 +333,11 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
       console.warn('⚠️ Failed to create sale notification:', error);
       // Don't fail the transaction if notification fails
     }
-    
-    console.log('💰 POS sale completed successfully!');
-    
+
     return result;
     
   } catch (error) {
-    console.error('❌ Error processing POS sale:', error);
-    
+ 
     // Provide user-friendly error messages
     if (error.message.includes('Insufficient stock')) {
       throw error; // Already formatted
@@ -411,7 +386,7 @@ const createStockMovementLogs = async (stockMovements, transactionId, currentUse
     );
     
     await Promise.all(promises);
-    console.log(`✅ Created ${stockMovements.length} stock movement logs`);
+
   } catch (error) {
     console.error('❌ Error creating stock movement logs:', error);
     throw error;
@@ -455,7 +430,6 @@ const createSaleNotification = async (transactionData, currentUser) => {
       updatedAt: serverTimestamp()
     });
     
-    console.log('✅ Sale notification created');
   } catch (error) {
     console.error('❌ Error creating sale notification:', error);
     throw error;
@@ -472,8 +446,7 @@ const createSaleNotification = async (transactionData, currentUser) => {
  */
 export const voidTransaction = async (transactionId, reason, currentUser) => {
   try {
-    console.log(`🚫 Voiding transaction: ${transactionId}`);
-    
+
     if (!transactionId || !reason || !currentUser) {
       throw new Error('Transaction ID, reason, and user are required to void a transaction');
     }
@@ -518,7 +491,7 @@ export const voidTransaction = async (transactionId, reason, currentUser) => {
           updatedAt: serverTimestamp()
         });
         
-        console.log(`✅ Restored ${item.variantName}: ${currentQty} → ${restoredQty}`);
+
       }
       
       // Mark transaction as voided
@@ -532,8 +505,7 @@ export const voidTransaction = async (transactionId, reason, currentUser) => {
       });
     });
     
-    console.log('✅ Transaction voided successfully');
-    
+
     return {
       success: true,
       transactionId,

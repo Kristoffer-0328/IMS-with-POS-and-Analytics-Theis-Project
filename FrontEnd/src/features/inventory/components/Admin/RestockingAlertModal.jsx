@@ -498,12 +498,16 @@ const RestockingAlertModal = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
+  // Check if there are any pending requests that require attention
+  const hasPendingRequests = restockingRequests.some(req => req.status === 'pending');
+  const canClose = !hasPendingRequests;
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
         <div 
           className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75"
-          onClick={onClose}
+          onClick={canClose ? onClose : undefined}
         />
 
         <div className="inline-block w-full max-w-6xl my-8 overflow-hidden text-left align-middle transition-all transform bg-white rounded-lg shadow-xl">
@@ -527,14 +531,22 @@ const RestockingAlertModal = ({ isOpen, onClose }) => {
                   </p>
                 </div>
               </div>
-              <button
-                onClick={onClose}
-                className="text-white transition-colors hover:text-gray-200"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              {canClose && (
+                <button
+                  onClick={onClose}
+                  className="text-white transition-colors hover:text-gray-200"
+                  title="Close"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+              {!canClose && (
+                <div className="text-orange-100 text-sm font-medium px-3 py-1 bg-white/10 rounded-lg">
+                  Action Required
+                </div>
+              )}
             </div>
           </div>
 
@@ -772,12 +784,18 @@ const RestockingAlertModal = ({ isOpen, onClose }) => {
               <p className="text-sm text-gray-600">
                 Real-time monitoring - Updates automatically
               </p>
-              <button
-                onClick={onClose}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              >
-                Close
-              </button>
+              {canClose ? (
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  Close
+                </button>
+              ) : (
+                <p className="text-sm font-medium text-orange-600">
+                  Please acknowledge or dismiss pending alerts to close
+                </p>
+              )}
             </div>
           </div>
         </div>

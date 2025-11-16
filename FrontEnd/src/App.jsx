@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { getFirestore, collection, query, where, onSnapshot } from 'firebase/firestore';
+import app from './FirebaseConfig';
 
 import {
   BrowserRouter as Router,
@@ -73,6 +75,27 @@ const AdminLayout = ({ children }) => {
 const IMLayout = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [showRestockModal, setShowRestockModal] = useState(false);
+  const [hasPendingAlerts, setHasPendingAlerts] = useState(false);
+
+  useEffect(() => {
+    // Firestore listener for pending RestockingRequests only
+    const db = getFirestore(app);
+    const q = query(
+      collection(db, 'RestockingRequests'),
+      where('status', '==', 'pending')
+    );
+    const unsub = onSnapshot(q, (snapshot) => {
+      const pendingAlerts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log('Pending RestockingRequests:', pendingAlerts);
+      const hasPending = pendingAlerts.length > 0;
+      setHasPendingAlerts(hasPending);
+      // Auto-open modal when there are pending alerts
+      if (hasPending) {
+        setShowRestockModal(true);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   return (
     <div className="flex min-h-screen w-full bg-gray-50 relative">
@@ -89,23 +112,29 @@ const IMLayout = ({ children }) => {
         </div>
       </main>
 
-      {/* Floating Restocking Alerts Button */}
-      <button
-        type="button"
-        onClick={() => setShowRestockModal(true)}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg bg-gradient-to-r from-orange-500 to-red-500 text-white font-medium hover:shadow-xl transition-all focus:outline-none focus:ring-4 focus:ring-orange-300"
-      >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-        </svg>
-        Restocking Alerts
-        <span className="ml-2 inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-white/20 text-xs font-semibold">Live</span>
-      </button>
+      {/* Floating Restocking Alerts Button - Hidden when there are pending alerts */}
+      {!hasPendingAlerts && (
+        <button
+          type="button"
+          onClick={() => setShowRestockModal(true)}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium hover:shadow-xl transition-all focus:outline-none focus:ring-4 focus:ring-blue-300"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          </svg>
+          View Alerts
+        </button>
+      )}
 
       {/* Global Restocking Alert Modal */}
       <RestockingAlertModal
         isOpen={showRestockModal}
-        onClose={() => setShowRestockModal(false)}
+        onClose={() => {
+          // Only allow closing if no pending alerts
+          if (!hasPendingAlerts) {
+            setShowRestockModal(false);
+          }
+        }}
       />
     </div>
   );

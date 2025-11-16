@@ -112,16 +112,7 @@ const NewProductForm_GeneralInfo = ({ storageLocations, unitCapacities, onClose,
             return;
         }
 
-        if (!brand.trim()) {
-            setErrorModalData({
-                title: '⚠️ Required Field Missing',
-                message: 'Brand is required',
-                details: 'Please enter a brand name for this product.',
-                type: 'error'
-            });
-            setErrorModalOpen(true);
-            return;
-        }
+      
 
         if (!selectedCategory) {
             setErrorModalData({
@@ -314,7 +305,7 @@ const NewProductForm_GeneralInfo = ({ storageLocations, unitCapacities, onClose,
 
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-gray-700">
-                                Brand <span className="text-red-500">*</span>
+                                Brand <span className="text-gray-500 text-xs">(Leave blank if generic or no brand)</span>
                             </label>
                             <input
                                 type="text"
