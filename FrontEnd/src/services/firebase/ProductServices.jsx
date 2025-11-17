@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useCallback, useMemo } from
 import { getFirestore, collection, onSnapshot, query, getDocs, orderBy, doc, setDoc, deleteDoc, updateDoc, getDoc, where, writeBatch } from 'firebase/firestore';
 import app from './config';
 import { ProductFactory } from '../../features/inventory/components/Factory/productFactory';
-import { createMergedProduct, createMergedVariant } from '../../models/MergedProduct.js';
+import { createMergedProduct, createMergedVariant } from '../../Models/MergedProduct';
 
 const db = getFirestore(app);
 const ServicesContext = createContext(null);
