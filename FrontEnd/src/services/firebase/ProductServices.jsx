@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useCallback, useMemo } from
 import { getFirestore, collection, onSnapshot, query, getDocs, orderBy, doc, setDoc, deleteDoc, updateDoc, getDoc, where, writeBatch } from 'firebase/firestore';
 import app from './config';
 import { ProductFactory } from '../../features/inventory/components/Factory/productFactory';
-import { createMergedProduct, createMergedVariant } from '../../models/MergedProduct.js';
+import { createMergedProduct, createMergedVariant } from '../../Models/MergedProduct';
 
 const db = getFirestore(app);
 const ServicesContext = createContext(null);
@@ -14,9 +14,6 @@ export const PRODUCTS_COLLECTION = 'Products';
 export const VARIANTS_COLLECTION = 'Variants';
 export const SUPPLIERS_COLLECTION = 'Suppliers';
 
-// Legacy collection names (for backward compatibility)
-export const LEGACY_PRODUCTS_PATH = 'Products'; // Nested structure: Products/{unit}/products/{productId}
-export const LEGACY_SUPPLIER_PRODUCTS = 'supplier_products'; // Old: supplier_products/{supplierId}/products/{productId}
 
 export const ServicesProvider = ({ children }) => {
   const [products, setProducts] = useState([]);
