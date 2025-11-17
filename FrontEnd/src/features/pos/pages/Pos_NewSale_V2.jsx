@@ -4,7 +4,7 @@ import { getFirestore, collection, addDoc, serverTimestamp, doc, getDoc, query, 
 import app from '../../../FirebaseConfig';
 import { AnalyticsService } from '../../../services/firebase/AnalyticsService';
 import { listenToMergedProducts } from '../../../services/firebase/ProductServices';
-import { applyProductFilters } from '../../../models/MergedProduct';
+import { applyProductFilters } from '../../../Models/MergedProduct';
 
 // Import new POS Services
 import { 
