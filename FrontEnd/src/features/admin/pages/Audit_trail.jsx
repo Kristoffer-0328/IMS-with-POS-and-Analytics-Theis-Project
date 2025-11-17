@@ -53,7 +53,7 @@ const Audit_trail = () => {
 
             // Fetch POS Transactions
             try {
-                const posRef = collection(db, 'posTransactions');
+                const posRef = collection(db, 'Transactions');
                 const posQuery = query(posRef, orderBy('createdAt', 'desc'), limit(50));
                 const posSnapshot = await getDocs(posQuery);
                 posSnapshot.docs.forEach(doc => {

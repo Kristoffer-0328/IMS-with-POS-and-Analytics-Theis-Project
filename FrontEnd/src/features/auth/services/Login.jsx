@@ -2,45 +2,69 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './FirebaseAuth';
 import GloryStarLogo from '../../../assets/Glory_Star_Logo.png';
+import ErrorModal from '../../../components/modals/ErrorModal';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [modalData, setModalData] = useState({ title: '', message: '', type: 'error' });
   const navigate = useNavigate();
   const { login } = useAuth();
-  function sleep(ms) {
-      return new Promise(resolve => setTimeout(resolve, ms));
-  }
+  
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
     try {
-      await sleep(5000);
+      
       const result = await login(email, password);
       if (result.success) {
-        // Navigate based on user role
-     
-        if (result.user.role === "Admin") {
-          navigate('/admin');
-        } else if (result.user.role === 'InventoryManager') {
-          navigate('/im');
-        } else if (result.user.role === 'Cashier') {
-          navigate('/pos/newsale');
-        } else {
-          setError('Invalid user role. Please contact administrator.');
-          setIsLoading(false);
-        }
+        // Show success modal before navigation
+        setModalData({
+          title: 'Login Successful',
+          message: 'Welcome back! Redirecting to your dashboard...',
+          type: 'success'
+        });
+        setShowModal(true);
+        
+        // Navigate after a short delay to show the success message
+        setTimeout(() => {
+          if (result.user.role === "Admin") {
+            navigate('/admin');
+          } else if (result.user.role === 'InventoryManager') {
+            navigate('/im');
+          } else if (result.user.role === 'Cashier') {
+            navigate('/pos/newsale');
+          } else {
+            setModalData({
+              title: 'Login Error',
+              message: 'Invalid user role. Please contact administrator.',
+              type: 'error'
+            });
+            setShowModal(true);
+          }
+        }, 1500);
       } else {
-        setError(result.error || 'Invalid email or password. Please try again.');
-        setIsLoading(false);
+        setModalData({
+          title: 'Login Failed',
+          message: result.error || 'Invalid email or password. Please try again.',
+          type: 'error'
+        });
+        setShowModal(true);
       }
     } catch (err) {
-      console.error('Login error:', err);
-      setError('Failed to log in. Please check your connection and try again.');
+      // console.error('Login error:', err);
+      setModalData({
+        title: 'Connection Error',
+        message: 'Failed to log in. Please check your connection and try again.',
+        type: 'error'
+      });
+      setShowModal(true);
+    } finally {
       setIsLoading(false);
     }
   };
@@ -58,12 +82,6 @@ const Login = () => {
             />
             <h2 className="text-2xl font-semibold text-gray-800">Login</h2>
           </div>
-
-          {error && (
-            <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
 
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-4">
@@ -121,10 +139,17 @@ const Login = () => {
                 'Sign In'
               )}
             </button>
-
           </form>
         </div>
       </div>
+
+      <ErrorModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        title={modalData.title}
+        message={modalData.message}
+        type={modalData.type}
+      />
     </div>
   );
 };

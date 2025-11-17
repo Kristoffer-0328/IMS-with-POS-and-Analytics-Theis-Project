@@ -14,6 +14,11 @@ import app from '../../../FirebaseConfig';
 
 const db = getFirestore(app);
 const auth = getAuth(app);
+
+// Configure Firebase Auth to disable any built-in UI
+auth.settings = {
+  appVerificationDisabledForTesting: false,
+};
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
@@ -34,7 +39,7 @@ export const AuthProvider = ({ children }) => {
             
             // Check if user account is deleted
             if (data.status === 'deleted') {
-              console.error('Account has been deleted - signing out');
+              // console.error('Account has been deleted - signing out');
               await signOut(auth);
               setCurrentUser(null);
               localStorage.removeItem('isAuthenticated');
@@ -56,7 +61,7 @@ export const AuthProvider = ({ children }) => {
             localStorage.setItem('userRole', data.role);
             localStorage.setItem('user', JSON.stringify(userData));
           } else {
-            console.error('User data not found in Firestore - signing out');
+            // console.error('User data not found in Firestore - signing out');
             // If user is authenticated but has no Firestore document, sign them out
             await signOut(auth);
             setCurrentUser(null);
@@ -71,7 +76,7 @@ export const AuthProvider = ({ children }) => {
           localStorage.removeItem('user');
         }
       } catch (error) {
-        console.error('Error fetching user data:', error);
+        // console.error('Error fetching user data:', error);
         // On error, clear the auth state
         setCurrentUser(null);
         localStorage.removeItem('isAuthenticated');
@@ -90,7 +95,6 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       setLoading(true); 
-      await sleep(4000);
       // Set loading to true on login request
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
@@ -124,13 +128,13 @@ export const AuthProvider = ({ children }) => {
         return { success: true, user: userData };
       } else {
         // User authenticated but no Firestore document exists - sign them out
-        console.error('User authenticated but not found in Firestore database');
+        // console.error('User authenticated but not found in Firestore database');
         await signOut(auth);
         setLoading(false);
         return { success: false, error: 'Account not properly configured. Please contact administrator.' };
       }
     } catch (error) {
-      console.error('Login error in FirebaseAuth:', error);
+      // console.error('Login error in FirebaseAuth:', error);
       setLoading(false);  // Make sure to set loading false in case of error
       
       // Provide specific error messages based on error code

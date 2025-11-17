@@ -233,23 +233,23 @@ export const processPOSSale = async (cartItems, transactionDetails, currentUser)
         },
         
         // Items sold (normalized with 'quantity' and 'price' fields)
-        items: cartItems.map(item => cleanObject({
-          variantId: item.variantId,
-          parentProductId: item.parentProductId || '',
-          productName: item.productName || 'Unknown Product',
-          variantName: item.variantName || '',
-          name: `${item.productName || 'Unknown'}${item.variantName ? ` - ${item.variantName}` : ''}`, // Combined name for display
-          quantity: item.quantity, // Normalized field
-          unitPrice: item.unitPrice || 0,
-          price: item.unitPrice || 0, // Alias for 'unitPrice' for ReceiptModal compatibility
-          totalPrice: (item.unitPrice || 0) * item.quantity,
-          category: item.category || 'Uncategorized',
+        items: variantChecks.map(check => cleanObject({
+          variantId: check.cartItem.variantId,
+          parentProductId: check.cartItem.parentProductId || '',
+          productName: check.cartItem.productName || 'Unknown Product',
+          variantName: check.cartItem.variantName || '',
+          name: `${check.cartItem.productName || 'Unknown'}${check.cartItem.variantName ? ` - ${check.cartItem.variantName}` : ''}`, // Combined name for display
+          quantity: check.cartItem.quantity, // Normalized field
+          unitPrice: check.cartItem.unitPrice || 0,
+          price: check.cartItem.unitPrice || 0, // Alias for 'unitPrice' for ReceiptModal compatibility
+          totalPrice: (check.cartItem.unitPrice || 0) * check.cartItem.quantity,
+          category: check.cartItem.category || 'Uncategorized',
           
           // Location info (for reference) - only include if they exist
-          ...(item.storageLocation && { storageLocation: item.storageLocation }),
-          ...(item.shelfName && { shelfName: item.shelfName }),
-          ...(item.rowName && { rowName: item.rowName }),
-          ...(item.columnIndex !== undefined && item.columnIndex !== null && { columnIndex: item.columnIndex })
+          ...(check.cartItem.storageLocation && { storageLocation: check.cartItem.storageLocation }),
+          ...(check.cartItem.shelfName && { shelfName: check.cartItem.shelfName }),
+          ...(check.cartItem.rowName && { rowName: check.cartItem.rowName }),
+          ...(check.cartItem.columnIndex !== undefined && check.cartItem.columnIndex !== null && { columnIndex: check.cartItem.columnIndex })
         })),
         
         // Financial details

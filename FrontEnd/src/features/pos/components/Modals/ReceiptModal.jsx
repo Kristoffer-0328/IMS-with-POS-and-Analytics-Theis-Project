@@ -1,9 +1,30 @@
-import React, { useEffect } from 'react';
-import { FiX, FiPrinter } from 'react-icons/fi';
+import React, { useEffect, useState } from 'react';
+import { FiX, FiPrinter, FiFlag } from 'react-icons/fi';
 import { printInvoiceContent } from '../../utils/ReceiptGenerator';
+import { useAuth } from '../../../../features/auth/services/FirebaseAuth';
+import { getFirestore, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import app from '../../../../FirebaseConfig';
+import ErrorModal from '../../../../components/modals/ErrorModal';
+
+const db = getFirestore(app);
 
 const ReceiptModal = ({ transaction, onClose }) => {
-  if (!transaction) return null;
+  const { currentUser } = useAuth();
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportForm, setReportForm] = useState({
+    type: 'refund',
+    productIndex: '',
+    reason: '',
+    details: ''
+  });
+  const [submittingReport, setSubmittingReport] = useState(false);
+  const [errorModal, setErrorModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'error',
+    details: ''
+  });
 
   // Debug: Log transaction data to see what we're receiving
   useEffect(() => {
@@ -81,6 +102,69 @@ const ReceiptModal = ({ transaction, onClose }) => {
 
   const handlePrintReceipt = () => {
     printInvoiceContent(transaction);
+  };
+
+  const handleSubmitReport = async () => {
+    if (!reportForm.reason.trim()) {
+      setErrorModal({
+        isOpen: true,
+        title: 'Validation Error',
+        message: 'Please provide a reason for the report.',
+        type: 'warning'
+      });
+      return;
+    }
+
+    if (!reportForm.productIndex) {
+      setErrorModal({
+        isOpen: true,
+        title: 'Validation Error',
+        message: 'Please select a product for this report.',
+        type: 'warning'
+      });
+      return;
+    }
+
+    setSubmittingReport(true);
+    try {
+      const selectedProductIndex = parseInt(reportForm.productIndex);
+      const selectedProduct = transaction.items[selectedProductIndex];
+
+      await addDoc(collection(db, 'refundReports'), {
+        transactionId: transaction.transactionId,
+        transactionData: transaction,
+        productIndex: selectedProductIndex,
+        productData: selectedProduct,
+        type: reportForm.type,
+        reason: reportForm.reason,
+        details: reportForm.details,
+        submittedBy: currentUser.uid,
+        submittedByName: currentUser.name,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
+      setErrorModal({
+        isOpen: true,
+        title: 'Report Submitted',
+        message: 'Report submitted successfully. Please instruct the customer to visit the inventory manager.',
+        type: 'success'
+      });
+      setShowReportModal(false);
+      setReportForm({ type: 'refund', productIndex: '', reason: '', details: '' });
+    } catch (error) {
+      console.error('Error submitting report:', error);
+      setErrorModal({
+        isOpen: true,
+        title: 'Submission Failed',
+        message: 'Failed to submit report. Please try again.',
+        type: 'error',
+        details: error.message
+      });
+    } finally {
+      setSubmittingReport(false);
+    }
   };
 
   return (
@@ -249,23 +333,146 @@ const ReceiptModal = ({ transaction, onClose }) => {
           </div>
 
           {/* Enhanced Footer */}
-          <div className="sticky bottom-0 bg-white/90 backdrop-blur-md border-t border-gray-100 px-6 py-4 flex justify-end gap-4">
-            <button
-              onClick={handlePrintReceipt}
-              className="flex items-center gap-2 px-6 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all duration-200 hover:shadow-md"
-            >
-              <FiPrinter className="w-4 h-4" />
-              <span>Print Receipt</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="px-6 py-2.5 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-all duration-200 hover:shadow-md"
-            >
-              Close
-            </button>
+          <div className="sticky bottom-0 bg-white/90 backdrop-blur-md border-t border-gray-100 px-6 py-4 flex justify-between items-center">
+            <div className="flex gap-2">
+              {currentUser?.role === 'Cashier' && (
+                <button
+                  onClick={() => setShowReportModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-xl hover:bg-red-200 transition-all duration-200"
+                >
+                  <FiFlag className="w-4 h-4" />
+                  <span>Report Issue</span>
+                </button>
+              )}
+            </div>
+            <div className="flex gap-4">
+              <button
+                onClick={handlePrintReceipt}
+                className="flex items-center gap-2 px-6 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all duration-200 hover:shadow-md"
+              >
+                <FiPrinter className="w-4 h-4" />
+                <span>Print Receipt</span>
+              </button>
+              <button
+                onClick={onClose}
+                className="px-6 py-2.5 bg-orange-500 text-white rounded-xl hover:bg-orange-600 transition-all duration-200 hover:shadow-md"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Report Modal */}
+      {showReportModal && (
+        <div className="fixed inset-0 z-60 overflow-hidden">
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowReportModal(false)}></div>
+          <div className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl pointer-events-auto animate-slideUp">
+              <div className="p-6">
+                <h3 className="text-xl font-bold text-gray-800 mb-4">Report Issue</h3>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Issue Type</label>
+                    <select
+                      value={reportForm.type}
+                      onChange={(e) => setReportForm({...reportForm, type: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-300 focus:border-orange-300"
+                    >
+                      <option value="defective_damaged">Product Defect/Damage</option>
+                      <option value="wrong_item">Incorrect Item </option>
+                      <option value="no_longer_wanted">Change of Mind</option>
+                      <option value="quality_complaint">Quality Issue</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Product *</label>
+                    <select
+                      value={reportForm.productIndex}
+                      onChange={(e) => setReportForm({...reportForm, productIndex: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-300 focus:border-orange-300"
+                      required
+                    >
+                      <option value="">Select a product...</option>
+                      {transaction.items.map((item, index) => {
+                        let itemName;
+                        if (item.name) {
+                          itemName = item.name;
+                        } else if (item.productName && item.variantName) {
+                          itemName = `${item.productName} - ${item.variantName}`;
+                        } else {
+                          itemName = item.productName || item.variantName || 'Unknown Item';
+                        }
+                        const quantity = item.quantity || item.qty || 0;
+                        const price = item.price || item.unitPrice || 0;
+                        
+                        return (
+                          <option key={index} value={index}>
+                            {itemName} (Qty: {quantity}, ₱{formatCurrency(price)})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Reason *</label>
+                    <input
+                      type="text"
+                      value={reportForm.reason}
+                      onChange={(e) => setReportForm({...reportForm, reason: e.target.value})}
+                      placeholder="Brief reason for the report"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-300 focus:border-orange-300"
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Additional Details</label>
+                    <textarea
+                      value={reportForm.details}
+                      onChange={(e) => setReportForm({...reportForm, details: e.target.value})}
+                      placeholder="Any additional information..."
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-300 focus:border-orange-300"
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex gap-3 mt-6">
+                  <button
+                    onClick={() => setShowReportModal(false)}
+                    className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSubmitReport}
+                    disabled={submittingReport}
+                    className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
+                  >
+                    {submittingReport ? 'Submitting...' : 'Submit Report'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error Modal */}
+      <ErrorModal
+        isOpen={errorModal.isOpen}
+        onClose={() => setErrorModal({ ...errorModal, isOpen: false })}
+        title={errorModal.title}
+        message={errorModal.message}
+        type={errorModal.type}
+        details={errorModal.details}
+      />
     </div>
   );
 };

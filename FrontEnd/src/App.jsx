@@ -34,6 +34,7 @@ import Inventory from './features/inventory/pages/Inventory';
 import StockTransfer from './features/inventory/pages/StockTransfer';
 import RestockingRequest from './features/inventory/pages/RestockingRequest';
 import IMSidebar from './features/inventory/pages/IMSidebar';
+import IM_RefundReports from './features/inventory/pages/IM_RefundReports';
 import LoadingScreen from './features/inventory/components/LoadingScreen';
 import PurchaseOrders from './features/inventory/pages/PurchaseOrders';
 import ReceivingManagement from './features/inventory/pages/ReceivingManagement';
@@ -49,6 +50,7 @@ import Pos_NewSale from './features/pos/pages/Pos_NewSale_V2'; // Updated to V2
 import Pos_Quotation from './features/pos/pages/Pos_Quotation';
 import Pos_Settings from './features/pos/pages/Pos_Settings';
 import Pos_Transaction_History from './features/pos/pages/Pos_TransactionHistory';
+import Pos_TransactionTable from './features/pos/pages/Pos_TransactionTable';
 import DashboardHeader from './features/inventory/components/Dashboard/DashboardHeader';
 // Layouts
 const AdminLayout = ({ children }) => {
@@ -360,6 +362,14 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/im/damaged-reports"
+        element={
+          <ProtectedRoute allowedRole="InventoryManager" layout={IMLayout}>
+            <IM_RefundReports />
+          </ProtectedRoute>
+        }
+      />
 
          <Route
         path='/pos/newsale'
@@ -382,6 +392,14 @@ const AppRoutes = () => {
         element={
           <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
             <Pos_Settings/>
+          </ProtectedRoute>
+        }
+        />
+         <Route
+        path='/pos/transaction-table'
+        element={
+          <ProtectedRoute allowedRole="Cashier"layout={pos_CashierLayout}>
+            <Pos_TransactionTable/>
           </ProtectedRoute>
         }
         />

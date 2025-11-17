@@ -2,18 +2,19 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../features/auth/services/FirebaseAuth';
 import GloryStarLogo from '../assets/Glory_Star_Logo.png';
+import ErrorModal from '../components/modals/ErrorModal';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '', type: 'error' });
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { login } = useAuth();
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    setError('');
+    setErrorModal({ isOpen: false, title: '', message: '', type: 'error' });
     setIsLoading(true);
 
     try {
@@ -28,16 +29,16 @@ const Login = () => {
         } else if (result.user.role === 'Cashier') {
           navigate('/pos/newsale');
         } else {
-          setError('Invalid user role. Please contact administrator.');
+          setErrorModal({ isOpen: true, title: 'Login Failed', message: 'Invalid user role. Please contact administrator.', type: 'error' });
           setIsLoading(false);
         }
       } else {
-        setError(result.error || 'Invalid email or password. Please try again.');
+        setErrorModal({ isOpen: true, title: 'Login Failed', message: result.error || 'Invalid email or password. Please try again.', type: 'error' });
         setIsLoading(false);
       }
     } catch (err) {
       console.error('Login error:', err);
-      setError('Failed to log in. Please check your connection and try again.');
+      setErrorModal({ isOpen: true, title: 'Login Error', message: 'Failed to log in. Please check your connection and try again.', type: 'error' });
       setIsLoading(false);
     }
   };
@@ -55,12 +56,6 @@ const Login = () => {
             />
             <h2 className="text-2xl font-semibold text-gray-800">Login</h2>
           </div>
-
-          {error && (
-            <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
 
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-4">
@@ -122,6 +117,14 @@ const Login = () => {
           </form>
         </div>
       </div>
+
+      <ErrorModal
+        isOpen={errorModal.isOpen}
+        onClose={() => setErrorModal({ ...errorModal, isOpen: false })}
+        title={errorModal.title}
+        message={errorModal.message}
+        type={errorModal.type}
+      />
     </div>
   );
 };
