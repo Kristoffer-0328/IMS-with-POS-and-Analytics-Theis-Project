@@ -14,9 +14,6 @@ export const PRODUCTS_COLLECTION = 'Products';
 export const VARIANTS_COLLECTION = 'Variants';
 export const SUPPLIERS_COLLECTION = 'Suppliers';
 
-// Legacy collection names (for backward compatibility)
-export const LEGACY_PRODUCTS_PATH = 'Products'; // Nested structure: Products/{unit}/products/{productId}
-export const LEGACY_SUPPLIER_PRODUCTS = 'supplier_products'; // Old: supplier_products/{supplierId}/products/{productId}
 
 export const ServicesProvider = ({ children }) => {
   const [products, setProducts] = useState([]);
