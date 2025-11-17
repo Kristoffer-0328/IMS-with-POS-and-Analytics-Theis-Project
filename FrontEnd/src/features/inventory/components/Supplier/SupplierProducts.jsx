@@ -6,8 +6,7 @@ import CategoryModalIndex from '../Inventory/CategoryModal/CategoryModalIndex';
 import NewVariantForm from '../Inventory/CategoryModal/NewVariantForm';
 import { 
   useServices,
-  SUPPLIERS_COLLECTION,
-  LEGACY_SUPPLIER_PRODUCTS
+  SUPPLIERS_COLLECTION
 } from '../../../../services/firebase/ProductServices';
 
 const SupplierProducts = ({ supplier, onClose }) => {
