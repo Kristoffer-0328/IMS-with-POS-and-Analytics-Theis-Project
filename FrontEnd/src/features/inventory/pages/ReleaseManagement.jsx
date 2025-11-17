@@ -48,7 +48,7 @@ const ReleaseManagement = () => {
     // NOTE: Release phase has been removed. This component now shows transactions that still need manual release processing
     // (if any exist from before the change)
     const q = query(
-      collection(db, 'posTransactions'),
+      collection(db, 'Transactions'),
       where('releaseStatus', '==', 'pending_release'), // Only show transactions that still have pending release status
       orderBy('createdAt', 'desc')
     );
@@ -121,7 +121,7 @@ const ReleaseManagement = () => {
   // Handle marking as released (called after QR scan)
   const handleMarkAsReleased = async (releaseId) => {
     try {
-      const releaseRef = doc(db, 'posTransactions', releaseId);
+      const releaseRef = doc(db, 'Transactions', releaseId);
       await updateDoc(releaseRef, {
         releaseStatus: 'released',
         releasedAt: serverTimestamp(),
@@ -153,7 +153,7 @@ const ReleaseManagement = () => {
     }
 
     try {
-      const releaseRef = doc(db, 'posTransactions', selectedRelease.id);
+      const releaseRef = doc(db, 'Transactions', selectedRelease.id);
       await updateDoc(releaseRef, {
         releaseStatus: 'cancelled',
         cancelledAt: serverTimestamp(),

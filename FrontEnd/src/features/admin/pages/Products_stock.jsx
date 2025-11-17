@@ -148,14 +148,6 @@ const Dashboard = () => {
       let q = query(transactionsRef, orderBy('createdAt', 'desc'), limit(100));
       let snapshot = await getDocs(q);
 
-      // Fallback to posTransactions if Transactions is empty
-      if (snapshot.empty) {
-        console.log('⚠️ Transactions collection empty, trying posTransactions...');
-        transactionsRef = collection(db, 'posTransactions');
-        q = query(transactionsRef, orderBy('createdAt', 'desc'), limit(100));
-        snapshot = await getDocs(q);
-      }
-
       const txns = snapshot.docs.map(doc => {
         const data = doc.data();
         

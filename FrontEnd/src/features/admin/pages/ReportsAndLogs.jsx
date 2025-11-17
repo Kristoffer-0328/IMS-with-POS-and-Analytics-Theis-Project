@@ -167,22 +167,6 @@ const POSTransactionsTab = () => {
         }
 
         let querySnapshot = await getDocs(q);
-        
-        // If no documents found, try legacy collection
-        if (querySnapshot.empty) {
-          console.log('📦 No transactions in "Transactions" collection, checking legacy "posTransactions"...');
-          transactionsRef = collection(db, LEGACY_POS_TRANSACTIONS);
-          q = query(transactionsRef, orderBy('createdAt', 'desc'));
-
-          if (currentFilter !== 'all') {
-            q = query(q, where('paymentMethod', '==', currentFilter));
-          }
-
-          querySnapshot = await getDocs(q);
-          console.log(`📦 Found ${querySnapshot.size} transactions in legacy "posTransactions" collection`);
-        } else {
-          console.log(`📦 Found ${querySnapshot.size} transactions in new "Transactions" collection`);
-        }
 
         const fetchedTransactions = querySnapshot.docs.map(doc => {
           const data = doc.data();

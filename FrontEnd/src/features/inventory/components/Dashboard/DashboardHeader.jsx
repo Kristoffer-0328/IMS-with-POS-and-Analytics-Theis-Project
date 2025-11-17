@@ -170,6 +170,8 @@ const DashboardHeader = () => {
         return 'Settings';
       case '/im/suppliers':
         return 'Supplier Management';
+      case '/pos/transaction-table':
+        return 'Transaction History';
       default:
         return 'Glory Star Hardware';
     }

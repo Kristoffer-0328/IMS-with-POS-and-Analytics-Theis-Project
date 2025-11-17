@@ -1067,7 +1067,7 @@ const ReleaseMobileView = () => {
       // Fetch release data from Firestore
       const fetchRelease = async () => {
         try {
-          const releaseRef = doc(db, 'posTransactions', releaseIdParam);
+          const releaseRef = doc(db, 'Transactions', releaseIdParam);
           const releaseSnap = await getDoc(releaseRef);
           
           if (releaseSnap.exists()) {
@@ -1385,7 +1385,7 @@ const ReleaseMobileView = () => {
 
       setProcessingStep('Updating release status...');
       
-      const releaseRef = doc(db, 'posTransactions', releaseId);
+      const releaseRef = doc(db, 'Transactions', releaseId);
       await updateDoc(releaseRef, {
         releaseStatus: 'released',
         releasedAt: serverTimestamp(),

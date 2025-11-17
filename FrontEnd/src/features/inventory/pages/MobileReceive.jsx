@@ -175,11 +175,21 @@ const MobileReceive = () => {
             }
           } else {
             console.error('PO not found');
-            alert('Purchase Order not found');
+            setErrorModal({
+              isOpen: true,
+              title: 'Purchase Order Not Found',
+              message: 'The requested Purchase Order could not be found. Please check the QR code or link and try again.',
+              type: 'error'
+            });
           }
         } catch (err) {
           console.error('Error fetching PO:', err);
-          alert('Error loading Purchase Order data');
+          setErrorModal({
+            isOpen: true,
+            title: 'Loading Error',
+            message: 'Error loading Purchase Order data. Please check your connection and try again.',
+            type: 'error'
+          });
         } finally {
           setIsLoading(false);
         }
@@ -303,7 +313,13 @@ const MobileReceive = () => {
       const isValidType = hasValidExtension || hasValidMimeType;
 
       if (!isValidType) {
-        alert(`❌ Invalid image format. Please select a photo from your camera or gallery.\n\nSupported formats: JPG, PNG, GIF, WebP, HEIC, HEIF\n\nFile selected: ${file.name} (${file.type || 'unknown type'})`);
+        setErrorModal({
+          isOpen: true,
+          title: 'Invalid Image Format',
+          message: 'Please select a photo from your camera or gallery.',
+          type: 'error',
+          details: `Supported formats: JPG, PNG, GIF, WebP, HEIC, HEIF\n\nFile selected: ${file.name} (${file.type || 'unknown type'})`
+        });
         setIsPhotoUploading(false);
         return;
       }
@@ -311,14 +327,25 @@ const MobileReceive = () => {
       // Validate file size (increased for iPhone photos)
       const maxSize = 15 * 1024 * 1024; // 15MB for iPhone photos
       if (file.size > maxSize) {
-        alert(`📸 Photo too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Please choose a smaller photo or compress it. Maximum size: 15MB`);
+        setErrorModal({
+          isOpen: true,
+          title: 'Photo Too Large',
+          message: 'Please choose a smaller photo or compress it.',
+          type: 'warning',
+          details: `File size: ${(file.size / (1024 * 1024)).toFixed(1)}MB\nMaximum size: 15MB`
+        });
         setIsPhotoUploading(false);
         return;
       }
 
       // Check if it's actually an image file
       if (!file.type.startsWith('image/') && !hasValidExtension) {
-        alert('❌ Please select an image file. The selected file is not recognized as an image.');
+        setErrorModal({
+          isOpen: true,
+          title: 'Invalid File Type',
+          message: 'Please select an image file. The selected file is not recognized as an image.',
+          type: 'error'
+        });
         setIsPhotoUploading(false);
         return;
       }
@@ -333,10 +360,20 @@ const MobileReceive = () => {
         try {
           handleProductChange(selectedIndex, 'photo', file);
           handleProductChange(selectedIndex, 'photoPreview', reader.result);
-          alert('✅ Photo uploaded successfully!');
+          setErrorModal({
+            isOpen: true,
+            title: 'Photo Uploaded',
+            message: 'Photo uploaded successfully!',
+            type: 'success'
+          });
         } catch (error) {
           console.error('❌ Error processing image:', error);
-          alert('❌ Error processing the photo. Please try a different image or try again.');
+          setErrorModal({
+            isOpen: true,
+            title: 'Processing Error',
+            message: 'Error processing the photo. Please try a different image or try again.',
+            type: 'error'
+          });
         } finally {
           setIsPhotoUploading(false);
         }
@@ -344,7 +381,13 @@ const MobileReceive = () => {
 
       reader.onerror = (error) => {
         console.error('❌ FileReader error:', error);
-        alert(`❌ Error reading the photo file. This might be due to file corruption or unsupported format.\n\nError: ${error.target?.error?.message || 'Unknown error'}\n\nTry taking a new photo or selecting a different image.`);
+        setErrorModal({
+          isOpen: true,
+          title: 'File Reading Error',
+          message: 'Error reading the photo file. Try taking a new photo or selecting a different image.',
+          type: 'error',
+          details: `Error: ${error.target?.error?.message || 'Unknown error'}`
+        });
         setIsPhotoUploading(false);
       };
 
@@ -359,13 +402,24 @@ const MobileReceive = () => {
         reader.readAsDataURL(file);
       } catch (readError) {
         console.error('❌ Error starting file read:', readError);
-        alert('❌ Unable to read the photo file. Please try a different image.');
+        setErrorModal({
+          isOpen: true,
+          title: 'File Read Error',
+          message: 'Unable to read the photo file. Please try a different image.',
+          type: 'error'
+        });
         setIsPhotoUploading(false);
       }
 
     } catch (error) {
       console.error('❌ Unexpected error in photo upload:', error);
-      alert(`❌ Unexpected error while uploading photo: ${error.message}\n\nPlease try again or contact support if the problem persists.`);
+      setErrorModal({
+        isOpen: true,
+        title: 'Upload Error',
+        message: 'Unexpected error while uploading photo. Please try again or contact support if the problem persists.',
+        type: 'error',
+        details: error.message
+      });
       setIsPhotoUploading(false);
     }
 
@@ -380,7 +434,12 @@ const MobileReceive = () => {
 
   const submitNotReceived = () => {
     if (!notReceivedReason.trim()) {
-      alert('Please provide a reason');
+      setErrorModal({
+        isOpen: true,
+        title: 'Reason Required',
+        message: 'Please provide a reason why this product was not received.',
+        type: 'warning'
+      });
       return;
     }
     
@@ -533,7 +592,12 @@ const MobileReceive = () => {
     if (direction === 'next') {
       if (currentStep === 0) {
         if (selectedProducts.length === 0) {
-          alert('Please select at least one product for inspection');
+          setErrorModal({
+            isOpen: true,
+            title: 'No Products Selected',
+            message: 'Please select at least one product for inspection.',
+            type: 'warning'
+          });
           return;
         }
         setCurrentStep(1);
@@ -1031,7 +1095,12 @@ const MobileReceive = () => {
         errorMessage = `Error: ${error.message}`;
       }
       
-      alert(errorMessage);
+      setErrorModal({
+        isOpen: true,
+        title: 'Submission Error',
+        message: errorMessage,
+        type: 'error'
+      });
     } finally {
       setIsSubmitting(false);
       setProcessingStep('');

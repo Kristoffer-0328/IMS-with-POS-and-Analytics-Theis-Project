@@ -11,6 +11,7 @@ import {
   FiLogOut,
   FiChevronLeft,
   FiChevronRight,
+  FiClock,
 } from 'react-icons/fi';
 
 const Pos_Sidebar = ({ collapsed, setCollapsed }) => {
@@ -26,6 +27,7 @@ const Pos_Sidebar = ({ collapsed, setCollapsed }) => {
   const navItems = [
     { path: '/pos/newsale', icon: <FiPackage size={20} />, label: 'Invoice' },
     { path: '/pos/quotation', icon: <FiFileText size={20} />, label: 'Quotation' },
+    { path: '/pos/transaction-table', icon: <FiClock size={20} />, label: 'Transactions' },
     { path: '/pos/settings', icon: <FiSettings size={20} />, label: 'Settings' },
   ];
 

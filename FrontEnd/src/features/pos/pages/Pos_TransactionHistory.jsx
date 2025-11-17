@@ -146,7 +146,7 @@ export default function Pos_Transaction_History() {
     const fetchTransactions = async () => {
       try {
         setLoading(true);
-        const transactionsRef = collection(db, 'posTransactions');
+        const transactionsRef = collection(db, 'Transactions');
         let q = query(transactionsRef, orderBy('createdAt', 'desc'));
 
         if (currentFilter !== 'all') {
