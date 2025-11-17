@@ -5,7 +5,7 @@ import { getFormattedDateTime } from '../utils/DateTimeFormatter';
 import { getFirestore, doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
 import { listenToMergedProducts } from '../../../services/firebase/ProductServices';
-import { applyProductFilters } from '../../../models/MergedProduct';
+import { applyProductFilters } from '../../../Models/MergedProduct';
 
 // Import Components
 import SearchBar from '../components/SearchBar';
