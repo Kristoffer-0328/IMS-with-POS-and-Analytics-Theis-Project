@@ -124,6 +124,10 @@ export default function Pos_NewSale_V2() {
   });
   const [customerDisplayName, setCustomerDisplayName] = useState('Walk-in Customer');
 
+  // Add Load Quotation State
+  const [quotationNumber, setQuotationNumber] = useState('');
+  const [loadingQuotation, setLoadingQuotation] = useState(false);
+
   // --- Clock Update ---
   useEffect(() => {
     const updateClock = () => {
@@ -626,6 +630,97 @@ export default function Pos_NewSale_V2() {
     collectAnalyticsData
   ]);
 
+  // --- Load Quotation Handler ---
+  const handleLoadQuotation = useCallback(async () => {
+    if (!quotationNumber.trim()) {
+      setAddModalData({
+        title: 'Quotation Number Required',
+        message: 'Please enter a quotation number',
+        type: 'warning',
+        details: ''
+      });
+      setShowAddModal(true);
+      return;
+    }
+
+    setLoadingQuotation(true);
+    try {
+      const quotationRef = doc(db, 'quotations', quotationNumber.trim());
+      const quotationSnap = await getDoc(quotationRef);
+
+      if (!quotationSnap.exists()) {
+        setAddModalData({
+          title: 'Quotation Not Found',
+          message: `Quotation ${quotationNumber} not found`,
+          type: 'error',
+          details: ''
+        });
+        setShowAddModal(true);
+        setLoadingQuotation(false);
+        return;
+      }
+
+      const quotationData = quotationSnap.data();
+
+      // Load customer information
+      if (quotationData.customer) {
+        setCustomerDetails({
+          name: quotationData.customer.name || '',
+          phone: quotationData.customer.phone || '',
+          address: quotationData.customer.address || '',
+          email: quotationData.customer.email || ''
+        });
+      }
+
+      // Load products from quotation
+      if (quotationData.items && Array.isArray(quotationData.items)) {
+        const loadedProducts = quotationData.items.map((item, index) => ({
+          variantId: item.variantId || `quotation-${Date.now()}-${index}`,
+          productId: item.baseProductId || item.productId || '',
+          name: item.description || item.name || 'Unknown Product',
+          baseName: item.productName || item.name || 'Unknown Product',
+          variantName: item.variantName || '',
+          price: Number(item.unitPrice || item.price || 0),
+          qty: Number(item.quantity || item.qty || 0),
+          unit: item.unit || 'pcs',
+          category: item.category || '',
+          size: item.size || '',
+          brand: item.brand || '',
+          fromQuotation: quotationNumber.trim()
+        }));
+
+        setAddedProducts(loadedProducts);
+
+        setAddModalData({
+          title: 'Quotation Loaded',
+          message: `Quotation ${quotationNumber} loaded successfully!`,
+          type: 'success',
+          details: `${loadedProducts.length} items added to quotation.`
+        });
+        setShowAddModal(true);
+      } else {
+        setAddModalData({
+          title: 'No Items Found',
+          message: 'No items found in this quotation',
+          type: 'warning',
+          details: ''
+        });
+        setShowAddModal(true);
+      }
+    } catch (error) {
+      console.error('Error loading quotation:', error);
+      setAddModalData({
+        title: 'Load Failed',
+        message: 'Failed to load quotation. Please try again.',
+        type: 'error',
+        details: error.message
+      });
+      setShowAddModal(true);
+    } finally {
+      setLoadingQuotation(false);
+    }
+  }, [quotationNumber, db]);
+
   // --- UI Rendering ---
   const shouldDisableInteractions = isProcessing;
 
@@ -690,6 +785,36 @@ export default function Pos_NewSale_V2() {
                 <span className="text-sm text-gray-800">{currentDateTime.formattedDate}</span>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Load Quotation Form */}
+        <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50">
+          <div className="p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Load from Quotation</h3>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={quotationNumber}
+                onChange={(e) => setQuotationNumber(e.target.value)}
+                placeholder="Enter quotation number"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                disabled={loadingQuotation}
+                onKeyPress={(e) => e.key === 'Enter' && handleLoadQuotation()}
+              />
+              <button
+                onClick={handleLoadQuotation}
+                disabled={loadingQuotation || !quotationNumber.trim()}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {loadingQuotation ? 'Loading...' : 'Load'}
+              </button>
+            </div>
+            {addedProducts.some(p => p.fromQuotation) && (
+              <p className="text-xs text-blue-600 mt-2">
+                📄 Loaded from: <span className="font-semibold">{addedProducts[0].fromQuotation}</span>
+              </p>
+            )}
           </div>
         </div>
 

@@ -36,6 +36,7 @@ const ViewProductModal = ({
   const [showVariantCreationModal, setShowVariantCreationModal] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editedProduct, setEditedProduct] = useState(null);
+  const [editedVariants, setEditedVariants] = useState({}); // Track edited variants by ID
   const [isActive, setIsActive] = useState(true);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -136,7 +137,7 @@ const ViewProductModal = ({
     }
   }, [isOpen, db]);
   
-  // Fetch variants from Master/Variants collection (NEW ARCHITECTURE)
+  // Fetch variants from flat Variants collection (NEW ARCHITECTURE)
   useEffect(() => {
     const fetchVariants = async () => {
       if (!product || product.isVariant) return; // Don't fetch variants for variant products
@@ -287,83 +288,7 @@ const ViewProductModal = ({
     fileInputRef.current.click();
   };
   
-  const findProductDocument = async (category, productId, productName) => {
-    try {
-      if (productId) {
-        const exactIdRef = doc(db, "Products", category, "Items", productId);
-        const exactIdDoc = await getDoc(exactIdRef);
-        if (exactIdDoc.exists()) {
-          return { ref: exactIdRef, doc: exactIdDoc };
-        }
-      }
-      
-      if (productName) {
-        const nameRef = doc(db, "Products", category, "Items", productName);
-        const nameDoc = await getDoc(nameRef);
-        if (nameDoc.exists()) {
-          return { ref: nameRef, doc: nameDoc };
-        }
-      }
-      
-      if (productId && productId.includes('-')) {
-        const baseId = productId.split('-')[0];
-        const baseIdRef = doc(db, "Products", category, "Items", baseId);
-        const baseIdDoc = await getDoc(baseIdRef);
-        if (baseIdDoc.exists()) {
-          return { ref: baseIdRef, doc: baseIdDoc };
-        }
-      }
-      
-      if (productName && productName.includes('-')) {
-        const baseName = productName.split('-')[0].trim();
-        const baseNameRef = doc(db, "Products", category, "Items", baseName);
-        const baseNameDoc = await getDoc(baseNameRef);
-        if (baseNameDoc.exists()) {
-          return { ref: baseNameRef, doc: baseNameDoc };
-        }
-      }
-      
-      const itemsRef = collection(db, "Products", category, "Items");
-      const q = query(itemsRef, where("name", "==", productName));
-      const querySnapshot = await getDocs(q);
-      
-      if (!querySnapshot.empty) {
-        const firstDoc = querySnapshot.docs[0];
-        return { ref: firstDoc.ref, doc: firstDoc };
-      }
-      
-      const allItemsSnapshot = await getDocs(collection(db, "Products", category, "Items"));
-      
-      if (productId) {
-        const matchById = allItemsSnapshot.docs.find(doc => 
-          doc.id.includes(productId) || productId.includes(doc.id)
-        );
-        
-        if (matchById) {
-          return { ref: matchById.ref, doc: matchById };
-        }
-      }
-      
-      if (productName) {
-        const matchByName = allItemsSnapshot.docs.find(doc => {
-          const data = doc.data();
-          return data.name && (
-            data.name.includes(productName) || 
-            productName.includes(data.name)
-          );
-        });
-        
-        if (matchByName) {
-          return { ref: matchByName.ref, doc: matchByName };
-        }
-      }
-      
-      return null;
-    } catch (error) {
-      console.error("Error finding product document:", error);
-      return null;
-    }
-  };
+
   
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
@@ -398,88 +323,29 @@ const ViewProductModal = ({
       // Update preview with Cloudinary URL
       setImageUrl(cloudinaryUrl);
       
-      // Determine product structure type and update accordingly
-      // Priority 1: Check if product exists in flat Master collection (NEW ARCHITECTURE)
-      const masterProductRef = doc(db, 'Master', productId);
-      const masterProductDoc = await getDoc(masterProductRef);
+      // NEW ARCHITECTURE: Update flat Master collection
+      console.log('🆕 Updating image for new structure product (Master collection)');
       
-      if (masterProductDoc.exists()) {
-        // NEW ARCHITECTURE: Update flat Master collection
-        console.log('🆕 Updating image for new structure product (Master collection)');
-        
-        await updateDoc(masterProductRef, {
-          imageUrl: cloudinaryUrl,
+      const productRef = doc(db, 'Master', productId);
+      await updateDoc(productRef, {
+        imageUrl: cloudinaryUrl,
+        updatedAt: new Date().toISOString()
+      });
+
+      // Also update imageUrl in all variants for denormalized data
+      const variantsRef = collection(db, 'Variants');
+      const variantsQuery = query(variantsRef, where('parentProductId', '==', productId));
+      const variantsSnapshot = await getDocs(variantsQuery);
+      
+      const updatePromises = variantsSnapshot.docs.map(variantDoc => 
+        updateDoc(variantDoc.ref, {
+          productImageUrl: cloudinaryUrl,
           updatedAt: new Date().toISOString()
-        });
-
-        // Also update imageUrl in all variants for denormalized data
-        const variantsRef = collection(db, 'Variants');
-        const variantsQuery = query(variantsRef, where('parentProductId', '==', productId));
-        const variantsSnapshot = await getDocs(variantsQuery);
-        
-        const updatePromises = variantsSnapshot.docs.map(variantDoc => 
-          updateDoc(variantDoc.ref, {
-            productImageUrl: cloudinaryUrl,
-            updatedAt: new Date().toISOString()
-          })
-        );
-        
-        await Promise.all(updatePromises);
-        console.log(`✅ Updated image for product and ${variantsSnapshot.size} variant(s)`);
-        
-      } else {
-        // OLD ARCHITECTURE: Try to update nested Products structure
-        console.log('🔙 Attempting to update image for old structure product (nested collection)');
-        
-        const storageLocation = product.storageLocation;
-        const shelfName = product.shelfName;
-        const rowName = product.rowName;
-        const columnIndex = product.columnIndex;
-        
-        if (!storageLocation || !shelfName || !rowName || columnIndex === undefined) {
-          // If storage info is incomplete, try the old Products/{category}/Items/{productId} structure
-          console.log('⚠️ Storage info incomplete, trying Products/{category}/Items/{productId} structure');
-          
-          const categoryItemRef = doc(db, 'Products', category, 'Items', productId);
-          const categoryItemDoc = await getDoc(categoryItemRef);
-          
-          if (categoryItemDoc.exists()) {
-            await updateDoc(categoryItemRef, {
-              image: cloudinaryUrl,
-              imageUrl: cloudinaryUrl,
-              lastUpdated: new Date().toISOString()
-            });
-            console.log(`✅ Updated image at: Products/${category}/Items/${productId}`);
-          } else {
-            throw new Error(
-              "Could not find product in any known structure. " +
-              "Product is not in Master collection, and storage information is incomplete for nested structure. " +
-              "Missing: " + 
-              (!storageLocation ? "storageLocation " : "") +
-              (!shelfName ? "shelfName " : "") +
-              (!rowName ? "rowName " : "") +
-              (columnIndex === undefined ? "columnIndex" : "")
-            );
-          }
-        } else {
-          // Path: Products/{storageLocation}/products/{productId}
-          const productRef = doc(
-            db,
-            'Products',
-            storageLocation,
-            'products',
-            productId
-          );
-
-          await updateDoc(productRef, {
-            image: cloudinaryUrl,
-            imageUrl: cloudinaryUrl,
-            lastUpdated: new Date().toISOString()
-          });
-          
-          console.log(`✅ Updated image at: Products/${storageLocation}/products/${productId}`);
-        }
-      }
+        })
+      );
+      
+      await Promise.all(updatePromises);
+      console.log(`✅ Updated image for product and ${variantsSnapshot.size} variant(s)`);
 
       setAlertModal({
         isOpen: true,
@@ -700,6 +566,7 @@ const ViewProductModal = ({
       // Cancel edit - reset to original
       setEditedProduct({ ...product });
       setIsActive(product.isActive !== false);
+      setEditedVariants({}); // Reset edited variants
     }
     setIsEditMode(!isEditMode);
   };
@@ -711,29 +578,43 @@ const ViewProductModal = ({
     }));
   };
 
+  const handleVariantFieldChange = (variantId, field, value) => {
+    setEditedVariants(prev => ({
+      ...prev,
+      [variantId]: {
+        ...prev[variantId],
+        [field]: value
+      }
+    }));
+  };
+
   const handleSaveChanges = async () => {
     try {
       if (!editedProduct || !product) return;
 
-      // Check if this is a new structure product
-      const isNewStructureProduct = !product.storageLocation && !product.locations;
-
-      // Clean the data by removing undefined values and computed fields
+      // Clean the data by removing undefined values and computed fields (handles arrays and objects)
       const cleanData = (obj) => {
-        const cleaned = {};
-        for (const [key, value] of Object.entries(obj)) {
-          // Skip undefined values and computed fields
-          if (value !== undefined && 
-              !['hasVariants', 'variantCount', 'locations', 'locationCount', 'status', 'totalvalue', 'allIds'].includes(key)) {
-            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-              // Recursively clean nested objects
+        if (Array.isArray(obj)) {
+          // Recursively clean each item in the array and filter out undefined/null
+          return obj
+            .map(item => cleanData(item))
+            .filter(item => item !== undefined && item !== null);
+        } else if (typeof obj === 'object' && obj !== null) {
+          const cleaned = {};
+          for (const [key, value] of Object.entries(obj)) {
+            // Skip undefined values and computed fields
+            if (
+              value !== undefined &&
+              value !== null &&
+              !['hasVariants', 'variantCount', 'locations', 'locationCount', 'status', 'totalvalue', 'allIds'].includes(key)
+            ) {
               cleaned[key] = cleanData(value);
-            } else {
-              cleaned[key] = value;
             }
           }
+          return cleaned;
+        } else {
+          return obj;
         }
-        return cleaned;
       };
 
       const updateData = {
@@ -741,75 +622,78 @@ const ViewProductModal = ({
         isActive: isActive,
       };
 
-      if (isNewStructureProduct) {
-        // NEW ARCHITECTURE: Update flat Products collection
-        console.log('🆕 Updating new structure product (flat collection)');
-        
-        updateData.updatedAt = new Date().toISOString();
-        
-        const productRef = doc(db, 'Products', product.id);
-        await updateDoc(productRef, updateData);
+      // NEW ARCHITECTURE: Update flat Master collection
+      console.log('🆕 Updating new structure product (flat collection)');
+      
+      updateData.updatedAt = new Date().toISOString();
+      
+      const productRef = doc(db, 'Master', product.id);
+      await updateDoc(productRef, updateData);
 
-        // If product name or other denormalized fields changed, update all variants
-        if (editedProduct.name !== product.name || 
-            editedProduct.brand !== product.brand || 
-            editedProduct.category !== product.category) {
+      // If product name or other denormalized fields changed, update all variants
+      if (editedProduct.name !== product.name || 
+          editedProduct.brand !== product.brand || 
+          editedProduct.category !== product.category) {
+        
+        const variantsRef = collection(db, 'Variants');
+        const variantsQuery = query(variantsRef, where('parentProductId', '==', product.id));
+        const variantsSnapshot = await getDocs(variantsQuery);
+        
+        const variantUpdates = {};
+        if (editedProduct.name !== product.name) variantUpdates.productName = editedProduct.name;
+        if (editedProduct.brand !== product.brand) variantUpdates.productBrand = editedProduct.brand;
+        if (editedProduct.category !== product.category) variantUpdates.productCategory = editedProduct.category;
+        
+        if (Object.keys(variantUpdates).length > 0) {
+          variantUpdates.updatedAt = new Date().toISOString();
           
-          const variantsRef = collection(db, 'Variants');
-          const variantsQuery = query(variantsRef, where('parentProductId', '==', product.id));
-          const variantsSnapshot = await getDocs(variantsQuery);
+          const updatePromises = variantsSnapshot.docs.map(variantDoc => 
+            updateDoc(variantDoc.ref, variantUpdates)
+          );
           
-          const variantUpdates = {};
-          if (editedProduct.name !== product.name) variantUpdates.productName = editedProduct.name;
-          if (editedProduct.brand !== product.brand) variantUpdates.productBrand = editedProduct.brand;
-          if (editedProduct.category !== product.category) variantUpdates.productCategory = editedProduct.category;
-          
-          if (Object.keys(variantUpdates).length > 0) {
-            variantUpdates.updatedAt = new Date().toISOString();
-            
-            const updatePromises = variantsSnapshot.docs.map(variantDoc => 
-              updateDoc(variantDoc.ref, variantUpdates)
-            );
-            
-            await Promise.all(updatePromises);
-            console.log(`✅ Updated denormalized data in ${variantsSnapshot.size} variant(s)`);
+          await Promise.all(updatePromises);
+          console.log(`✅ Updated denormalized data in ${variantsSnapshot.size} variant(s)`);
+        }
+      }
+      
+      console.log(`✅ Updated product: Master/${product.id}`);
+
+      // Update edited variants if any
+      if (Object.keys(editedVariants).length > 0) {
+        console.log('📝 Updating edited variants:', Object.keys(editedVariants).length);
+        
+        const variantUpdatePromises = Object.entries(editedVariants).map(async ([variantId, changes]) => {
+          try {
+            const variantRef = doc(db, 'Variants', variantId);
+            const updateData = {
+              ...changes,
+              updatedAt: new Date().toISOString()
+            };
+            await updateDoc(variantRef, updateData);
+            console.log(`✅ Updated variant: ${variantId}`);
+          } catch (error) {
+            console.error(`❌ Error updating variant ${variantId}:`, error);
+            throw error;
           }
-        }
+        });
         
-        console.log(`✅ Updated product: Products/${product.id}`);
-        
-      } else {
-        // OLD ARCHITECTURE: Update nested Products structure
-        console.log('🔙 Updating old structure product (nested collection)');
-        
-        const storageLocation = product.storageLocation;
-        if (!storageLocation) {
-          setAlertModal({
-            isOpen: true,
-            type: 'error',
-            title: 'Cannot Save',
-            message: 'Product storage location is missing.',
-            details: 'This product requires a storage location to be updated.'
-          });
-          return;
-        }
-        
-        updateData.lastUpdated = new Date().toISOString();
-
-        const productRef = doc(
-          db,
-          'Products',
-          storageLocation,
-          'products',
-          product.id
-        );
-
-        await updateDoc(productRef, updateData);
-        console.log(`✅ Updated product: Products/${storageLocation}/products/${product.id}`);
+        await Promise.all(variantUpdatePromises);
+        console.log('✅ All variants updated successfully');
       }
 
       // Update local state
       setIsEditMode(false);
+      setEditedVariants({}); // Clear edited variants
+      
+      // Refresh variants list
+      const variantsRef = collection(db, 'Variants');
+      const variantsQuery = query(variantsRef, where('parentProductId', '==', product.id));
+      const variantsSnapshot = await getDocs(variantsQuery);
+      const updatedVariants = variantsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setVariants(updatedVariants);
       
       // Notify parent component to refresh
       if (onProductUpdate) {
@@ -820,7 +704,9 @@ const ViewProductModal = ({
         isOpen: true,
         type: 'success',
         title: 'Update Successful',
-        message: 'Product has been updated successfully!'
+        message: Object.keys(editedVariants).length > 0 
+          ? `Product and ${Object.keys(editedVariants).length} variant(s) updated successfully!`
+          : 'Product has been updated successfully!'
       });
     } catch (error) {
       console.error('❌ Error updating product:', error);
@@ -842,101 +728,48 @@ const ViewProductModal = ({
     try {
       if (!product) return;
 
-      // Check if this is a new structure product
-      const isNewStructureProduct = !product.storageLocation && !product.locations;
-
       setIsDeleting(true);
 
-      if (isNewStructureProduct) {
-        // NEW ARCHITECTURE: Delete from flat Products and Variants collections
-        console.log('🆕 Deleting new structure product (flat collection)');
+      // NEW ARCHITECTURE: Delete from flat Master and Variants collections
+      console.log('🆕 Deleting new structure product (flat collection)');
 
-        // 1. Delete all variants first
-        const variantsRef = collection(db, 'Variants');
-        const variantsQuery = query(variantsRef, where('parentProductId', '==', product.id));
-        const variantsSnapshot = await getDocs(variantsQuery);
+      // 1. Delete all variants first
+      const variantsRef = collection(db, 'Variants');
+      const variantsQuery = query(variantsRef, where('parentProductId', '==', product.id));
+      const variantsSnapshot = await getDocs(variantsQuery);
 
-        console.log(`Found ${variantsSnapshot.size} variant(s) to delete`);
+      console.log(`Found ${variantsSnapshot.size} variant(s) to delete`);
 
-        for (const variantDoc of variantsSnapshot.docs) {
-          const variantData = variantDoc.data();
-          
-          // Delete supplier links for this variant
-          if (variantData.suppliers && Array.isArray(variantData.suppliers) && variantData.suppliers.length > 0) {
-            for (const supplier of variantData.suppliers) {
-              try {
-                const supplierProductsRef = collection(db, 'Suppliers', supplier.id, 'products');
-                const linkQuery = query(supplierProductsRef, where('variantId', '==', variantDoc.id));
-                const linkSnapshot = await getDocs(linkQuery);
-                
-                for (const linkDoc of linkSnapshot.docs) {
-                  await deleteDoc(linkDoc.ref);
-                  console.log(`Deleted supplier link: ${supplier.name} -> ${variantData.variantName}`);
-                }
-              } catch (error) {
-                console.error(`Error deleting supplier link for variant ${variantDoc.id}:`, error);
-              }
-            }
-          }
-
-          // Delete the variant document
-          await deleteDoc(variantDoc.ref);
-          console.log(`Deleted variant: ${variantDoc.id}`);
-        }
-
-        // 2. Delete the product document
-        const productRef = doc(db, 'Products', product.id);
-        await deleteDoc(productRef);
-        console.log(`✅ Deleted product: Products/${product.id}`);
-
-      } else {
-        // OLD ARCHITECTURE: Delete from nested Products structure
-        console.log('🔙 Deleting old structure product (nested collection)');
+      for (const variantDoc of variantsSnapshot.docs) {
+        const variantData = variantDoc.data();
         
-        const storageLocation = product.storageLocation;
-        if (!storageLocation) {
-          setAlertModal({
-            isOpen: true,
-            type: 'error',
-            title: 'Cannot Delete',
-            message: 'Product storage location is missing.',
-            details: 'This product requires a storage location to be deleted.'
-          });
-          setIsDeleting(false);
-          return;
-        }
-
-        // Delete supplier links
-        const suppliers = getSuppliers(product);
-        if (suppliers.length > 0) {
-          for (const supplier of suppliers) {
+        // Delete supplier links for this variant
+        if (variantData.suppliers && Array.isArray(variantData.suppliers) && variantData.suppliers.length > 0) {
+          for (const supplier of variantData.suppliers) {
             try {
               const supplierProductsRef = collection(db, 'Suppliers', supplier.id, 'products');
-              const linkQuery = query(supplierProductsRef, where('productId', '==', product.id));
+              const linkQuery = query(supplierProductsRef, where('variantId', '==', variantDoc.id));
               const linkSnapshot = await getDocs(linkQuery);
               
               for (const linkDoc of linkSnapshot.docs) {
                 await deleteDoc(linkDoc.ref);
-                console.log(`Deleted supplier link: ${supplier.name} -> ${product.name}`);
+                console.log(`Deleted supplier link: ${supplier.name} -> ${variantData.variantName}`);
               }
             } catch (error) {
-              console.error(`Error deleting supplier link for ${supplier.name}:`, error);
+              console.error(`Error deleting supplier link for variant ${variantDoc.id}:`, error);
             }
           }
         }
 
-        // Delete the product document
-        const productRef = doc(
-          db,
-          'Products',
-          storageLocation,
-          'products',
-          product.id
-        );
-
-        await deleteDoc(productRef);
-        console.log(`✅ Deleted product: Products/${storageLocation}/products/${product.id}`);
+        // Delete the variant document
+        await deleteDoc(variantDoc.ref);
+        console.log(`Deleted variant: ${variantDoc.id}`);
       }
+
+      // 2. Delete the product document
+      const productRef = doc(db, 'Master', product.id);
+      await deleteDoc(productRef);
+      console.log(`✅ Deleted product: Master/${product.id}`);
 
       // Close modals and notify parent to refresh
       setShowDeleteModal(false);
@@ -1910,8 +1743,25 @@ const ViewProductModal = ({
             {/* Variants Tab */}
             {activeTab === 'variants' && (
               <div className="space-y-4">
+                {/* Edit Mode Notification */}
+                {isEditMode && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <div className="flex items-start gap-2">
+                      <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      <div>
+                        <h4 className="text-sm font-semibold text-blue-800 mb-1">Edit Mode Active</h4>
+                        <p className="text-xs text-blue-700">
+                          You can now edit variant names, prices, quantities, and other details. Changes will be saved when you click the Save button.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
                 {/* Add Variant Button - Only show for base products */}
-                {!product.isVariant && (
+                {!product.isVariant && !isEditMode && (
                   <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-4 border border-purple-200">
                     <div className="flex items-center justify-between">
                       <div>
@@ -2027,9 +1877,23 @@ const ViewProductModal = ({
                           <div className="grid grid-cols-2 gap-4 mb-4">
                             <div>
                               <div className="text-xs text-gray-500 mb-1">Variant Name</div>
-                              <div className="text-sm font-medium text-gray-900">
-                                {group.name}
-                              </div>
+                              {isEditMode ? (
+                                <input
+                                  type="text"
+                                  value={editedVariants[group.instances[0].id]?.variantName ?? group.name}
+                                  onChange={(e) => {
+                                    // Update all instances in this group
+                                    group.instances.forEach(instance => {
+                                      handleVariantFieldChange(instance.id, 'variantName', e.target.value);
+                                    });
+                                  }}
+                                  className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                />
+                              ) : (
+                                <div className="text-sm font-medium text-gray-900">
+                                  {group.name}
+                                </div>
+                              )}
                             </div>
                             <div>
                               <div className="text-xs text-gray-500 mb-1">Total Quantity</div>
@@ -2037,32 +1901,67 @@ const ViewProductModal = ({
                                 {group.totalQuantity} {group.unit}
                               </div>
                             </div>
+                            {isEditMode && (
+                              <div>
+                                <div className="text-xs text-gray-500 mb-1">Unit</div>
+                                <input
+                                  type="text"
+                                  value={editedVariants[group.instances[0].id]?.unit ?? group.unit}
+                                  onChange={(e) => {
+                                    group.instances.forEach(instance => {
+                                      handleVariantFieldChange(instance.id, 'unit', e.target.value);
+                                    });
+                                  }}
+                                  className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                  placeholder="pcs, kg, etc."
+                                />
+                              </div>
+                            )}
                             <div>
                               <div className="text-xs text-gray-500 mb-1">
                                 {group.isBundle && group.piecesPerBundle ? 'Bundle Price' : 'Unit Price'}
                               </div>
-                              <div className="text-sm font-medium text-green-600">
-                                {/* Show sale price if on sale */}
-                                {group.instances.some(v => v.onSale) ? (
-                                  <div className="flex items-center gap-2">
-                                    <span className="line-through text-gray-400">
-                                      ₱{formatMoney(group.instances.find(v => v.onSale)?.originalPrice || group.unitPrice)}
-                                    </span>
-                                    <span className="text-red-600 font-bold">
-                                      ₱{formatMoney(group.instances.find(v => v.onSale)?.salePrice || group.unitPrice)}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <>
-                                    ₱{formatMoney(group.unitPrice)}
-                                    {group.isBundle && group.piecesPerBundle && (
-                                      <span className="text-xs text-purple-600 block mt-0.5">
-                                        (₱{formatMoney(group.unitPrice / group.piecesPerBundle)} / {group.baseUnit || 'pc'})
+                              {isEditMode ? (
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={editedVariants[group.instances[0].id]?.unitPrice ?? group.unitPrice}
+                                  onChange={(e) => {
+                                    const newPrice = parseFloat(e.target.value) || 0;
+                                    // Update all instances in this group
+                                    group.instances.forEach(instance => {
+                                      handleVariantFieldChange(instance.id, 'unitPrice', newPrice);
+                                      if (instance.onSale) {
+                                        handleVariantFieldChange(instance.id, 'originalPrice', newPrice);
+                                      }
+                                    });
+                                  }}
+                                  className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                />
+                              ) : (
+                                <div className="text-sm font-medium text-green-600">
+                                  {/* Show sale price if on sale */}
+                                  {group.instances.some(v => v.onSale) ? (
+                                    <div className="flex items-center gap-2">
+                                      <span className="line-through text-gray-400">
+                                        ₱{formatMoney(group.instances.find(v => v.onSale)?.originalPrice || group.unitPrice)}
                                       </span>
-                                    )}
-                                  </>
-                                )}
-                              </div>
+                                      <span className="text-red-600 font-bold">
+                                        ₱{formatMoney(group.instances.find(v => v.onSale)?.salePrice || group.unitPrice)}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      ₱{formatMoney(group.unitPrice)}
+                                      {group.isBundle && group.piecesPerBundle && (
+                                        <span className="text-xs text-purple-600 block mt-0.5">
+                                          (₱{formatMoney(group.unitPrice / group.piecesPerBundle)} / {group.baseUnit || 'pc'})
+                                        </span>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              )}
                             </div>
                             <div>
                               <div className="text-xs text-gray-500 mb-1">Total Value</div>
@@ -2073,24 +1972,80 @@ const ViewProductModal = ({
                             {group.isBundle && group.piecesPerBundle && (
                               <div>
                                 <div className="text-xs text-gray-500 mb-1">Bundle Info</div>
-                                <div className="text-xs font-medium text-purple-700 bg-purple-50 px-2 py-1 rounded">
-                                  {group.piecesPerBundle} {group.baseUnit || 'pcs'} / {group.bundlePackagingType || 'bundle'}
-                                </div>
+                                {isEditMode ? (
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="number"
+                                      value={editedVariants[group.instances[0].id]?.piecesPerBundle ?? group.piecesPerBundle}
+                                      onChange={(e) => {
+                                        const newValue = parseInt(e.target.value) || 0;
+                                        group.instances.forEach(instance => {
+                                          handleVariantFieldChange(instance.id, 'piecesPerBundle', newValue);
+                                        });
+                                      }}
+                                      className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-purple-500"
+                                    />
+                                    <input
+                                      type="text"
+                                      value={editedVariants[group.instances[0].id]?.baseUnit ?? (group.baseUnit || 'pcs')}
+                                      onChange={(e) => {
+                                        group.instances.forEach(instance => {
+                                          handleVariantFieldChange(instance.id, 'baseUnit', e.target.value);
+                                        });
+                                      }}
+                                      className="w-16 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-purple-500"
+                                      placeholder="unit"
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="text-xs font-medium text-purple-700 bg-purple-50 px-2 py-1 rounded">
+                                    {group.piecesPerBundle} {group.baseUnit || 'pcs'} / {group.bundlePackagingType || 'bundle'}
+                                  </div>
+                                )}
                               </div>
                             )}
                             {group.size && (
                               <div>
                                 <div className="text-xs text-gray-500 mb-1">Size</div>
-                                <div className="text-sm font-medium text-gray-900">{group.size}</div>
+                                {isEditMode ? (
+                                  <input
+                                    type="text"
+                                    value={editedVariants[group.instances[0].id]?.size ?? group.size}
+                                    onChange={(e) => {
+                                      group.instances.forEach(instance => {
+                                        handleVariantFieldChange(instance.id, 'size', e.target.value);
+                                      });
+                                    }}
+                                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                  />
+                                ) : (
+                                  <div className="text-sm font-medium text-gray-900">{group.size}</div>
+                                )}
                               </div>
                             )}
-                            {group.specifications && (
+                            {(group.specifications || isEditMode) && (
                               <div className={group.size ? "" : "col-span-2"}>
                                 <div className="text-xs text-gray-500 mb-1">Specifications</div>
-                                <div className="text-sm font-medium text-gray-900">{group.specifications}</div>
+                                {isEditMode ? (
+                                  <input
+                                    type="text"
+                                    value={editedVariants[group.instances[0].id]?.specifications ?? (group.specifications || '')}
+                                    onChange={(e) => {
+                                      group.instances.forEach(instance => {
+                                        handleVariantFieldChange(instance.id, 'specifications', e.target.value);
+                                      });
+                                    }}
+                                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                    placeholder="Enter specifications"
+                                  />
+                                ) : (
+                                  <div className="text-sm font-medium text-gray-900">{group.specifications}</div>
+                                )}
                               </div>
                             )}
                           </div>
+                          
+                         
                           
                           {/* Show multiple locations if more than one */}
                           {group.instances.length > 1 && (
@@ -2103,9 +2058,22 @@ const ViewProductModal = ({
                                       <span className="text-xs font-semibold text-purple-700 bg-purple-100 px-2 py-1 rounded">
                                         Location {locIndex + 1}
                                       </span>
-                                      <span className="text-xs font-medium text-purple-600">
-                                        Qty: {Number(instance.quantity) || 0} {instance.unit || group.unit}
-                                      </span>
+                                      {isEditMode ? (
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs text-gray-500">Qty:</span>
+                                          <input
+                                            type="number"
+                                            value={editedVariants[instance.id]?.quantity ?? (Number(instance.quantity) || 0)}
+                                            onChange={(e) => handleVariantFieldChange(instance.id, 'quantity', parseInt(e.target.value) || 0)}
+                                            className="w-20 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-purple-500"
+                                          />
+                                          <span className="text-xs text-purple-600">{instance.unit || group.unit}</span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-xs font-medium text-purple-600">
+                                          Qty: {Number(instance.quantity) || 0} {instance.unit || group.unit}
+                                        </span>
+                                      )}
                                     </div>
                                     <div className="text-sm text-gray-700">
                                       {instance.fullLocation || `${instance.storageLocation} - ${instance.shelfName} - ${instance.rowName}` || 'N/A'}
@@ -2134,6 +2102,41 @@ const ViewProductModal = ({
                     <FiLayers className="mx-auto mb-2" size={32} />
                     <p>No variants found for this product</p>
                     <p className="text-xs mt-1">Variants are separate products linked to this base product</p>
+                  </div>
+                )}
+                
+                {/* Edit Changes Summary */}
+                {isEditMode && Object.keys(editedVariants).length > 0 && (
+                  <div className="sticky bottom-0 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-lg p-4 shadow-lg">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-amber-500 rounded-lg">
+                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-bold text-amber-800 mb-1">Pending Changes</h4>
+                        <p className="text-xs text-amber-700 mb-2">
+                          You have unsaved changes to {Object.keys(editedVariants).length} variant{Object.keys(editedVariants).length > 1 ? 's' : ''}. 
+                          Click "Save Changes" in the footer to apply these updates.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {Object.entries(editedVariants).slice(0, 3).map(([variantId, changes]) => {
+                            const variant = variants.find(v => v.id === variantId);
+                            return (
+                              <span key={variantId} className="px-2 py-1 bg-white border border-amber-300 rounded text-xs">
+                                {variant?.variantName || variant?.size || 'Variant'}: {Object.keys(changes).length} change{Object.keys(changes).length > 1 ? 's' : ''}
+                              </span>
+                            );
+                          })}
+                          {Object.keys(editedVariants).length > 3 && (
+                            <span className="px-2 py-1 bg-amber-200 text-amber-800 rounded text-xs font-medium">
+                              +{Object.keys(editedVariants).length - 3} more
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2486,8 +2489,8 @@ const ViewProductModal = ({
                   if (product && !product.isVariant) {
                     setLoadingVariants(true);
                     try {
-                      // NEW ARCHITECTURE: Query flat Variants collection in Master
-                      const variantsRef = collection(db, 'Master', 'Variants', 'items');
+                      // NEW ARCHITECTURE: Query flat Variants collection
+                      const variantsRef = collection(db, 'Variants');
                       const variantsQuery = query(
                         variantsRef,
                         where('parentProductId', '==', product.id)

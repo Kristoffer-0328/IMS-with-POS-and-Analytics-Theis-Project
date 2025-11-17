@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useServices } from '../../../services/firebase/ProductServices';
 import { useAuth } from '../../auth/services/FirebaseAuth';
 import { getFormattedDateTime } from '../utils/DateTimeFormatter';
-import { getFirestore, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
+import { listenToMergedProducts } from '../../../services/firebase/ProductServices';
+import { applyProductFilters } from '../../../models/MergedProduct';
 
 // Import Components
 import SearchBar from '../components/SearchBar';
@@ -12,41 +13,36 @@ import ProductGrid from '../components/ProductGrid';
 import ProductList from '../components/Cart';
 import ProductFilters from '../components/ProductFilters';
 import VariantSelectionModal from '../components/Modals/VariantSelectionModal';
-import QuickQuantityModal from '../components/QuickQuantityModal';
-import LocationSelectionModal from '../components/Modals/LocationSelectionModal';
 import CustomerInfoModal from '../components/quotation/CustomerInfoModal';
 import QuotationGenerator from '../components/quotation/QuotationGenerator';
 import QuotationUtils from '../utils/quotationUtils';
 import DashboardHeader from '../../inventory/components/Dashboard/DashboardHeader';
+import ErrorModal from '../../../components/modals/ErrorModal';
 const Pos_Quotation = () => {
-  const { listenToProducts } = useServices();
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const db = getFirestore(app);
   
   // Product State
-  const [products, setProduct] = useState([]);
+  const [products, setProducts] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedBrand, setSelectedBrand] = useState(null);
   const [addedProducts, setAddedProducts] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
 
   // Modal States
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [selectedProductForModal, setSelectedProductForModal] = useState(null);
   const [variantModalOpen, setVariantModalOpen] = useState(false);
-  const [quickQuantityModalOpen, setQuickQuantityModalOpen] = useState(false);
-  const [customerInfoModalOpen, setCustomerInfoModalOpen] = useState(false); // Closed by default
-
+  const [customerInfoModalOpen, setCustomerInfoModalOpen] = useState(false);
+  
   // Variant Modal States
   const [activeVariantIndex, setActiveVariantIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
-
-  // QuickQuantityModal states for location selection
-  const [selectedProductForQuantity, setSelectedProductForQuantity] = useState(null);
-  const [selectedProductForModal, setSelectedProductForModal] = useState(null);
-  const [selectedVariantForLocation, setSelectedVariantForLocation] = useState(null);
-  const [pendingQuantity, setPendingQuantity] = useState(1);
-  const [locationModalOpen, setLocationModalOpen] = useState(false);
+  
+  // Feedback Modal
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addModalData, setAddModalData] = useState(null);
 
   // Customer Info State
   const [customerDetails, setCustomerDetails] = useState({
@@ -55,220 +51,58 @@ const Pos_Quotation = () => {
     email: '',
     address: ''
   });
-
+  
   // Date Time
   const { formattedDate, formattedTime } = getFormattedDateTime();
 
-  // Listen to products
+  // Fetch Products from Master + Variants + Suppliers Collections
   useEffect(() => {
-    const unsubscribe = listenToProducts(setProduct);
-    return () => unsubscribe();
-  }, [listenToProducts]);
+    setLoadingProducts(true);
+    
+    console.log('🔄 Setting up merged product listener for Quotation with filters:', {
+      searchQuery,
+      selectedCategory,
+      selectedBrand
+    });
 
-  // Group Products (Memoized) - match Pos_NewSale.jsx logic
-  const groupedProducts = useMemo(() => {
-    const grouped = {};
-
-    products.forEach(product => {
-      if (!product || !product.id || !product.name) return;
-
-      // Group by base identity (name, brand, specifications, category)
-      const groupKey = `${product.name || 'unknown'}_${product.brand || 'generic'}_${product.specifications || ''}_${product.category || ''}`;
-
-      if (!grouped[groupKey]) {
-        grouped[groupKey] = {
-          id: product.id, // Add id for cart logic
-          name: product.name,
-          brand: product.brand || 'Generic',
-          category: product.category,
-          specifications: product.specifications || '',
-          image: product.image || product.imageUrl || null,
-          variants: [],
-          hasVariants: false,
-          allLocations: [],
-        };
-      }
-
-      // Consolidate variants by size/unit
-      const variantKey = `${product.size || ''}_${product.unit || ''}`;
-      let variant = grouped[groupKey].variants.find(v => v.size === product.size && v.unit === product.unit);
-      if (!variant) {
-        // Always set both price and unitPrice, fallback to 0 if missing
-        const resolvedPrice = Number(product.unitPrice ?? product.price ?? 0);
-        variant = {
-          variantId: product.id,
-          baseProductId: product.parentProductId || product.id,
-          size: product.size || '',
-          unit: product.unit || 'pcs',
-          price: resolvedPrice,
-          unitPrice: Number(product.unitPrice ?? product.price ?? 0),
-          quantity: 0,
-          image: product.image || product.imageUrl || null,
-          locations: [],
-          storageLocation: product.storageLocation,
-          shelfName: product.shelfName,
-          rowName: product.rowName,
-          columnIndex: product.columnIndex,
-          fullLocation: product.fullLocation,
-        };
-        grouped[groupKey].variants.push(variant);
-      }
-      // Always update price and unitPrice in case product data changes
-      variant.price = Number(product.unitPrice ?? product.price ?? variant.price ?? 0);
-      variant.unitPrice = Number(product.unitPrice ?? product.price ?? variant.unitPrice ?? 0);
-      variant.quantity += Number(product.quantity) || 0;
-      variant.locations.push({
-        storageLocation: product.storageLocation,
-        shelfName: product.shelfName,
-        rowName: product.rowName,
-        columnIndex: product.columnIndex,
-        fullLocation: product.fullLocation,
-        quantity: Number(product.quantity) || 0,
-        // Ensure we keep price/ids at location level so selection logic has them
-        price: Number(product.unitPrice ?? product.price ?? 0),
-        unitPrice: Number(product.unitPrice ?? product.price ?? 0),
-        variantId: product.id,
-        baseProductId: product.parentProductId || product.id,
+    // Use the centralized merging function from ProductServices (same as V2)
+    const unsubscribe = listenToMergedProducts((mergedProducts) => {
+      console.log(`📦 Received ${mergedProducts.length} merged products from service`);
+      
+      // Apply filters using the model's filter functions
+      const filtered = applyProductFilters(mergedProducts, {
+        searchQuery,
+        category: selectedCategory,
+        brand: selectedBrand
       });
-
-      // Collect all locations for the group (include price and ids)
-      grouped[groupKey].allLocations.push({
-        size: product.size || '',
-        unit: product.unit || 'pcs',
-        storageLocation: product.storageLocation,
-        shelfName: product.shelfName,
-        rowName: product.rowName,
-        columnIndex: product.columnIndex,
-        fullLocation: product.fullLocation,
-        quantity: Number(product.quantity) || 0,
-        price: Number(product.unitPrice ?? product.price ?? 0),
-        unitPrice: Number(product.unitPrice ?? product.price ?? 0),
-        variantId: product.id,
-        baseProductId: product.parentProductId || product.id,
-      });
+      
+      console.log(`✅ After filtering: ${filtered.length} products`);
+      
+      setProducts(filtered);
+      setLoadingProducts(false);
     });
+    
+    // Cleanup listener on unmount
+    return () => {
+      console.log('🧹 Cleaning up merged product listener');
+      unsubscribe();
+    };
+  }, [searchQuery, selectedCategory, selectedBrand]);
 
-    // Mark hasVariants if more than 1 variant
-    Object.values(grouped).forEach(group => {
-      group.hasVariants = group.variants.length > 1;
-    });
-
-    return Object.values(grouped);
-  }, [products]);
-
-  // Filter products based on search and category
-  const filteredProducts = useMemo(() => {
-    return groupedProducts.filter((product) => {
-      const matchesSearch = product.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          product.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          product.brand?.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = !selectedCategory || product.category === selectedCategory;
-      const matchesBrand = !selectedBrand || product.brand === selectedBrand;
-      return matchesSearch && matchesCategory && matchesBrand;
-    });
-  }, [groupedProducts, searchQuery, selectedCategory, selectedBrand]);
+  // Products are merged from Master + Variants collections
+  const filteredProducts = products;
 
   // Calculate totals (coerce numeric values)
-  const subTotal = addedProducts.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.qty || 0)), 0);
-  const tax = subTotal * 0.12; // 12% VAT
-  const total = subTotal + tax;
-
-  // Handle product click
-  const handleProductClick = (productGroup) => {
-    // Require customer info before adding products
-    if (!customerDetails.name) {
-      alert('Please fill in customer information first.');
-      setCustomerInfoModalOpen(true);
-      return;
-    }
-
-    if (!productGroup || !productGroup.variants) {
-      console.warn("Invalid product group:", productGroup);
-      return;
-    }
-
-    // Check if variants have different sizes/units (ignoring brand differences)
-    const uniqueSizeUnits = new Set(productGroup.variants.map(v => `${v.size || ''}|${v.unit || ''}`));
-    const hasSizeOrUnitVariants = uniqueSizeUnits.size > 1;
-
-    // Check if variants have different brands
-    const uniqueBrands = new Set(productGroup.variants.map(v => v.brand));
-    const hasBrandVariants = uniqueBrands.size > 1;
-
-    if (hasSizeOrUnitVariants || hasBrandVariants) {
-      // Show variant selection modal if there are different sizes/units or brands
-      setQuantity(1);
-      setSelectedProduct(productGroup);
-      setActiveVariantIndex(0);
-      setVariantModalOpen(true);
-    } else if (productGroup.variants.length === 1) {
-      // Show quick quantity modal for single variant products
-      setSelectedProductForQuantity(productGroup);
-      setQuickQuantityModalOpen(true);
-    }
-  };
-
-  // Handle variant selection
-  const handleAddVariant = () => {
-    if (!selectedProduct || !selectedProduct.variants) return;
+  const { subTotal, tax, total } = useMemo(() => {
+    const subTotal = addedProducts.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.qty || 0)), 0);
+    const tax = subTotal * 0.12; // 12% VAT
+    const total = subTotal + tax;
     
-    const variant = selectedProduct.variants[activeVariantIndex];
-    
-    // Check if this variant exists in multiple locations
-    const variantLocations = selectedProduct.allLocations?.filter(loc => 
-      loc.size === variant.size && loc.unit === variant.unit
-    ) || [];
-    
-    // Close variant modal first
-    setVariantModalOpen(false);
-    
-    if (variantLocations.length > 1) {
-      // Multiple locations - show location picker
-      setPendingQuantity(quantity);
-      setSelectedProductForModal(selectedProduct);
-      setSelectedVariantForLocation(variant);
-      setLocationModalOpen(true);
-    } else {
-      // Single location - add directly
-      const locationVariant = variantLocations[0] || variant;
-      const cartQty = getCartItemQuantity(selectedProduct.id, locationVariant.variantId);
-      const availableQty = locationVariant.quantity - cartQty;
+    return { subTotal, tax, total };
+  }, [addedProducts]);
 
-      if (availableQty < quantity) {
-          alert(`Cannot add ${quantity} items. Only ${availableQty} available.`);
-          setVariantModalOpen(true); // Reopen modal
-          return;
-      }
-
-      const displayName = locationVariant.size || locationVariant.unit 
-        ? `${selectedProduct.name} (${locationVariant.size || ''} ${locationVariant.unit || ''})`.trim()
-        : selectedProduct.name;
-
-      addProduct({
-        id: locationVariant.variantId,
-        name: displayName,
-        baseName: selectedProduct.name,
-        price: locationVariant.price,
-        qty: quantity,
-        variantId: locationVariant.variantId,
-        category: selectedProduct.category,
-        baseProductId: locationVariant.baseProductId,
-        storageLocation: locationVariant.storageLocation,
-        shelfName: locationVariant.shelfName,
-        rowName: locationVariant.rowName,
-        columnIndex: locationVariant.columnIndex,
-        fullLocation: locationVariant.fullLocation
-      });
-
-      setSelectedProduct(null);
-      setActiveVariantIndex(0);
-      setQuantity(1);
-    }
-  };
-
-  // Handle add to cart from QuickQuantityModal
   // Helper: Add product to cart (normalize price/qty)
-  const addProduct = (cartItem) => {
+  const addProductToCart = useCallback((cartItem) => {
     const normalized = {
       ...cartItem,
       price: Number(cartItem.price ?? cartItem.unitPrice ?? 0),
@@ -276,123 +110,156 @@ const Pos_Quotation = () => {
     };
 
     setAddedProducts(prev => {
-      const existing = prev.find(item => item.id === normalized.id);
+      const existing = prev.find(item => item.variantId === normalized.variantId);
       if (existing) {
         return prev.map(item =>
-          item.id === normalized.id
+          item.variantId === normalized.variantId
             ? { ...item, qty: item.qty + normalized.qty, price: normalized.price }
             : item
         );
       }
       return [...prev, normalized];
     });
-  };
+  }, []);
 
-  // Helper: Get cart item quantity for a variant
-  const getCartItemQuantity = (productId, variantId) => {
-    const item = addedProducts.find(item =>
-      (variantId && (item.id === variantId || item.variantId === variantId)) ||
-      (!variantId && (item.baseProductId === productId || item.productId === productId))
-    );
-    return item ? Number(item.qty || 0) : 0;
-  };
-
-  // Handle update quantity in cart
-  const handleUpdateQuantity = (itemId, newQuantity) => {
-    if (newQuantity <= 0) {
-      setAddedProducts(prev => prev.filter(item => item.id !== itemId));
-    } else {
-      setAddedProducts(prev =>
-        prev.map(item => item.id === itemId ? { ...item, qty: newQuantity } : item)
-      );
-    }
-  };
-
-  // Handle remove from cart
-  const handleRemoveFromCart = (itemId) => {
-    setAddedProducts(prev => prev.filter(item => item.id !== itemId));
-  };
-
-  // Handle location selection from LocationSelectionModal
-  const handleSelectLocation = useCallback((locationData) => {
-    if (!selectedProductForModal) {
-      console.error("Invalid location selection - no product selected");
+  // Handle product click - Always show VariantSelectionModal (like V2)
+  const handleProductClick = useCallback((productGroup) => {
+    // Require customer info before adding products
+    if (!customerDetails.name) {
+      setAddModalData({
+        title: 'Customer Information Required',
+        message: 'Please fill in customer information first.',
+        type: 'warning',
+        details: 'Customer details are required to create a quotation.'
+      });
+      setShowAddModal(true);
+      setCustomerInfoModalOpen(true);
       return;
     }
 
-    // Check if locationData is an array (multi-location) or single object
-    if (Array.isArray(locationData)) {
-      // Multi-location allocation
-      
-      locationData.forEach(locationVariant => {
-        const displayName = locationVariant.size || locationVariant.unit 
-          ? `${selectedProductForModal.name} (${locationVariant.size || ''} ${locationVariant.unit || ''})`.trim()
-          : selectedProductForModal.name;
-
-        addProduct({
-          id: locationVariant.variantId,
-          name: displayName,
-          baseName: selectedProductForModal.name,
-          price: locationVariant.price,
-          qty: locationVariant.allocatedQuantity, // Use the allocated quantity for this location
-          variantId: locationVariant.variantId,
-          category: selectedProductForModal.category,
-          baseProductId: locationVariant.baseProductId,
-          storageLocation: locationVariant.storageLocation,
-          shelfName: locationVariant.shelfName,
-          rowName: locationVariant.rowName,
-          columnIndex: locationVariant.columnIndex,
-          fullLocation: locationVariant.fullLocation,
-          isMultiLocationAllocation: true // Flag to indicate this is part of multi-location order
-        });
+    if (!productGroup || !productGroup.variants || productGroup.variants.length === 0) {
+      console.warn("Invalid product group:", productGroup);
+      setAddModalData({
+        title: 'Product Unavailable',
+        message: 'This product is not available.',
+        type: 'error',
+        details: ''
       });
-    } else {
-      // Single location selection
-      const locationVariant = locationData;
-      const displayName = locationVariant.size || locationVariant.unit 
-        ? `${selectedProductForModal.name} (${locationVariant.size || ''} ${locationVariant.unit || ''})`.trim()
-        : selectedProductForModal.name;
-
-      addProduct({
-        id: locationVariant.variantId,
-        name: displayName,
-        baseName: selectedProductForModal.name,
-        price: locationVariant.price,
-        qty: pendingQuantity,
-        variantId: locationVariant.variantId,
-        category: selectedProductForModal.category,
-        baseProductId: locationVariant.baseProductId,
-        storageLocation: locationVariant.storageLocation,
-        shelfName: locationVariant.shelfName,
-        rowName: locationVariant.rowName,
-        columnIndex: locationVariant.columnIndex,
-        fullLocation: locationVariant.fullLocation
-      });
+      setShowAddModal(true);
+      return;
     }
 
-    // Reset all modals
-    setLocationModalOpen(false);
-    setSelectedProductForModal(null);
-    setSelectedVariantForLocation(null);
-    setPendingQuantity(1);
+    // Always show VariantSelectionModal for all products (single or multiple variants)
     setQuantity(1);
-  }, [selectedProductForModal, pendingQuantity, addProduct]);
+    setSelectedProductForModal(productGroup);
+    setActiveVariantIndex(0);
+    setVariantModalOpen(true);
+  }, [customerDetails.name]);
+
+  // Handle variant selection from modal
+  const handleAddVariant = useCallback(async (selectedQuantity) => {
+    if (!selectedProductForModal) return;
+
+    const variant = selectedProductForModal.variants[activeVariantIndex];
+
+    // For quotations, we don't check stock availability - just add the requested quantity
+    // Compute effective unit price
+    let effectiveUnitPrice = variant.price || variant.unitPrice || 0;
+    
+    // Apply sale price if variant is on sale
+    if (variant.onSale && variant.salePrice) {
+      effectiveUnitPrice = variant.salePrice;
+    }
+    
+    // If variant represents a bundle, convert price to per-piece for cart consistency
+    if (variant.isBundle && variant.piecesPerBundle) {
+      const pieces = Number(variant.piecesPerBundle) || 1;
+      effectiveUnitPrice = effectiveUnitPrice / pieces;
+    }
+
+    // Add to cart with proper structure (quantity is in pieces)
+    const cartItem = {
+      variantId: variant.variantId,
+      productId: selectedProductForModal.id,
+      name: `${selectedProductForModal.name}${variant.size ? ` (${variant.size} ${variant.unit || ''})`.trim() : ''}`,
+      baseName: selectedProductForModal.name,
+      variantName: variant.variantName,
+      price: effectiveUnitPrice,
+      qty: selectedQuantity,
+      unit: variant.unit || variant.baseUnit || 'pcs',
+      category: selectedProductForModal.category,
+      image: variant.image || selectedProductForModal.image,
+      // Include variant details for display
+      size: variant.size,
+      brand: selectedProductForModal.brand,
+      // Bundle information
+      isBundle: variant.isBundle,
+      piecesPerBundle: variant.piecesPerBundle,
+      bundlePackagingType: variant.bundlePackagingType,
+      bundlePrice: variant.unitPrice || variant.price,
+      // Sale/Discount information
+      onSale: variant.onSale || false,
+      originalPrice: variant.originalPrice || (variant.unitPrice || variant.price || 0),
+      discountPercentage: variant.discountPercentage || 0,
+      // Dimension information
+      measurementType: variant.measurementType,
+      length: variant.length,
+      width: variant.width,
+      thickness: variant.thickness,
+      unitWeightKg: variant.unitWeightKg,
+      unitVolumeLiters: variant.unitVolumeLiters
+    };
+
+    addProductToCart(cartItem);
+
+    // Close modal
+    setVariantModalOpen(false);
+    setSelectedProductForModal(null);
+    setActiveVariantIndex(0);
+    setQuantity(1);
+
+    // Show success feedback
+    setAddModalData({
+      title: 'Product Added',
+      message: `Added ${cartItem.name} x${selectedQuantity} to quotation.`,
+      type: 'success',
+      details: ''
+    });
+    setShowAddModal(true);
+  }, [selectedProductForModal, activeVariantIndex, addProductToCart]);
+
+  // Handle remove from cart
+  const handleRemoveFromCart = useCallback((indexToRemove) => {
+    setAddedProducts(prev => prev.filter((_, index) => index !== indexToRemove));
+  }, []);
 
   // Handle customer info submit
-  const handleCustomerInfoSubmit = (info) => {
+  const handleCustomerInfoSubmit = useCallback((info) => {
     setCustomerDetails(info);
     setCustomerInfoModalOpen(false);
-  };
+  }, []);
 
   // Handle generate quotation
-  const handleGenerateQuotation = async () => {
+  const handleGenerateQuotation = useCallback(async () => {
     if (addedProducts.length === 0) {
-      alert('Please add at least one product to generate a quotation.');
+      setAddModalData({
+        title: 'No Products',
+        message: 'Please add at least one product to generate a quotation.',
+        type: 'warning',
+        details: ''
+      });
+      setShowAddModal(true);
       return;
     }
     
     if (!customerDetails.name) {
-      alert('Please enter customer information.');
+      setAddModalData({
+        title: 'Customer Information Required',
+        message: 'Please enter customer information.',
+        type: 'warning',
+        details: ''
+      });
+      setShowAddModal(true);
       setCustomerInfoModalOpen(true);
       return;
     }
@@ -428,7 +295,7 @@ const Pos_Quotation = () => {
         return cleaned;
       };
 
-      // Prepare quotation document
+      // Prepare quotation document with enhanced product info
       const quotationDoc = {
         quotationNumber: quotationData.quotationNumber || '',
         quotationDate: quotationData.formattedDate || '',
@@ -444,21 +311,35 @@ const Pos_Quotation = () => {
           projectName: quotationData.customer?.projectName || ''
         },
         
-        // Items
+        // Items with enhanced bundle/sale/dimension information
         items: (quotationData.items || []).map(item => ({
           description: item.name || item.description || '',
+          productName: item.baseName || item.name || '',
+          variantName: item.variantName || '',
           category: item.category || '',
           unit: item.unit || 'pcs',
           quantity: Number(item.qty || item.quantity) || 0,
           unitPrice: Number(item.price || item.unitPrice) || 0,
           amount: Number((item.price || item.unitPrice) * (item.qty || item.quantity)) || 0,
           variantDetails: item.variantDetails || {},
-          // Location information
-          storageLocation: item.storageLocation || '',
-          shelfName: item.shelfName || '',
-          rowName: item.rowName || '',
-          columnIndex: item.columnIndex || '',
-          fullLocation: item.fullLocation || '',
+          // Bundle information
+          isBundle: item.isBundle || false,
+          piecesPerBundle: item.piecesPerBundle || null,
+          bundlePackagingType: item.bundlePackagingType || '',
+          bundlePrice: item.bundlePrice || null,
+          // Sale/Discount information
+          onSale: item.onSale || false,
+          originalPrice: item.originalPrice || (item.price || item.unitPrice || 0),
+          discountPercentage: item.discountPercentage || 0,
+          // Dimension information
+          measurementType: item.measurementType || '',
+          length: item.length || '',
+          width: item.width || '',
+          thickness: item.thickness || '',
+          unitWeightKg: item.unitWeightKg || '',
+          unitVolumeLiters: item.unitVolumeLiters || '',
+          size: item.size || '',
+          // IDs
           variantId: item.variantId || '',
           baseProductId: item.baseProductId || ''
         })),
@@ -503,49 +384,81 @@ const Pos_Quotation = () => {
       // Reset state
       setAddedProducts([]);
       setCustomerDetails({ name: '', phone: '', email: '', address: '' });
+      setQuotationNumber('');
       
-      alert('Quotation generated and saved successfully!');
+      setAddModalData({
+        title: 'Quotation Generated',
+        message: `Quotation ${quotationData.quotationNumber} generated and saved successfully!`,
+        type: 'success',
+        details: ''
+      });
+      setShowAddModal(true);
     } catch (error) {
       console.error('Error generating quotation:', error);
-      alert('Failed to generate quotation. Please try again.');
+      setAddModalData({
+        title: 'Generation Failed',
+        message: 'Failed to generate quotation. Please try again.',
+        type: 'error',
+        details: error.message
+      });
+      setShowAddModal(true);
     }
-  };
+  }, [addedProducts, customerDetails, currentUser, db]);
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
-      
+    <div className="flex h-screen bg-gray-50">
+      {/* Left Side - Products */}
+      <div className="flex-1 flex flex-col min-w-0 bg-white border-r border-gray-200">
         <DashboardHeader />
-      <div className="flex overflow-hidden">
-        {/* Left Side - Products */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="p-4 space-y-4">
-            <SearchBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
-            <ProductFilters
-              products={products}
-              selectedCategory={selectedCategory}
-              setSelectedCategory={setSelectedCategory}
-              selectedBrand={selectedBrand}
-              setSelectedBrand={setSelectedBrand}
-            />
+        
+        {/* Search and Filters */}
+        <div className="flex-shrink-0 bg-white border-b border-gray-200 shadow-sm">
+          <div className="px-6 py-4">
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <SearchBar
+                  searchQuery={searchQuery}
+                  setSearchQuery={setSearchQuery}
+                  disabled={false}
+                  placeholder="Search products by name, category, or brand..."
+                  className="bg-white shadow-sm border-gray-200"
+                />
+              </div>
+              <div className="flex-1">
+                <ProductFilters
+                  products={products}
+                  selectedCategory={selectedCategory}
+                  setSelectedCategory={setSelectedCategory}
+                  selectedBrand={selectedBrand}
+                  setSelectedBrand={setSelectedBrand}
+                  className="bg-white"
+                />
+              </div>
+            </div>
           </div>
+        </div>
 
-          <div className="flex-1 overflow-y-auto px-4 pb-4">
+        {/* Product Grid */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-6">
             <ProductGrid
               products={filteredProducts}
               onProductSelect={handleProductClick}
-              loading={false}
+              loading={loadingProducts}
               disabled={false}
             />
           </div>
         </div>
+      </div>
 
-        {/* Right Side - Cart & Customer Info */}
-        <div className="w-96 bg-white border-l border-gray-200 flex flex-col">
-          {/* Customer Info Section */}
-          <div className="p-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-800 mb-3">Customer Information</h3>
+      {/* Right Side - Cart & Customer Info */}
+      <div className="w-[480px] flex flex-col bg-white shadow-lg">
+        {/* Customer Info Section */}
+        <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50">
+          <div className="p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Customer Information</h3>
             {customerDetails.name ? (
-              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 space-y-2">
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
                     <p className="font-medium text-gray-800">{customerDetails.name}</p>
@@ -567,33 +480,45 @@ const Pos_Quotation = () => {
             ) : (
               <button
                 onClick={() => setCustomerInfoModalOpen(true)}
-                className="w-full px-4 py-3 bg-orange-50 border border-orange-300 text-orange-700 rounded-lg hover:bg-orange-100 transition-colors"
+                className="w-full px-4 py-3 bg-orange-50 border border-orange-300 text-orange-700 rounded-lg hover:bg-orange-100 transition-colors font-medium"
               >
                 + Add Customer Info
               </button>
             )}
           </div>
+        </div>
 
-          {/* Cart Section */}
-          <div className="flex-1 overflow-y-auto p-4">
-            <h3 className="text-lg font-semibold text-gray-800 mb-3">Quotation Items</h3>
+        {/* Cart Items */}
+        <div className="flex-1 overflow-y-auto bg-white">
+          <div className="p-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">Quotation Items</h3>
+              <span className="text-sm text-gray-500">
+                {addedProducts.length} {addedProducts.length === 1 ? 'item' : 'items'}
+              </span>
+            </div>
+
             {addedProducts.length === 0 ? (
-              <div className="text-center text-gray-500 py-8">
-                <p>No products added</p>
-                <p className="text-sm">Select products to add to quotation</p>
+              <div className="text-center py-16 text-gray-400">
+                <svg className="w-20 h-20 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <p className="text-base font-medium">No products added</p>
+                <p className="text-sm mt-1">Select products to add to quotation</p>
               </div>
             ) : (
               <ProductList
                 cartItems={addedProducts}
-                onRemoveItem={(index) => handleRemoveFromCart(addedProducts[index].id)}
-                onUpdateQuantity={(index, newQty) => handleUpdateQuantity(addedProducts[index].id, newQty)}
+                onRemoveItem={handleRemoveFromCart}
                 isProcessing={false}
               />
             )}
           </div>
+        </div>
 
-          {/* Summary & Generate Button */}
-          <div className="border-t border-gray-200 p-4 space-y-3">
+        {/* Summary & Generate Button */}
+        <div className="flex-shrink-0 border-t border-gray-200 bg-gray-50">
+          <div className="p-4 space-y-3">
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Subtotal:</span>
@@ -614,111 +539,53 @@ const Pos_Quotation = () => {
               disabled={addedProducts.length === 0 || !customerDetails.name}
               className="w-full bg-orange-500 text-white py-3 rounded-lg font-semibold hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
             >
-              Done
+              Generate Quotation
             </button>
           </div>
         </div>
       </div>
 
       {/* Modals */}
-      {variantModalOpen && selectedProduct && (
-        <VariantSelectionModal
-          product={selectedProduct}
-          activeVariantIndex={activeVariantIndex}
-          setActiveVariantIndex={setActiveVariantIndex}
-          qty={quantity}
-          setQty={setQuantity}
-          onAddVariant={handleAddVariant}
-          onClose={() => {
-            setVariantModalOpen(false);
-            setSelectedProduct(null);
-            setActiveVariantIndex(0);
-            setQuantity(1);
-          }}
+      <div className="relative z-50">
+        {variantModalOpen && selectedProductForModal && (
+          <VariantSelectionModal
+            product={selectedProductForModal}
+            activeVariantIndex={activeVariantIndex}
+            setActiveVariantIndex={setActiveVariantIndex}
+            qty={quantity}
+            setQty={setQuantity}
+            onAddVariant={handleAddVariant}
+            onClose={() => {
+              setVariantModalOpen(false);
+              setSelectedProductForModal(null);
+              setActiveVariantIndex(0);
+              setQuantity(1);
+            }}
+          />
+        )}
+
+        <CustomerInfoModal
+          isOpen={customerInfoModalOpen}
+          onClose={() => setCustomerInfoModalOpen(false)}
+          onCancel={() => setCustomerInfoModalOpen(false)}
+          onSubmit={handleCustomerInfoSubmit}
+          initialData={customerDetails}
         />
-      )}
 
-      {quickQuantityModalOpen && selectedProductForQuantity && (
-        <QuickQuantityModal
-          product={selectedProductForQuantity}
-          maxQuantity={selectedProductForQuantity.maxAvailableQty || selectedProductForQuantity.variants[0].quantity}
-          onClose={() => {
-            setQuickQuantityModalOpen(false);
-            setSelectedProductForQuantity(null);
-            setSelectedVariantForLocation(null);
-            setPendingQuantity(1);
-          }}
-          onAdd={(quantity) => {
-            const variant = selectedProductForQuantity.variants[0];
-            // Check if this variant has multiple locations
-            const variantLocations = selectedProductForQuantity.allLocations?.filter(loc =>
-              loc.size === variant.size && loc.unit === variant.unit
-            ) || [];
-
-            if (variantLocations.length > 1) {
-              // Always show location selection modal for multi-location products
-              setQuickQuantityModalOpen(false);
-              setPendingQuantity(quantity);
-              setSelectedProductForModal(selectedProductForQuantity);
-              setSelectedVariantForLocation(variant);
-              setLocationModalOpen(true);
-            } else {
-              // Single location - add directly
-              const locationVariant = variantLocations[0] || variant;
-              const cartQty = getCartItemQuantity(selectedProductForQuantity.id, locationVariant.variantId || locationVariant.id);
-              if (cartQty + quantity > locationVariant.quantity) {
-                alert(`Cannot add ${quantity} items. Only ${locationVariant.quantity - cartQty} available.`);
-                return;
-              }
-              const displayName = locationVariant.size || locationVariant.unit
-                ? `${selectedProductForQuantity.name} (${locationVariant.size || ''} ${locationVariant.unit || ''})`.trim()
-                : selectedProductForQuantity.name;
-              addProduct({
-                id: locationVariant.variantId || locationVariant.id,
-                name: displayName,
-                baseName: selectedProductForQuantity.name,
-                price: Number(locationVariant?.price ?? locationVariant?.unitPrice ?? variant?.price ?? variant?.unitPrice ?? 0),
-                qty: quantity,
-                variantId: locationVariant.variantId || locationVariant.id,
-                unit: locationVariant.unit,
-                category: selectedProductForQuantity.category,
-                baseProductId: locationVariant.baseProductId || selectedProductForQuantity.id,
-                storageLocation: locationVariant.storageLocation,
-                shelfName: locationVariant.shelfName,
-                rowName: locationVariant.rowName,
-                columnIndex: locationVariant.columnIndex,
-                fullLocation: locationVariant.fullLocation
-              });
-              setQuickQuantityModalOpen(false);
-              setSelectedProductForQuantity(null);
-            }
-          }}
-        />
-      )}
-
-      {/* Location Selection Modal for multi-location products */}
-      {locationModalOpen && selectedProductForModal && selectedVariantForLocation && (
-        <LocationSelectionModal
-          product={selectedProductForModal}
-          selectedVariant={selectedVariantForLocation}
-          qty={pendingQuantity}
-          onSelectLocation={handleSelectLocation}
-          onClose={() => {
-            setLocationModalOpen(false);
-            setSelectedProductForModal(null);
-            setSelectedVariantForLocation(null);
-            setPendingQuantity(1);
-          }}
-        />
-      )}
-
-      <CustomerInfoModal
-        isOpen={customerInfoModalOpen}
-        onClose={() => setCustomerInfoModalOpen(false)}
-        onCancel={() => setCustomerInfoModalOpen(false)}
-        onSubmit={handleCustomerInfoSubmit}
-        initialData={customerDetails}
-      />
+        {showAddModal && addModalData && (
+          <ErrorModal
+            isOpen={showAddModal}
+            onClose={() => {
+              setShowAddModal(false);
+              setAddModalData(null);
+            }}
+            title={addModalData.title}
+            message={addModalData.message}
+            type={addModalData.type}
+            details={addModalData.details}
+          />
+        )}
+      </div>
     </div>
   );
 };

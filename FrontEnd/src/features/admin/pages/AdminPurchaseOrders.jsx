@@ -14,7 +14,7 @@ const AdminPurchaseOrders = () => {
   const [loading, setLoading] = useState(true);
   const [showViewModal, setShowViewModal] = useState(false);
   const [selectedPO, setSelectedPO] = useState(null);
-  const [selectedStatus, setSelectedStatus] = useState('pending_approval');
+  const [selectedStatus, setSelectedStatus] = useState('all');
   const [dateRange, setDateRange] = useState({
     start: '',
     end: ''
@@ -85,8 +85,6 @@ const AdminPurchaseOrders = () => {
 
   return (
     <div className="">
-   
-     
 
         {/* Filters */}
             <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -136,7 +134,7 @@ const AdminPurchaseOrders = () => {
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <button
                   onClick={() => {
-                    setSelectedStatus('pending_approval');
+                    setSelectedStatus('all');
                     setDateRange({ start: '', end: '' });
                   }}
                   className="text-sm text-gray-600 hover:text-gray-800 font-medium"
