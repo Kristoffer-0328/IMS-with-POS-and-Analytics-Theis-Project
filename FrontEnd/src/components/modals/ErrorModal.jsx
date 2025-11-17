@@ -11,6 +11,8 @@ import React from 'react';
  * @param {string} type - Error type: 'error', 'warning', 'info', 'success'
  * @param {string} details - Optional additional details
  * @param {React.ReactNode|string} icon - Optional custom icon (React node or text)
+ * @param {React.ReactNode} children - Optional additional content (e.g., input fields)
+ * @param {boolean} showDefaultButton - Whether to show the default "Got it" button
  */
 const ErrorModal = ({ 
   isOpen, 
@@ -19,7 +21,9 @@ const ErrorModal = ({
   message = '', 
   type = 'error',
   details = '',
-  icon = null
+  icon = null,
+  children = null,
+  showDefaultButton = true
 }) => {
   if (!isOpen) return null;
 
@@ -163,7 +167,7 @@ const ErrorModal = ({
 
   return (
     <div 
-      className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] animate-in fade-in duration-200"
+      className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div 
@@ -198,18 +202,29 @@ const ErrorModal = ({
           </div>
         )}
 
+        {/* Additional Content (Optional) */}
+        {children && (
+          <div className="mt-4">
+            {children}
+          </div>
+        )}
+
         {/* Action Button */}
-        <div className="mt-6 flex justify-end">
-          <button
-            onClick={onClose}
-            className={`${styles.buttonBg} text-white px-6 py-2.5 rounded-lg font-medium transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-4 ${ringClass}`}
-          >
-            Got it
-          </button>
-        </div>
+        {showDefaultButton && (
+          <div className="mt-6 flex justify-end">
+            <button
+              onClick={onClose}
+              className={`${styles.buttonBg} text-white px-6 py-2.5 rounded-lg font-medium transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-4 ${ringClass}`}
+            >
+              Got it
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
 };
+
+ErrorModal.displayName = 'ErrorModal';
 
 export default ErrorModal;

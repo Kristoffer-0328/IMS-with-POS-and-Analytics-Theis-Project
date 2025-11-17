@@ -1,5 +1,5 @@
 import React from 'react';
-import { FiTrash2 } from 'react-icons/fi';
+import { FiTrash2, FiRefreshCw } from 'react-icons/fi';
 
 const formatCurrency = (number) => {
   return `₱${Number(number).toLocaleString('en-PH', {
@@ -8,7 +8,7 @@ const formatCurrency = (number) => {
   })}`;
 };
 
-const ProductList = ({ cartItems: addedProducts, onRemoveItem, isProcessing }) => {
+const ProductList = ({ cartItems: addedProducts, onRemoveItem, onResetCart, isProcessing }) => {
   if (addedProducts.length === 0) {
     return (
       <div className="text-center py-12">

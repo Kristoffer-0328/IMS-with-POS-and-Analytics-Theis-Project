@@ -17,6 +17,7 @@ const Team = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState('');
   const [avatar, setAvatar] = useState('IM');
+  const [authCode, setAuthCode] = useState('');
   const [teamMembers, setTeamMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -24,6 +25,12 @@ const Team = () => {
   const [deleteConfirmModal, setDeleteConfirmModal] = useState(false);
   const [memberToDelete, setMemberToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingMember, setEditingMember] = useState(null);
+  const [editUsername, setEditUsername] = useState('');
+  const [editRole, setEditRole] = useState('');
+  const [editAvatar, setEditAvatar] = useState('');
+  const [editAuthCode, setEditAuthCode] = useState('');
 
   const db = getFirestore(app);
   const { currentUser } = useAuth(); // Get current admin user
@@ -70,6 +77,7 @@ const Team = () => {
     setConfirmPassword('');
     setRole('');
     setAvatar('IM');
+    setAuthCode('');
     setError('');
     setSuccess('');
   };
@@ -135,6 +143,101 @@ const Team = () => {
     setMemberToDelete(null);
   };
 
+  const handleEditClick = (member) => {
+    setEditingMember(member);
+    setEditUsername(member.name);
+    setEditRole(member.role);
+    setEditAvatar(member.avatar || member.name?.charAt(0).toUpperCase() || 'U');
+    setEditAuthCode(member.authCode || '');
+    setError('');
+    setSuccess('');
+    setShowEditModal(true);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    // Validation
+    if (!editUsername || !editRole) {
+      setError('Name and role are required');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const userDocRef = doc(db, 'User', editingMember.id);
+      await updateDoc(userDocRef, {
+        name: editUsername,
+        role: editRole,
+        avatar: editAvatar,
+        authCode: editAuthCode,
+        updatedAt: new Date().toISOString(),
+        updatedBy: currentUser?.uid
+      });
+
+      setSuccess('Team member updated successfully!');
+      
+      // Refresh team members list
+      await fetchTeamMembers();
+      
+      // Close modal after 1.5 seconds
+      setTimeout(() => {
+        setShowEditModal(false);
+        setEditingMember(null);
+        resetEditForm();
+      }, 1500);
+
+    } catch (error) {
+      console.error('Error updating user:', error);
+      setError('Failed to update user: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetEditForm = () => {
+    setEditUsername('');
+    setEditRole('');
+    setEditAvatar('');
+    setEditAuthCode('');
+  };
+
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setEditingMember(null);
+    resetEditForm();
+  };
+
+  const generateAuthCode = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    for (let i = 0; i < 8; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  };
+
+  const handleRoleChange = (newRole) => {
+    setRole(newRole);
+    if (newRole === 'Admin' || newRole === 'InventoryManager') {
+      setAuthCode(generateAuthCode());
+    } else {
+      setAuthCode('');
+    }
+  };
+
+  const handleEditRoleChange = (newRole) => {
+    setEditRole(newRole);
+    if (newRole === 'Admin' || newRole === 'InventoryManager') {
+      setEditAuthCode(generateAuthCode());
+    } else {
+      setEditAuthCode('');
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -181,6 +284,7 @@ const Team = () => {
         email: email,
         name: username,
         role: role,
+        authCode: authCode,
         createdAt: new Date().toISOString(),
         status: 'active'
       });
@@ -303,6 +407,14 @@ const Team = () => {
                   </button>
                 )}
                 
+                {/* Edit Button */}
+                <button
+                  onClick={() => handleEditClick(member)}
+                  className="absolute top-3 left-3 p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                  title="Edit user">
+                  <FiEdit size={18} />
+                </button>
+                
                 {/* Avatar */}
                 <div className="w-24 h-24 bg-gray-100 rounded-full mb-4 flex items-center justify-center border-2 border-gray-200">
                   <span className="text-2xl font-bold text-gray-700">
@@ -325,6 +437,13 @@ const Team = () => {
                 
                 {/* Email */}
                 <p className="text-gray-500 text-sm text-center break-all">{member.email}</p>
+                
+                {/* Auth Code */}
+                {(member.role === 'Admin' || member.role === 'InventoryManager') && member.authCode && (
+                  <p className="text-blue-600 text-xs text-center font-mono bg-blue-50 px-2 py-1 rounded mt-1">
+                    Code: {member.authCode}
+                  </p>
+                )}
                 
                 {/* Status */}
                 {member.status && (
@@ -468,7 +587,7 @@ const Team = () => {
                 </label>
                 <select
                   value={role}
-                  onChange={(e) => setRole(e.target.value)}
+                  onChange={(e) => handleRoleChange(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-gray-500 focus:border-gray-500 outline-none transition-colors bg-white"
                   required
                   disabled={loading}>
@@ -478,6 +597,32 @@ const Team = () => {
                   <option value="Cashier">Cashier</option>
                 </select>
               </div>
+
+              {(role === 'Admin' || role === 'InventoryManager') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Authorization Code <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={authCode}
+                      readOnly
+                      className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-700 outline-none"
+                      placeholder="Generated code"
+                      disabled={loading}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setAuthCode(generateAuthCode())}
+                      className="px-4 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium"
+                      disabled={loading}>
+                      Regenerate
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">This code allows overriding POS restrictions</p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -508,6 +653,130 @@ const Team = () => {
                   <>
                     <FiUserPlus size={18} />
                     Add Member
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Member Modal */}
+      {showEditModal && editingMember && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-md m-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold text-gray-800">
+                Edit Team Member
+              </h2>
+              <button
+                onClick={closeEditModal}
+                className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+                disabled={loading}>
+                ×
+              </button>
+            </div>
+
+            {/* Error/Success in Modal */}
+            {error && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+            {success && (
+              <div className="mb-4 bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded-lg text-sm">
+                {success}
+              </div>
+            )}
+
+            <form onSubmit={handleEditSubmit} className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Username <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editUsername}
+                  onChange={(e) => setEditUsername(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-gray-500 focus:border-gray-500 outline-none transition-colors"
+                  placeholder="Enter username"
+                  required
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Role <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={editRole}
+                  onChange={(e) => handleEditRoleChange(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-gray-500 focus:border-gray-500 outline-none transition-colors bg-white"
+                  required
+                  disabled={loading}>
+                  <option value="">Select role</option>
+                  <option value="Admin">Admin</option>
+                  <option value="InventoryManager">Inventory Manager</option>
+                  <option value="Cashier">Cashier</option>
+                </select>
+              </div>
+
+              {(editRole === 'Admin' || editRole === 'InventoryManager') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Authorization Code <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={editAuthCode}
+                      readOnly
+                      className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-700 outline-none"
+                      placeholder="Generated code"
+                      disabled={loading}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setEditAuthCode(generateAuthCode())}
+                      className="px-4 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium"
+                      disabled={loading}>
+                      Regenerate
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">This code allows overriding POS restrictions</p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Avatar Initial (optional)
+                </label>
+                <input
+                  type="text"
+                  value={editAvatar}
+                  onChange={(e) => setEditAvatar(e.target.value.toUpperCase().slice(0, 2))}
+                  className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-gray-500 focus:border-gray-500 outline-none transition-colors"
+                  placeholder="e.g., JD (max 2 characters)"
+                  maxLength={2}
+                  disabled={loading}
+                />
+                <p className="text-xs text-gray-500 mt-1">Default: First letter of username</p>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-gray-800 text-white py-2.5 px-4 rounded-lg hover:bg-gray-700 transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                {loading ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Updating...
+                  </>
+                ) : (
+                  <>
+                    <FiEdit size={18} />
+                    Update Member
                   </>
                 )}
               </button>

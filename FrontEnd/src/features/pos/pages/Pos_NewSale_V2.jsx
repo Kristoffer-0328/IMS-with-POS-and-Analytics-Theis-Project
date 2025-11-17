@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { FiRefreshCw } from 'react-icons/fi';
 import { useAuth } from '../../auth/services/FirebaseAuth';
 import { getFirestore, collection, addDoc, serverTimestamp, doc, getDoc, query, where, getDocs } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
@@ -128,6 +129,14 @@ export default function Pos_NewSale_V2() {
   const [quotationNumber, setQuotationNumber] = useState('');
   const [loadingQuotation, setLoadingQuotation] = useState(false);
 
+  // Authorization State
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authCode, setAuthCode] = useState('');
+  const [pendingAction, setPendingAction] = useState(null); // 'leave' or 'reset' or 'remove'
+  const [pendingRemoveIndex, setPendingRemoveIndex] = useState(null);
+  const [userAuthCode, setUserAuthCode] = useState('');
+  const [userRole, setUserRole] = useState('');
+
   // --- Clock Update ---
   useEffect(() => {
     const updateClock = () => {
@@ -138,6 +147,61 @@ export default function Pos_NewSale_V2() {
     const timer = setInterval(updateClock, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // --- Fetch User Auth Code ---
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (currentUser?.uid) {
+        try {
+          console.log('Fetching user data for UID:', currentUser.uid);
+          const userDoc = await getDoc(doc(db, 'User', currentUser.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            console.log('User data fetched:', userData);
+            setUserAuthCode(userData.authCode || '');
+            setUserRole(userData.role || '');
+            console.log('Setting userRole to:', userData.role || '');
+          } else {
+            console.log('User document does not exist');
+          }
+        } catch (error) {
+          console.error('Error fetching user data:', error);
+        }
+      } else {
+        console.log('No currentUser UID available');
+      }
+    };
+    fetchUserData();
+  }, [currentUser, db]);
+
+  // --- Prevent Page Leave with Cart Items ---
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (addedProducts.length > 0) {
+        e.preventDefault();
+        e.returnValue = 'You have unsaved changes in your cart. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+    };
+
+    const handlePopState = (e) => {
+      if (addedProducts.length > 0) {
+        const confirmLeave = window.confirm('You have items in your cart. Leaving this page will clear your cart. Are you sure you want to continue?');
+        if (!confirmLeave) {
+          // Prevent navigation by pushing the current state back
+          window.history.pushState(null, '', window.location.pathname);
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [addedProducts.length]);
 
   // --- Fetch Products from Master + Variants + Suppliers Collections ---
   useEffect(() => {
@@ -199,7 +263,9 @@ export default function Pos_NewSale_V2() {
   }, []);
 
   const handleRemoveProduct = useCallback((indexToRemove) => {
-    setAddedProducts(prev => prev.filter((_, index) => index !== indexToRemove));
+    setPendingRemoveIndex(indexToRemove);
+    setPendingAction('remove');
+    setShowAuthModal(true);
   }, []);
 
   // --- Product Selection Logic ---
@@ -466,6 +532,114 @@ export default function Pos_NewSale_V2() {
     setPaymentMethod('Cash');
     setCustomerDisplayName('Walk-in Customer');
   }, []);
+
+  // --- Authorization Check ---
+  const requiresAuthorization = () => {
+    // Check if user has an authorization code (InventoryManager or Admin)
+    const result = userAuthCode && userAuthCode.trim() !== '';
+    console.log('requiresAuthorization check:', { userAuthCode, userRole, result });
+    return result;
+  };
+
+  const handleResetCart = useCallback(() => {
+    console.log('handleResetCart called, addedProducts.length:', addedProducts.length);
+    if (addedProducts.length === 0) return;
+
+    setPendingAction('reset');
+    setShowAuthModal(true);
+  }, [addedProducts.length]);
+
+  const handleAuthSubmit = useCallback(async () => {
+    // First check if the user has authorization capability
+ 
+
+    // Query Firebase to find user with matching authorization code
+    try {
+      const userQuery = query(
+        collection(db, 'User'),
+        where('authCode', '==', authCode.trim())
+      );
+      const querySnapshot = await getDocs(userQuery);
+      
+      if (querySnapshot.empty) {
+        setShowAuthModal(false);
+        setAuthCode('');
+        setPendingAction(null);
+        setPendingRemoveIndex(null);
+        setAddModalData({
+          title: 'Invalid Authorization Code',
+          message: 'The authorization code you entered is incorrect.',
+          type: 'error',
+          details: ''
+        });
+        setShowAddModal(true);
+        return;
+      }
+
+      // Get the first matching user
+      const authUserDoc = querySnapshot.docs[0];
+      const authUserData = authUserDoc.data();
+      
+      // Check if the user has the required role
+      if (authUserData.role !== 'InventoryManager' && authUserData.role !== 'Admin') {
+        setShowAuthModal(false);
+        setAuthCode('');
+        setPendingAction(null);
+        setPendingRemoveIndex(null);
+        setAddModalData({
+          title: 'Access Denied',
+          message: 'The authorization code belongs to a user without sufficient privileges.',
+          type: 'error',
+          details: ''
+        });
+        setShowAddModal(true);
+        return;
+      }
+
+      // Authorization successful - proceed with action
+      setShowAuthModal(false);
+      setAuthCode('');
+      
+      if (pendingAction === 'reset') {
+        resetSaleState();
+        setAddModalData({
+          title: 'Cart Cleared',
+          message: 'All items have been removed from the cart.',
+          type: 'success',
+          details: ''
+        });
+        setShowAddModal(true);
+      } else if (pendingAction === 'remove') {
+        setAddedProducts(prev => prev.filter((_, index) => index !== pendingRemoveIndex));
+        setAddModalData({
+          title: 'Item Removed',
+          message: 'The item has been removed from the cart.',
+          type: 'success',
+          details: ''
+        });
+        setShowAddModal(true);
+        setPendingRemoveIndex(null);
+      } else if (pendingAction === 'leave') {
+        // Allow navigation
+        window.history.back();
+      }
+      
+      setPendingAction(null);
+    } catch (error) {
+      console.error('Error verifying authorization code:', error);
+      setShowAuthModal(false);
+      setAuthCode('');
+      setPendingAction(null);
+      setPendingRemoveIndex(null);
+      setAddModalData({
+        title: 'Verification Error',
+        message: 'Failed to verify authorization code. Please try again.',
+        type: 'error',
+        details: error.message
+      });
+      setShowAddModal(true);
+    }
+  }, [authCode, pendingAction, resetSaleState, pendingRemoveIndex, requiresAuthorization, db]);
 
   // --- Transaction Processing ---
   const handlePrintAndSave = useCallback(async () => {
@@ -823,9 +997,22 @@ export default function Pos_NewSale_V2() {
           <div className="p-4">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-gray-800">Cart Items</h3>
-              <span className="text-sm text-gray-500">
-                {addedProducts.length} {addedProducts.length === 1 ? 'item' : 'items'}
-              </span>
+              <div className="flex items-center gap-3">
+                {addedProducts.length > 0 && (
+                  <button
+                    onClick={handleResetCart}
+                    disabled={isProcessing}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Reset Cart"
+                  >
+                    <FiRefreshCw size={14} />
+                    Reset Cart
+                  </button>
+                )}
+                <span className="text-sm text-gray-500">
+                  {addedProducts.length} {addedProducts.length === 1 ? 'item' : 'items'}
+                </span>
+              </div>
             </div>
 
             {addedProducts.length === 0 ? (
@@ -845,6 +1032,7 @@ export default function Pos_NewSale_V2() {
                   formattedTotal: formatCurrency(item.price * item.qty)
                 }))}
                 onRemoveItem={handleRemoveProduct}
+                onResetCart={handleResetCart}
                 isProcessing={isProcessing}
               />
             )}
@@ -881,7 +1069,7 @@ export default function Pos_NewSale_V2() {
             formattedTotal={formatCurrency(finalTotal)}
             formattedChange={formatCurrency(Number(amountPaid) - finalTotal)}
             onPrintAndSave={handlePrintAndSave}
-            onClearCart={resetSaleState}
+            onClearCart={handleResetCart}
             isProcessing={isProcessing}
             disabled={shouldDisableInteractions || addedProducts.length === 0}
             hasProducts={addedProducts.length > 0}
@@ -931,6 +1119,66 @@ export default function Pos_NewSale_V2() {
             type={addModalData.type}
             details={addModalData.details}
           />
+        )}
+
+        {showAuthModal && (
+          <ErrorModal
+            isOpen={showAuthModal}
+            onClose={() => {
+              setShowAuthModal(false);
+              setAuthCode('');
+              setPendingAction(null);
+              setPendingRemoveIndex(null);
+            }}
+            title="Authorization Required"
+            message={pendingAction === 'reset' 
+              ? 'Enter your authorization code to reset the cart.' 
+              : pendingAction === 'remove'
+              ? 'Enter your authorization code to remove this item.'
+              : 'Enter your authorization code to leave this page.'}
+            type="warning"
+            showDefaultButton={false}
+            icon={
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            }
+          >
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Authorization Code
+              </label>
+              <input
+                type="password"
+                value={authCode}
+                onChange={(e) => setAuthCode(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-center text-lg font-mono tracking-wider focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none"
+                placeholder="Enter code"
+                maxLength={8}
+                autoComplete="off"
+                onKeyPress={(e) => e.key === 'Enter' && handleAuthSubmit()}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowAuthModal(false);
+                  setAuthCode('');
+                  setPendingAction(null);
+                  setPendingRemoveIndex(null);
+                }}
+                className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium">
+                Cancel
+              </button>
+              <button
+                onClick={handleAuthSubmit}
+                disabled={!authCode.trim()}
+                className="flex-1 px-4 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                Confirm
+              </button>
+            </div>
+          </ErrorModal>
         )}
       </div>
     </div>
