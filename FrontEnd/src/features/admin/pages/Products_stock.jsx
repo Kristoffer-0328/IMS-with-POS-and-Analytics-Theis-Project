@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   BarChart,
   Bar,
@@ -19,6 +19,7 @@ import {
 import { FiBox, FiTrendingDown, FiTrendingUp, FiDollarSign, FiPackage, FiAlertTriangle, FiShoppingCart, FiInfo, FiAward, FiLayers } from 'react-icons/fi';
 import { getFirestore, collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
+import DashboardBarChart from '../../inventory/components/Dashboard/DashboardBarChart';
 
 const db = getFirestore(app);
 
@@ -412,6 +413,54 @@ const Dashboard = () => {
     setRestockPriorityData(data);
   };
 
+  // Group products by brand and variant for inventory chart
+  const groupedProducts = useMemo(() => {
+    const productGroups = {};
+    products.forEach(item => {
+      const groupKey = `${item.brand || 'Generic'}_${item.variantName || item.id}`;
+      if (!productGroups[groupKey]) {
+        productGroups[groupKey] = {
+          ...item,
+          quantity: 0,
+          locations: [],
+        };
+      }
+      productGroups[groupKey].quantity += Number(item.quantity) || 0;
+      productGroups[groupKey].locations.push(item.storageLocation || 'Unknown');
+    });
+    return Object.values(productGroups);
+  }, [products]);
+
+  // Prepare chart data for inventory levels
+  const chartData = useMemo(() => {
+    return groupedProducts.map((p) => {
+      let color = '#4779FF'; // In Stock (>60)
+      if (p.quantity <= 0) color = '#FF4D4D'; // Critical (<10 or 0)
+      else if (p.quantity <= 40) color = '#FFC554'; // Low Stock (≤40)
+
+      return {
+        name: p.variantName || p.name || p.id,
+        value: p.quantity,
+        color,
+      };
+    });
+  }, [groupedProducts]);
+
+  // Custom tooltip for the bar chart
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white p-3 shadow-lg rounded-lg border border-gray-100">
+          <p className="font-medium text-sm">{label}</p>
+          <p className="text-sm text-blue-600">
+            <span className="font-semibold">{payload[0].value}</span> units
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
   // Colors for charts
   const COLORS = ['#ff7b54', '#ffb366', '#4ade80', '#60a5fa', '#a78bfa', '#f472b6'];
   const PRIORITY_COLORS = {
@@ -545,45 +594,19 @@ const Dashboard = () => {
       </div>
 
       {/* Main Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Category Distribution */}
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        {/* Stock Levels Bar Chart - Takes 2 columns */}
+        <div className="lg:col-span-2 bg-white rounded-xl p-6 shadow-sm border border-gray-100">
           <div className="mb-4">
-            <h2 className="text-lg font-semibold text-gray-800">Inventory by Category</h2>
-            <p className="text-sm text-gray-600 mt-1">Value distribution across product categories</p>
+            <h2 className="text-lg font-semibold text-gray-800">Stock Levels by Product</h2>
+            <p className="text-sm text-gray-600 mt-1">Current inventory levels across all products</p>
           </div>
-          <div className="h-[300px]">
-            {categoryData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={categoryData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={100}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {categoryData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    formatter={(value) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`}
-                    contentStyle={{ 
-                      backgroundColor: 'white', 
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+          <div className="h-[400px]">
+            {chartData.length > 0 ? (
+              <DashboardBarChart data={chartData} CustomTooltip={CustomTooltip} />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-400">
-                <p>No category data available</p>
+                <p>No inventory data available</p>
               </div>
             )}
           </div>

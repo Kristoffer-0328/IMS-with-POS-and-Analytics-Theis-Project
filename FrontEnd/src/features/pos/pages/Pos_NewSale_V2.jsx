@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../auth/services/FirebaseAuth';
-import { getFirestore, collection, addDoc, serverTimestamp, onSnapshot, doc, getDoc, query, where, getDocs } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, serverTimestamp, doc, getDoc, query, where, getDocs } from 'firebase/firestore';
 import app from '../../../FirebaseConfig';
 import { AnalyticsService } from '../../../services/firebase/AnalyticsService';
+import { listenToMergedProducts } from '../../../services/firebase/ProductServices';
+import { applyProductFilters } from '../../../models/MergedProduct';
 
 // Import new POS Services
 import { 
@@ -122,6 +124,10 @@ export default function Pos_NewSale_V2() {
   });
   const [customerDisplayName, setCustomerDisplayName] = useState('Walk-in Customer');
 
+  // Add Load Quotation State
+  const [quotationNumber, setQuotationNumber] = useState('');
+  const [loadingQuotation, setLoadingQuotation] = useState(false);
+
   // --- Clock Update ---
   useEffect(() => {
     const updateClock = () => {
@@ -133,164 +139,37 @@ export default function Pos_NewSale_V2() {
     return () => clearInterval(timer);
   }, []);
 
-  // --- Fetch Products from Master + Variants Collections ---
+  // --- Fetch Products from Master + Variants + Suppliers Collections ---
   useEffect(() => {
     setLoadingProducts(true);
     
-    const productsRef = collection(db, 'Master');
-    const variantsRef = collection(db, 'Variants');
-    
-    let productsData = [];
-    let variantsData = [];
-    let unsubscribeProducts = null;
-    let unsubscribeVariants = null;
-    
-    const mergeAndSetProducts = () => {
-      console.log('🔄 Merging products and variants...');
-      console.log('📦 Master:', productsData.length);
-      console.log('📦 Variants:', variantsData.length);
+    console.log('🔄 Setting up merged product listener with filters:', {
+      searchQuery,
+      selectedCategory,
+      selectedBrand
+    });
+
+    // Use the centralized merging function from ProductServices
+    const unsubscribe = listenToMergedProducts((mergedProducts) => {
+      console.log(`📦 Received ${mergedProducts.length} merged products from service`);
       
-      // Group variants by parentProductId
-      const variantsByProduct = {};
-      variantsData.forEach(variant => {
-        const productId = variant.parentProductId || variant.productId;
-        if (!variantsByProduct[productId]) {
-          variantsByProduct[productId] = [];
-        }
-        variantsByProduct[productId].push(variant);
+      // Apply filters using the model's filter functions
+      const filtered = applyProductFilters(mergedProducts, {
+        searchQuery,
+        category: selectedCategory,
+        brand: selectedBrand
       });
       
-      console.log('🔗 Variants grouped by product:', Object.keys(variantsByProduct).length, 'products');
+      console.log(`✅ After filtering: ${filtered.length} products`);
       
-      // Merge product info with variants
-      const mergedProducts = productsData.map(product => {
-        const productVariants = variantsByProduct[product.id] || [];
-        
-        return {
-          id: product.id,
-          name: product.name,
-          image: product.image || product.imageUrl,
-          category: product.category || 'Uncategorized',
-          brand: product.brand || 'Generic',
-          description: product.description,
-          // Wrap variants with proper structure
-          variants: productVariants.map(v => ({
-            // Identity
-            variantId: v.id,
-            variantName: v.variantName || v.name,
-            brand: v.brand || product.brand || 'Generic',
-            image: v.image || v.imageUrl || product.image,
-
-            // Pricing & stock
-            unitPrice: v.unitPrice || v.price || 0,
-            price: v.unitPrice || v.price || 0,
-            quantity: v.quantity || 0,
-            totalQuantity: v.quantity || 0,
-            
-            // Sale/Discount info
-            onSale: v.onSale || false,
-            salePrice: v.salePrice || null,
-            originalPrice: v.originalPrice || v.unitPrice || v.price || 0,
-            discountPercentage: v.discountPercentage || 0,
-
-            // Units & sizing
-            size: v.size,
-            unit: v.unit || v.baseUnit || 'pcs',
-            baseUnit: v.baseUnit || v.unit || 'pcs',
-
-            // Bundle info
-            isBundle: !!v.isBundle,
-            piecesPerBundle: v.piecesPerBundle,
-            bundlePackagingType: v.bundlePackagingType,
-
-            // Dimensional/spec info
-            measurementType: v.measurementType,
-            length: v.length,
-            width: v.width,
-            thickness: v.thickness,
-            unitWeightKg: v.unitWeightKg,
-            unitVolumeLiters: v.unitVolumeLiters,
-            specifications: v.specifications,
-
-            // Storage info
-            storageLocation: v.storageLocation,
-            shelfName: v.shelfName,
-            rowName: v.rowName
-          }))
-        };
-      }).filter(p => p.variants.length > 0); // Only show products with variants
-      
-      console.log('✅ Merged products (with variants):', mergedProducts.length);
-      
-      // Apply filters
-      let filtered = mergedProducts;
-      
-      // Category filter
-      if (selectedCategory) {
-        filtered = filtered.filter(p => p.category === selectedCategory);
-      }
-      
-      // Brand filter
-      if (selectedBrand) {
-        filtered = filtered.filter(p => p.brand === selectedBrand);
-      }
-      
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        filtered = filtered.filter(p => 
-          p.name?.toLowerCase().includes(query) ||
-          p.brand?.toLowerCase().includes(query) ||
-          p.category?.toLowerCase().includes(query) ||
-          p.description?.toLowerCase().includes(query)
-        );
-      }
-      
-      console.log('✅ Filtered products:', filtered.length);
       setProducts(filtered);
       setLoadingProducts(false);
-    };
+    });
     
-    // Listen to Master collection (product info)
-    unsubscribeProducts = onSnapshot(
-      productsRef,
-      (snapshot) => {
-        console.log('📦 Master loaded:', snapshot.size);
-        productsData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        mergeAndSetProducts();
-      },
-      (error) => {
-        console.error('❌ Error loading Master:', error);
-        alert('Failed to load products from Master collection.');
-        setLoadingProducts(false);
-      }
-    );
-    
-    // Listen to Variants collection (stock & price)
-    unsubscribeVariants = onSnapshot(
-      variantsRef,
-      (snapshot) => {
-        console.log('📦 Variants loaded:', snapshot.size);
-        variantsData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        mergeAndSetProducts();
-      },
-      (error) => {
-        console.error('❌ Error loading Variants:', error);
-        alert('Failed to load Variants.');
-        setLoadingProducts(false);
-      }
-    );
-    
-    // Cleanup listeners on unmount
+    // Cleanup listener on unmount
     return () => {
-      if (unsubscribeProducts) unsubscribeProducts();
-      if (unsubscribeVariants) unsubscribeVariants();
+      console.log('🧹 Cleaning up merged product listener');
+      unsubscribe();
     };
   }, [searchQuery, selectedCategory, selectedBrand]);
 
@@ -299,7 +178,7 @@ export default function Pos_NewSale_V2() {
 
   // --- Cart Management ---
   const addProductToCart = useCallback((cartItem) => {
-    console.log('➕ Adding to cart:', cartItem);
+
     
     setAddedProducts(prev => {
       // Check if variant already in cart
@@ -327,7 +206,7 @@ export default function Pos_NewSale_V2() {
   const handleAddProduct = useCallback(async (wrappedProduct) => {
     if (isProcessing) return;
 
-    console.log('🎯 Product clicked:', wrappedProduct);
+
 
     if (!wrappedProduct || !wrappedProduct.variants || wrappedProduct.variants.length === 0) {
       console.warn("Invalid product:", wrappedProduct);
@@ -346,12 +225,7 @@ export default function Pos_NewSale_V2() {
     if (!selectedProductForModal) return;
 
     const variant = selectedProductForModal.variants[activeVariantIndex];
-    
-    console.log('✅ Adding variant to cart:', {
-      product: selectedProductForModal.name,
-      variant: variant,
-      quantity: selectedQuantity
-    });
+
 
     // Check if adding this quantity would exceed available stock
     const existingQuantityForVariant = addedProducts
@@ -467,7 +341,7 @@ export default function Pos_NewSale_V2() {
       };
 
       AnalyticsService.recordSale(analyticsData);``
-      console.log('📊 Analytics recorded:', analyticsData);
+
     } catch (error) {
       console.error('Error collecting analytics:', error);
     }
@@ -509,19 +383,29 @@ export default function Pos_NewSale_V2() {
   // Create/ensure Restocking Requests after sale if stock dips below ROP
   const ensureRestockingRequests = useCallback(async (stockMovements) => {
     try {
+      console.log('🔔 ensureRestockingRequests called with:', stockMovements);
       if (!stockMovements || stockMovements.length === 0) return;
       for (const mv of stockMovements) {
         const variantId = mv.variantId;
         const newQty = Number(mv.newQty ?? 0);
+        console.log('➡️ Processing variant:', variantId, 'newQty:', newQty);
         if (!variantId) continue;
 
         const variantRef = doc(db, 'Variants', variantId);
         const snap = await getDoc(variantRef);
-        if (!snap.exists()) continue;
+        if (!snap.exists()) {
+          console.log('❌ Variant not found:', variantId);
+          continue;
+        }
+
         const v = snap.data();
         const rop = computeROP(v);
-        const priority = classifyPriority(newQty, rop);
-        if (priority === 'normal') continue; // only create when below ROP
+        const priority = classifyPriority(newQty, rop); 
+        console.log('🔎 ROP:', rop, 'Priority:', priority);
+        if (priority === 'normal') {
+          console.log('✅ Priority is normal, skipping restocking request for', variantId);
+          continue; // only create when below ROP
+        }
 
         // Avoid duplicate open requests
         const rrRef = collection(db, 'RestockingRequests');
@@ -530,9 +414,11 @@ export default function Pos_NewSale_V2() {
           where('variantId', '==', variantId),
           where('status', 'in', ['pending', 'acknowledged'])
         );
+        console.log('🔍 Querying RestockingRequests for variant:', variantId);
         const existing = await getDocs(qRef);
+        console.log('🔍 Existing requests found:', existing.size);
         if (!existing.empty) {
-          // Optionally could update existing doc here; for now, skip duplicates
+          console.log(`🚫 Skipping variant ${variantId} as it already has an open request`);
           continue;
         }
 
@@ -562,6 +448,7 @@ export default function Pos_NewSale_V2() {
           createdByName: currentUser?.displayName || currentUser?.email || 'Unknown',
         };
 
+        console.log('📝 Creating new restocking request:', requestDoc);
         await addDoc(rrRef, requestDoc);
         console.log(`📨 Created restocking request for ${requestDoc.productName} - ${requestDoc.variantName}`);
       }
@@ -597,7 +484,7 @@ export default function Pos_NewSale_V2() {
     setIsProcessing(true);
 
     try {
-      console.log('💳 Processing sale...');
+     
 
       // Prepare cart items for service (ensure qty field exists as expected by service)
       const cartItems = addedProducts.map(item => ({
@@ -617,7 +504,7 @@ export default function Pos_NewSale_V2() {
         discountPercentage: item.discountPercentage || 0
       }));
 
-      console.log('🛒 Cart items:', cartItems);
+
 
       // Prepare transaction details
       const transactionDetails = {
@@ -638,12 +525,9 @@ export default function Pos_NewSale_V2() {
         notes: ''
       };
 
-      console.log('💰 Transaction details:', transactionDetails);
-
-      // Process sale using service (atomic transaction)
+    
       const saleResult = await processPOSSale(cartItems, transactionDetails, currentUser);
 
-      console.log('✅ Sale processed successfully:', saleResult);
 
       // Generate analytics
       collectAnalyticsData({
@@ -656,6 +540,7 @@ export default function Pos_NewSale_V2() {
 
       // After successful sale, ensure restocking requests when needed
       if (saleResult?.stockMovements && Array.isArray(saleResult.stockMovements)) {
+        
         await ensureRestockingRequests(saleResult.stockMovements);
       }
 
@@ -745,6 +630,97 @@ export default function Pos_NewSale_V2() {
     collectAnalyticsData
   ]);
 
+  // --- Load Quotation Handler ---
+  const handleLoadQuotation = useCallback(async () => {
+    if (!quotationNumber.trim()) {
+      setAddModalData({
+        title: 'Quotation Number Required',
+        message: 'Please enter a quotation number',
+        type: 'warning',
+        details: ''
+      });
+      setShowAddModal(true);
+      return;
+    }
+
+    setLoadingQuotation(true);
+    try {
+      const quotationRef = doc(db, 'quotations', quotationNumber.trim());
+      const quotationSnap = await getDoc(quotationRef);
+
+      if (!quotationSnap.exists()) {
+        setAddModalData({
+          title: 'Quotation Not Found',
+          message: `Quotation ${quotationNumber} not found`,
+          type: 'error',
+          details: ''
+        });
+        setShowAddModal(true);
+        setLoadingQuotation(false);
+        return;
+      }
+
+      const quotationData = quotationSnap.data();
+
+      // Load customer information
+      if (quotationData.customer) {
+        setCustomerDetails({
+          name: quotationData.customer.name || '',
+          phone: quotationData.customer.phone || '',
+          address: quotationData.customer.address || '',
+          email: quotationData.customer.email || ''
+        });
+      }
+
+      // Load products from quotation
+      if (quotationData.items && Array.isArray(quotationData.items)) {
+        const loadedProducts = quotationData.items.map((item, index) => ({
+          variantId: item.variantId || `quotation-${Date.now()}-${index}`,
+          productId: item.baseProductId || item.productId || '',
+          name: item.description || item.name || 'Unknown Product',
+          baseName: item.productName || item.name || 'Unknown Product',
+          variantName: item.variantName || '',
+          price: Number(item.unitPrice || item.price || 0),
+          qty: Number(item.quantity || item.qty || 0),
+          unit: item.unit || 'pcs',
+          category: item.category || '',
+          size: item.size || '',
+          brand: item.brand || '',
+          fromQuotation: quotationNumber.trim()
+        }));
+
+        setAddedProducts(loadedProducts);
+
+        setAddModalData({
+          title: 'Quotation Loaded',
+          message: `Quotation ${quotationNumber} loaded successfully!`,
+          type: 'success',
+          details: `${loadedProducts.length} items added to quotation.`
+        });
+        setShowAddModal(true);
+      } else {
+        setAddModalData({
+          title: 'No Items Found',
+          message: 'No items found in this quotation',
+          type: 'warning',
+          details: ''
+        });
+        setShowAddModal(true);
+      }
+    } catch (error) {
+      console.error('Error loading quotation:', error);
+      setAddModalData({
+        title: 'Load Failed',
+        message: 'Failed to load quotation. Please try again.',
+        type: 'error',
+        details: error.message
+      });
+      setShowAddModal(true);
+    } finally {
+      setLoadingQuotation(false);
+    }
+  }, [quotationNumber, db]);
+
   // --- UI Rendering ---
   const shouldDisableInteractions = isProcessing;
 
@@ -809,6 +785,36 @@ export default function Pos_NewSale_V2() {
                 <span className="text-sm text-gray-800">{currentDateTime.formattedDate}</span>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Load Quotation Form */}
+        <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50">
+          <div className="p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Load from Quotation</h3>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={quotationNumber}
+                onChange={(e) => setQuotationNumber(e.target.value)}
+                placeholder="Enter quotation number"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                disabled={loadingQuotation}
+                onKeyPress={(e) => e.key === 'Enter' && handleLoadQuotation()}
+              />
+              <button
+                onClick={handleLoadQuotation}
+                disabled={loadingQuotation || !quotationNumber.trim()}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {loadingQuotation ? 'Loading...' : 'Load'}
+              </button>
+            </div>
+            {addedProducts.some(p => p.fromQuotation) && (
+              <p className="text-xs text-blue-600 mt-2">
+                📄 Loaded from: <span className="font-semibold">{addedProducts[0].fromQuotation}</span>
+              </p>
+            )}
           </div>
         </div>
 

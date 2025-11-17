@@ -15,7 +15,8 @@ import {
 } from 'react-icons/fi';
 import DashboardHeader from '../components/Dashboard/DashboardHeader';
 import {
-  AreaChart,
+  BarChart,
+  Bar,
   Area,
   XAxis,
   YAxis,
@@ -87,16 +88,17 @@ const IMDashboard = () => {
       )
     },
     turnover: {
-      title: "Understanding Inventory Turnover",
+      title: "Understanding Inventory Turnover Distribution",
       content: (
         <div className="space-y-4">
-          <p>The area chart displays inventory turnover rates throughout the year:</p>
+          <p>This histogram shows the distribution of products across different turnover rate ranges:</p>
           <ul className="list-disc pl-5 space-y-2">
-            <li>Higher peaks indicate faster inventory movement</li>
-            <li>Lower valleys show slower turnover periods</li>
-            <li>The blue gradient helps visualize the intensity of turnover activity</li>
+            <li>Each bar represents a turnover rate range (bin)</li>
+            <li>The height shows how many products fall into that range</li>
+            <li>Taller bars indicate more products with that turnover rate</li>
+            <li>Helps identify patterns in inventory movement efficiency</li>
           </ul>
-          <p>A higher turnover rate generally indicates efficient inventory management and strong sales performance.</p>
+          <p>A well-distributed histogram suggests balanced inventory management across product categories.</p>
         </div>
       )
     },
@@ -145,20 +147,15 @@ const IMDashboard = () => {
     }
   };
 
-  // Sample turnover data - replace with actual data later
-  const turnoverData = [
-    { name: 'Jan', value: 0 },
-    { name: 'Feb', value: 0 },
-    { name: 'Mar', value: 0 },
-    { name: 'Apr', value: 0.001 },
-    { name: 'May', value: 0.045 },
-    { name: 'Jun', value: 0.015 },
-    { name: 'Jul', value: 0 },
-    { name: 'Aug', value: 0 },
-    { name: 'Sep', value: 0 },
-    { name: 'Oct', value: 0 },
-    { name: 'Nov', value: 0 },
-    { name: 'Dec', value: 0 }
+  // Histogram data for turnover distribution - replace with actual data later
+  const turnoverHistogramData = [
+    { range: '0-0.01', count: 5, minValue: 0, maxValue: 0.01 },
+    { range: '0.01-0.02', count: 3, minValue: 0.01, maxValue: 0.02 },
+    { range: '0.02-0.03', count: 8, minValue: 0.02, maxValue: 0.03 },
+    { range: '0.03-0.04', count: 12, minValue: 0.03, maxValue: 0.04 },
+    { range: '0.04-0.05', count: 7, minValue: 0.04, maxValue: 0.05 },
+    { range: '0.05-0.06', count: 4, minValue: 0.05, maxValue: 0.06 },
+    { range: '0.06+', count: 2, minValue: 0.06, maxValue: null }
   ];
 
   useEffect(() => {
@@ -352,7 +349,7 @@ const IMDashboard = () => {
 
   const chartData = groupedProducts.map((p) => {
     let color = '#4779FF';
-    if (p.quantity < p.restockLevel) color = '#FF4D4D';
+    if (p.quantity < 10) color = '#FF4D4D';
     else if (p.quantity <= 40) color = '#FFC554';
 
     return {
@@ -383,14 +380,14 @@ const IMDashboard = () => {
     console.log('groupedProducts:', groupedProducts);
     console.log('chartData:', chartData);
   }, [products, groupedProducts, chartData]);
-  // Custom tooltip for the area chart
-  const TurnoverTooltip = ({ active, payload, label }) => {
+  // Custom tooltip for the histogram
+  const TurnoverHistogramTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-white p-3 shadow-lg rounded-lg border border-gray-100">
-          <p className="font-medium text-sm">{label}</p>
+          <p className="font-medium text-sm mb-1">Turnover Range: {label}</p>
           <p className="text-sm text-blue-600">
-            <span className="font-semibold">{payload[0].value.toFixed(3)}</span>
+            <span className="font-semibold">{payload[0].value}</span> products
           </p>
         </div>
       );
@@ -509,8 +506,62 @@ const IMDashboard = () => {
 
       {/* Main Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Stock Level Bar Chart - Takes 2 columns */}
+        {/* Inventory Turnover Distribution Histogram - Full Width at Top */}
+        <div className="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800">
+                Inventory Turnover Distribution
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">Distribution of products across turnover rate ranges</p>
+            </div>
+            <button
+              onClick={() => setActiveModal('turnover')}
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            >
+              <FiInfo className="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={turnoverHistogramData}
+                margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                <XAxis 
+                  dataKey="range" 
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#6B7280', fontSize: 12 }}
+                  label={{ value: 'Turnover Rate Range', position: 'insideBottom', offset: -5, style: { fill: '#6B7280', fontSize: 12 } }}
+                />
+                <YAxis 
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#6B7280', fontSize: 12 }}
+                  label={{ value: 'Number of Products', angle: -90, position: 'insideLeft', style: { fill: '#6B7280', fontSize: 12 } }}
+                  allowDecimals={false}
+                />
+                <Tooltip content={TurnoverHistogramTooltip} />
+                <Legend 
+                  verticalAlign="top" 
+                  height={36}
+                  iconType="rect"
+                  formatter={() => "Product Count"}
+                />
+                <Bar 
+                  dataKey="count" 
+                  fill="#3B82F6" 
+                  radius={[4, 4, 0, 0]}
+                  name="Product Count"
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Stock Level Bar Chart - Stretch to 2 columns */}
         <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex justify-between items-center mb-4">
             <div>
@@ -700,67 +751,7 @@ const IMDashboard = () => {
         </div>
       </div>
 
-      {/* Inventory Turnover Chart */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800">
-              Inventory Turnover Trends
-            </h3>
-            <p className="text-sm text-gray-500 mt-1">Monthly turnover rate throughout the year</p>
-          </div>
-          <button
-            onClick={() => setActiveModal('turnover')}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-          >
-            <FiInfo className="w-5 h-5 text-gray-500" />
-          </button>
-        </div>
-        <div className="h-[300px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
-              data={turnoverData}
-              margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-            >
-              <defs>
-                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="name" 
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: '#6B7280', fontSize: 12 }}
-              />
-              <YAxis 
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: '#6B7280', fontSize: 12 }}
-              />
-              <Tooltip content={TurnoverTooltip} />
-              <Legend 
-                verticalAlign="top" 
-                height={36}
-                iconType="line"
-                formatter={() => "Turnover Rate"}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="value" 
-                stroke="#3B82F6" 
-                strokeWidth={2}
-                fillOpacity={1} 
-                fill="url(#colorValue)"
-                name="Turnover Rate"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
+      
     
       {/* Info Modals */}
       <InfoModal

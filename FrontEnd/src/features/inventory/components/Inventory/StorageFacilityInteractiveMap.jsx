@@ -3,6 +3,7 @@ import { getFirestore, collection, getDocs } from 'firebase/firestore';
 import app from '../../../../FirebaseConfig';
 import ShelfViewModal from './ShelfViewModal';
 import { getStorageUnits, updateStorageUnit, deleteStorageUnit, createStorageUnit } from '../../../../services/firebase/StorageServices';
+import { getStorageUnitConfig } from '../../config/StorageUnitsConfig';
 
 const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onChangesMade }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -714,6 +715,7 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
           onClose={handleCancelEdit}
           onSave={handleSaveUnit}
           isNew={showAddUnit}
+          storageUnits={storageUnits}
         />
       )}
 
@@ -731,19 +733,26 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
 };
 
 // Edit Unit Modal Component
-const EditUnitModal = ({ unit, isOpen, onClose, onSave, isNew }) => {
+const EditUnitModal = ({ unit, isOpen, onClose, onSave, isNew, storageUnits }) => {
+  const config = getStorageUnitConfig(unit?.id);
+  const unitName = config ? config.title : (unit?.name || '');
+  
   const [formData, setFormData] = useState({
-    name: unit?.name || '',
-    type: unit?.type || '',
-    capacity: unit?.capacity || 0,
+    name: unitName,
     shelves: unit?.shelves || []
   });
+
+  // Calculate total capacity from shelves
+  const totalCapacity = formData.shelves.reduce((total, shelf) => {
+    return total + shelf.rows.reduce((sum, row) => sum + (row.capacity || 0), 0);
+  }, 0);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     onSave({
       ...unit,
       ...formData,
+      capacity: totalCapacity,
       id: unit?.id || `unit-${String(storageUnits.length + 1).padStart(2, '0')}`
     });
   };
@@ -828,39 +837,22 @@ const EditUnitModal = ({ unit, isOpen, onClose, onSave, isNew }) => {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Basic Information */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Unit Name</label>
               <input
                 type="text"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                required
+                readOnly
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-              <input
-                type="text"
-                value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                required
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Calculated Total Capacity</label>
+              <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700 font-medium">
+                {totalCapacity} slots
+              </div>
             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Total Capacity</label>
-            <input
-              type="number"
-              value={formData.capacity}
-              onChange={(e) => setFormData({ ...formData, capacity: parseInt(e.target.value) || 0 })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              min="1"
-              required
-            />
           </div>
 
           {/* Shelves Configuration */}
