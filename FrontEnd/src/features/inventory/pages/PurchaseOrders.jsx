@@ -81,7 +81,7 @@ const PurchaseOrders = () => {
       pending_approval: { bg: 'bg-yellow-100', text: 'text-yellow-800' },
       approved: { bg: 'bg-green-100', text: 'text-green-800' },
       rejected: { bg: 'bg-red-100', text: 'text-red-800' },
-      completed: { bg: 'bg-blue-100', text: 'text-blue-800' }
+      received: { bg: 'bg-blue-100', text: 'text-blue-800' }
     };
 
     const config = statusConfig[status] || statusConfig.draft;
@@ -252,9 +252,7 @@ const PurchaseOrders = () => {
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                  Receiving Status
-                </th>
+             
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                   Created Date
                 </th>
@@ -302,9 +300,7 @@ const PurchaseOrders = () => {
                     <td className="px-6 py-4 whitespace-nowrap">
                       {renderStatusBadge(po.status)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {renderReceivingStatus(po.receivingStatus || 'pending')}
-                    </td>
+                   
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">{po.createdAt?.toDate().toLocaleDateString()}</div>
                       <div className="text-xs text-gray-500">{po.createdAt?.toDate().toLocaleTimeString()}</div>

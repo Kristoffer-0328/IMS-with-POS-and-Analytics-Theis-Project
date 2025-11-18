@@ -150,7 +150,7 @@ export default function Pos_TransactionTable() {
     <div className="p-6">
       <DashboardHeader />
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 mb-4">Transaction History</h1>
+   
 
         {/* Search Input */}
         <div className="relative w-full sm:w-80">
