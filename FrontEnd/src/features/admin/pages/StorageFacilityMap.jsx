@@ -63,12 +63,16 @@ const StorageFacilityMap = () => {
               {isEditMode && (
                 <div className="mt-2 text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
                   <strong>Edit Mode:</strong> You can modify storage units, add new ones, or delete existing ones.
+                  <br />
+                  <strong>Dimension Rules:</strong> Configure dimension constraints for rows to control what products can be stored in specific locations.
                 </div>
               )}
             </div>
             <div className="flex gap-3">
               {!isEditMode ? (
                 <>
+                  {/* Temporarily hidden - Initialize Storage Units button */}
+                  {/*
                   <button
                     onClick={handleInitializeStorage}
                     disabled={initializing}
@@ -76,6 +80,7 @@ const StorageFacilityMap = () => {
                   >
                     {initializing ? 'Initializing...' : 'Initialize Storage Units'}
                   </button>
+                  */}
                   <button
                     onClick={toggleEditMode}
                     className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700"

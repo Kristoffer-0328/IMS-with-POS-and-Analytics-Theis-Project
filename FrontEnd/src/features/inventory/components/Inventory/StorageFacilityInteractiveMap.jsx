@@ -309,13 +309,14 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
     }
   };
 
-  // Get capacity info for tooltip
-  const getCapacityInfo = (unitName) => {
-    const capacity = unitCapacities[unitName];
-    if (!capacity) return 'Loading...';
+  // Check if unit has dimension constraints configured
+  const hasConstraints = (unitId) => {
+    const unit = storageUnits.find(u => u.id === unitId);
+    if (!unit) return false;
     
-    const percentage = (capacity.occupancyRate * 100).toFixed(1);
-    return `${capacity.productCount}/${capacity.totalSlots} slots (${percentage}%)`;
+    return unit.shelves.some(shelf => 
+      shelf.rows.some(row => row.dimensionConstraints)
+    );
   };
 
   return (
@@ -377,6 +378,11 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
               </div>
             )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 01')}`}></div>
+            {editMode && hasConstraints('unit-01') && (
+              <div className="absolute top-2 left-2 w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center text-white text-xs" title="Has dimension constraints">
+                <span className="text-[8px]">R</span>
+              </div>
+            )}
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 01</div>
             <div className="text-sm text-gray-600 font-medium">Steel & Heavy Materials</div>
           </div>
@@ -412,6 +418,11 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
               </div>
             )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 02')}`}></div>
+            {editMode && hasConstraints('unit-02') && (
+              <div className="absolute top-2 left-2 w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center text-white text-xs" title="Has dimension constraints">
+                <span className="text-[8px]">R</span>
+              </div>
+            )}
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 02</div>
             <div className="text-sm text-gray-600 font-medium">Lumber & Wood</div>
           </div>
@@ -511,6 +522,11 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
               </div>
             )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 04')}`}></div>
+            {editMode && hasConstraints('unit-04') && (
+              <div className="absolute top-2 left-2 w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center text-white text-xs" title="Has dimension constraints">
+                <span className="text-[8px]">R</span>
+              </div>
+            )}
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 04</div>
             <div className="text-sm text-gray-600 font-medium">Electrical & Plumbing</div>
           </div>
@@ -652,6 +668,11 @@ const StorageFacilityInteractiveMap = ({ viewOnly = false, editMode = false, onC
               </div>
             )}
             <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStatusColor('Unit 08')}`}></div>
+            {editMode && hasConstraints('unit-08') && (
+              <div className="absolute top-2 left-2 w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center text-white text-xs" title="Has dimension constraints">
+                <span className="text-[8px]">R</span>
+              </div>
+            )}
             <div className="text-lg font-bold mb-1 text-slate-800">Unit 08</div>
             <div className="text-sm text-gray-600 font-medium">Roofing Materials</div>
           </div>
@@ -768,10 +789,21 @@ const EditUnitModal = ({ unit, isOpen, onClose, onSave, isNew, storageUnits }) =
   const updateRow = (shelfIndex, rowIndex, field, value) => {
     const updatedShelves = [...formData.shelves];
     const updatedRows = [...updatedShelves[shelfIndex].rows];
-    updatedRows[rowIndex] = { 
-      ...updatedRows[rowIndex], 
-      [field]: field === 'name' ? value : parseInt(value) || 0 
-    };
+    
+    if (field === 'dimensionConstraints') {
+      // Handle dimension constraints as an object
+      updatedRows[rowIndex] = { 
+        ...updatedRows[rowIndex], 
+        [field]: value 
+      };
+    } else {
+      // Handle other fields (name, capacity, columns)
+      updatedRows[rowIndex] = { 
+        ...updatedRows[rowIndex], 
+        [field]: field === 'name' ? value : parseInt(value) || 0 
+      };
+    }
+    
     updatedShelves[shelfIndex] = { ...updatedShelves[shelfIndex], rows: updatedRows };
     setFormData({ ...formData, shelves: updatedShelves });
   };
@@ -954,6 +986,120 @@ const EditUnitModal = ({ unit, isOpen, onClose, onSave, isNew, storageUnits }) =
                               />
                             </div>
                           </div>
+
+                          {/* Dimension Constraints Section */}
+                          <div className="mt-3 pt-3 border-t border-gray-200">
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="block text-xs font-medium text-gray-700">Dimension Constraints</label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const currentConstraints = row.dimensionConstraints || {};
+                                  const hasConstraints = Object.keys(currentConstraints).length > 0;
+                                  if (hasConstraints) {
+                                    // Remove constraints
+                                    updateRow(shelfIndex, rowIndex, 'dimensionConstraints', undefined);
+                                  } else {
+                                    // Add default constraints
+                                    updateRow(shelfIndex, rowIndex, 'dimensionConstraints', {
+                                      type: 'diameter',
+                                      min: 0,
+                                      max: 100,
+                                      unit: 'mm',
+                                      description: ''
+                                    });
+                                  }
+                                }}
+                                className={`px-2 py-1 text-xs rounded ${
+                                  row.dimensionConstraints 
+                                    ? 'bg-red-100 text-red-700 hover:bg-red-200' 
+                                    : 'bg-green-100 text-green-700 hover:bg-green-200'
+                                }`}
+                              >
+                                {row.dimensionConstraints ? 'Remove Constraints' : 'Add Constraints'}
+                              </button>
+                            </div>
+
+                            {row.dimensionConstraints && (
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">Type</label>
+                                  <select
+                                    value={row.dimensionConstraints.type || 'diameter'}
+                                    onChange={(e) => {
+                                      const updatedConstraints = { ...row.dimensionConstraints, type: e.target.value };
+                                      updateRow(shelfIndex, rowIndex, 'dimensionConstraints', updatedConstraints);
+                                    }}
+                                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                  >
+                                    <option value="diameter">Diameter</option>
+                                    <option value="width">Width</option>
+                                    <option value="length">Length</option>
+                                    <option value="thickness">Thickness</option>
+                                    <option value="height">Height</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">Unit</label>
+                                  <select
+                                    value={row.dimensionConstraints.unit || 'mm'}
+                                    onChange={(e) => {
+                                      const updatedConstraints = { ...row.dimensionConstraints, unit: e.target.value };
+                                      updateRow(shelfIndex, rowIndex, 'dimensionConstraints', updatedConstraints);
+                                    }}
+                                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                  >
+                                    <option value="mm">mm</option>
+                                    <option value="cm">cm</option>
+                                    <option value="m">m</option>
+                                    <option value="in">in</option>
+                                    <option value="ft">ft</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">Min Value</label>
+                                  <input
+                                    type="number"
+                                    value={row.dimensionConstraints.min || 0}
+                                    onChange={(e) => {
+                                      const updatedConstraints = { ...row.dimensionConstraints, min: parseFloat(e.target.value) || 0 };
+                                      updateRow(shelfIndex, rowIndex, 'dimensionConstraints', updatedConstraints);
+                                    }}
+                                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    step="0.1"
+                                    min="0"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-gray-600 mb-1">Max Value</label>
+                                  <input
+                                    type="number"
+                                    value={row.dimensionConstraints.max || 100}
+                                    onChange={(e) => {
+                                      const updatedConstraints = { ...row.dimensionConstraints, max: parseFloat(e.target.value) || 100 };
+                                      updateRow(shelfIndex, rowIndex, 'dimensionConstraints', updatedConstraints);
+                                    }}
+                                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    step="0.1"
+                                    min="0"
+                                  />
+                                </div>
+                                <div className="col-span-2">
+                                  <label className="block text-xs text-gray-600 mb-1">Description</label>
+                                  <input
+                                    type="text"
+                                    value={row.dimensionConstraints.description || ''}
+                                    onChange={(e) => {
+                                      const updatedConstraints = { ...row.dimensionConstraints, description: e.target.value };
+                                      updateRow(shelfIndex, rowIndex, 'dimensionConstraints', updatedConstraints);
+                                    }}
+                                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="e.g., Small diameter: 6mm - 12.7mm"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -988,7 +1134,7 @@ const EditUnitModal = ({ unit, isOpen, onClose, onSave, isNew, storageUnits }) =
 // Add Shelf Modal Component
 const AddShelfModal = ({ unitId, isOpen, onClose, onSave }) => {
   const [shelfName, setShelfName] = useState('');
-  const [rows, setRows] = useState([{ name: 'Row 1', capacity: 96, columns: 4 }]);
+  const [rows, setRows] = useState([{ name: 'Row 1', capacity: 96, columns: 4, dimensionConstraints: undefined }]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -1008,12 +1154,18 @@ const AddShelfModal = ({ unitId, isOpen, onClose, onSave }) => {
 
   const addRow = () => {
     const newRowNumber = rows.length + 1;
-    setRows([...rows, { name: `Row ${newRowNumber}`, capacity: 96, columns: 4 }]);
+    setRows([...rows, { name: `Row ${newRowNumber}`, capacity: 96, columns: 4, dimensionConstraints: undefined }]);
   };
 
   const updateRow = (index, field, value) => {
     const updatedRows = [...rows];
-    updatedRows[index] = { ...updatedRows[index], [field]: field === 'name' ? value : parseInt(value) || 0 };
+    if (field === 'dimensionConstraints') {
+      // Handle dimension constraints as an object
+      updatedRows[index] = { ...updatedRows[index], [field]: value };
+    } else {
+      // Handle other fields (name, capacity, columns)
+      updatedRows[index] = { ...updatedRows[index], [field]: field === 'name' ? value : parseInt(value) || 0 };
+    }
     setRows(updatedRows);
   };
 
@@ -1120,6 +1272,120 @@ const AddShelfModal = ({ unitId, isOpen, onClose, onSave }) => {
                         placeholder="4"
                       />
                     </div>
+                  </div>
+
+                  {/* Dimension Constraints Section */}
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="block text-sm font-medium text-gray-700">Dimension Constraints</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentConstraints = row.dimensionConstraints || {};
+                          const hasConstraints = Object.keys(currentConstraints).length > 0;
+                          if (hasConstraints) {
+                            // Remove constraints
+                            updateRow(index, 'dimensionConstraints', undefined);
+                          } else {
+                            // Add default constraints
+                            updateRow(index, 'dimensionConstraints', {
+                              type: 'diameter',
+                              min: 0,
+                              max: 100,
+                              unit: 'mm',
+                              description: ''
+                            });
+                          }
+                        }}
+                        className={`px-2 py-1 text-sm rounded ${
+                          row.dimensionConstraints 
+                            ? 'bg-red-100 text-red-700 hover:bg-red-200' 
+                            : 'bg-green-100 text-green-700 hover:bg-green-200'
+                        }`}
+                      >
+                        {row.dimensionConstraints ? 'Remove Constraints' : 'Add Constraints'}
+                      </button>
+                    </div>
+
+                    {row.dimensionConstraints && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">Type</label>
+                          <select
+                            value={row.dimensionConstraints.type || 'diameter'}
+                            onChange={(e) => {
+                              const updatedConstraints = { ...row.dimensionConstraints, type: e.target.value };
+                              updateRow(index, 'dimensionConstraints', updatedConstraints);
+                            }}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          >
+                            <option value="diameter">Diameter</option>
+                            <option value="width">Width</option>
+                            <option value="length">Length</option>
+                            <option value="thickness">Thickness</option>
+                            <option value="height">Height</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">Unit</label>
+                          <select
+                            value={row.dimensionConstraints.unit || 'mm'}
+                            onChange={(e) => {
+                              const updatedConstraints = { ...row.dimensionConstraints, unit: e.target.value };
+                              updateRow(index, 'dimensionConstraints', updatedConstraints);
+                            }}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          >
+                            <option value="mm">mm</option>
+                            <option value="cm">cm</option>
+                            <option value="m">m</option>
+                            <option value="in">in</option>
+                            <option value="ft">ft</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">Min Value</label>
+                          <input
+                            type="number"
+                            value={row.dimensionConstraints.min || 0}
+                            onChange={(e) => {
+                              const updatedConstraints = { ...row.dimensionConstraints, min: parseFloat(e.target.value) || 0 };
+                              updateRow(index, 'dimensionConstraints', updatedConstraints);
+                            }}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            step="0.1"
+                            min="0"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">Max Value</label>
+                          <input
+                            type="number"
+                            value={row.dimensionConstraints.max || 100}
+                            onChange={(e) => {
+                              const updatedConstraints = { ...row.dimensionConstraints, max: parseFloat(e.target.value) || 100 };
+                              updateRow(index, 'dimensionConstraints', updatedConstraints);
+                            }}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            step="0.1"
+                            min="0"
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-sm text-gray-600 mb-1">Description</label>
+                          <input
+                            type="text"
+                            value={row.dimensionConstraints.description || ''}
+                            onChange={(e) => {
+                              const updatedConstraints = { ...row.dimensionConstraints, description: e.target.value };
+                              updateRow(index, 'dimensionConstraints', updatedConstraints);
+                            }}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="e.g., Small diameter: 6mm - 12.7mm"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

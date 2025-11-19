@@ -147,7 +147,7 @@ const IMDashboard = () => {
     }
   };
 
-  // Histogram data for turnover distribution - replace with actual data later
+
   const turnoverHistogramData = [
     { range: '0-0.01', count: 5, minValue: 0, maxValue: 0.01 },
     { range: '0.01-0.02', count: 3, minValue: 0.01, maxValue: 0.02 },
