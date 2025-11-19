@@ -16,7 +16,6 @@ import {
   FiShoppingBag,
   FiSettings, // Add this for settings
   FiMap, // Add this for storage facility map
-  FiClock // Add this for transaction history
 } from 'react-icons/fi';
 import GloryStarLogo from '../../../assets/Glory_Star_Logo.png';
 
@@ -70,11 +69,6 @@ const AdminSidebar = ({ collapsed, setCollapsed }) => {
           path: '/admin/reports',
           icon: <FiFileText size={20} />,
           label: 'Reports & Logs',
-        },
-        {
-          path: '/admin/transaction-history',
-          icon: <FiClock size={20} />,
-          label: 'Transaction History',
         },
       ]
     },

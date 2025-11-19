@@ -28,8 +28,9 @@ const InventoryFilters = ({
       // Note: This is a placeholder since getting all product categories from the nested structure
       // would require traversing all storage locations. For now, we'll use common categories.
       const commonCategories = [
-        'Hardware', 'Electrical', 'Plumbing', 'Paint', 'Tools', 
-        'Automotive', 'Garden', 'Safety', 'Lighting', 'Building Materials'
+        'Steel & Heavy Materials', 'Plywood & Sheet Materials', 'Cement & Aggregates',
+        'Electrical & Plumbing', 'Paint & Coatings', 'Insulation & Foam',
+        'Miscellaneous', 'Roofing Materials', 'Hardware & Fasteners'
       ];
       
       const fetchedCategories = commonCategories.map(cat => ({
@@ -45,7 +46,8 @@ const InventoryFilters = ({
       console.error('Error fetching categories:', error);
       // Fallback to common categories
       const fallbackCategories = [
-        'Hardware', 'Electrical', 'Plumbing', 'Paint', 'Tools'
+        'Steel & Heavy Materials', 'Plywood & Sheet Materials', 'Cement & Aggregates',
+        'Electrical & Plumbing', 'Paint & Coatings'
       ].map(cat => ({
         id: cat.toLowerCase(),
         name: cat

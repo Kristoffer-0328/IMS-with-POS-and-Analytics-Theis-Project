@@ -33,7 +33,7 @@ const Inventory = ({ userRole: propUserRole }) => {
   
   // Role-based permissions
   const canDelete = userRole === 'Admin';
-  const canChangeStatus = userRole === 'Admin';
+  const canChangeStatus = userRole === 'Admin' || userRole === 'InventoryManager';
   const canAddProduct = true; // Both roles can add
   const canUpdateProduct = true; // Both roles can update
   
@@ -406,14 +406,14 @@ const Inventory = ({ userRole: propUserRole }) => {
           const name = (item.name || '').toLowerCase();
           const brand = (item.brand || '').toLowerCase();
           const category = (item.category || '').toLowerCase();
-          const variantName = (item.variantName || '').toLowerCase();
-          const location = (item.fullLocation || '').toLowerCase();
+          const location = item.locations.join(' ').toLowerCase();
+          const suppliers = item.suppliers.map(s => s.name || '').join(' ').toLowerCase();
           
           return name.includes(debouncedSearchQuery) ||
                  brand.includes(debouncedSearchQuery) ||
                  category.includes(debouncedSearchQuery) ||
-                 variantName.includes(debouncedSearchQuery) ||
                  location.includes(debouncedSearchQuery) ||
+                 suppliers.includes(debouncedSearchQuery) ||
                  item.id.toLowerCase().includes(debouncedSearchQuery);
         });
       }
@@ -429,13 +429,13 @@ const Inventory = ({ userRole: propUserRole }) => {
       }
 
       if (selectedStorageRoom !== 'all') {
-        filtered = filtered.filter(item => item.storageLocation === selectedStorageRoom);
+        filtered = filtered.filter(item => item.locations.some(loc => loc.toLowerCase().includes(selectedStorageRoom.toLowerCase())));
       }
 
       return filtered;
     }
     
-    // LEGACY ARCHITECTURE: Group products by identity
+    // LEGACY ARCHITECTURE: Group products by identity#
     let filtered = [...products];
 
     // Step 1: Group products by their base identity (name + brand + specifications)

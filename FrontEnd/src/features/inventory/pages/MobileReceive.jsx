@@ -113,6 +113,15 @@ const MobileReceive = () => {
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [errorModal, setErrorModal] = useState({ isOpen: false, title: '', message: '', type: 'error' });
   
+  // Authorization State
+  const [showAuthModal, setShowAuthModal] = useState(true);
+  const [authCode, setAuthCode] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [userAuthCode, setUserAuthCode] = useState('');
+  const [userRole, setUserRole] = useState('');
+  
   const containerRef = useRef(null);
   const fileInputRef = useRef(null);
   
@@ -224,6 +233,24 @@ const MobileReceive = () => {
       }
     }
   }, [selectedProducts, currentStep, currentProductIndex, deliveryData.products]);
+
+  // Fetch User Auth Code
+  useEffect(() => {
+    const fetchUserAuth = async () => {
+      if (!currentUser?.uid) return;
+      try {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          setUserAuthCode(userData.authCode || '');
+          setUserRole(userData.role || '');
+        }
+      } catch (error) {
+        console.error('Error fetching user auth code:', error);
+      }
+    };
+    fetchUserAuth();
+  }, [currentUser, db]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -627,6 +654,62 @@ const MobileReceive = () => {
         setCurrentStep(currentStep - 1);
       }
     }
+  };
+
+  const handleAuthSubmit = async () => {
+    if (!authCode.trim()) return;
+
+    setAuthLoading(true);
+    setAuthError('');
+
+    // Add 1.5 second delay for loading state
+    setTimeout(async () => {
+      try {
+        // Query users collection to find if the auth code exists
+        const usersRef = collection(db, 'User');
+        const q = query(usersRef, where('authCode', '==', authCode.trim()));
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+          setAuthError('Authorization code is incorrect. Please try again.');
+          setAuthLoading(false);
+          return;
+        }
+
+        // Get the first matching user
+        const authUserDoc = querySnapshot.docs[0];
+        const authUserData = authUserDoc.data();
+
+        // Check if the user has the required role
+        if (authUserData.role !== 'InventoryManager' && authUserData.role !== 'Admin') {
+          setErrorModal({
+            isOpen: true,
+            title: 'Access Denied',
+            message: 'The authorization code belongs to a user without sufficient privileges.',
+            type: 'error'
+          });
+          setAuthCode('');
+          setAuthLoading(false);
+          return;
+        }
+
+        // Authorization successful - allow access
+        setIsAuthorized(true);
+        setShowAuthModal(false);
+        setAuthCode('');
+        setAuthError('');
+      } catch (error) {
+        console.error('Error validating auth code:', error);
+        setErrorModal({
+          isOpen: true,
+          title: 'Verification Error',
+          message: 'Failed to verify authorization code. Please try again.',
+          type: 'error'
+        });
+      } finally {
+        setAuthLoading(false);
+      }
+    }, 1500); // 1.5 seconds delay
   };
 
   const getSummary = () => {
@@ -1114,6 +1197,69 @@ const MobileReceive = () => {
   const currentProduct = selectedProductsForInspection[currentProductIndex];
   const totalCounted = currentProduct ? (parseInt(currentProduct.acceptedQty) || 0) + (parseInt(currentProduct.rejectedQty) || 0) : 0;
   const variance = currentProduct ? calculateVariance(currentProduct.expectedQty, parseInt(currentProduct.acceptedQty) || 0, parseInt(currentProduct.rejectedQty) || 0) : 0;
+
+  // Authorization check - show auth modal if not authorized
+  if (!isAuthorized) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <ErrorModal
+          isOpen={showAuthModal}
+          onClose={() => {}}
+          title="Authorization Required"
+          message="Enter your authorization code to access the receiving page."
+          type="warning"
+          showDefaultButton={false}
+          icon={
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          }
+        >
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Authorization Code
+            </label>
+            <input
+              type="password"
+              value={authCode}
+              onChange={(e) => {
+                setAuthCode(e.target.value);
+                setAuthError(''); // Clear error when user starts typing
+              }}
+              className={`w-full px-4 py-3 border rounded-lg text-center text-lg font-mono tracking-wider focus:ring-2 focus:ring-orange-500 outline-none ${
+                authError ? 'border-red-300 focus:border-red-500' : 'border-gray-300 focus:border-orange-500'
+              } ${authLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              placeholder="Enter code"
+              maxLength={8}
+              autoComplete="off"
+              disabled={authLoading}
+              onKeyPress={(e) => e.key === 'Enter' && !authLoading && handleAuthSubmit()}
+            />
+            {authError && (
+              <p className="text-red-600 text-sm mt-2 text-center">{authError}</p>
+            )}
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={handleAuthSubmit}
+              disabled={!authCode.trim() || authLoading}
+              className="flex-1 px-4 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+            >
+              {authLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Verifying...
+                </>
+              ) : (
+                'Confirm'
+              )}
+            </button>
+          </div>
+        </ErrorModal>
+      </div>
+    );
+  }
 
   // Show completion page if receiving is completed
   if (isCompleted && completionData) {
